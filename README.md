@@ -32,9 +32,9 @@
 
 ## 설치 방법
 
-git clone https://github.com/Hanaroya/Auto-Investment-total
-cd auto-investment-total
-pip install -r requirements.txt
+- git clone https://github.com/Hanaroya/Auto-Investment-total
+- cd Auto-Investment-total
+- pip install -r requirements.txt
 
 ## 사용 방법
 1. 환경 설정
