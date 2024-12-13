@@ -1,0 +1,34 @@
+api_keys:
+  upbit:
+    access_key: "your_upbit_access_key"
+    secret_key: "your_upbit_secret_key"
+  # 새로운 거래소 API 추가 예시
+  binance:
+    access_key: "your_binance_access_key"
+    secret_key: "your_binance_secret_key"
+
+messenger:
+  slack:
+    bot_token: "your_slack_bot_token"
+  gmail:
+    address: "your_email@gmail.com"
+    sender: "your_sender_name"
+    api_key: "your_gmail_api_key"
+  # 새로운 메신저 추가 예시
+  discord:
+    webhook_url: "your_discord_webhook_url"
+
+database:
+  mysql:
+    host: "localhost"
+    port: 3306
+    database: "your_database_name"
+    user: "your_database_user"
+    password: "your_database_password"
+
+user:
+  id: "your_user_id"
+  permissions:
+    - "trade"
+    - "analyze"
+    - "admin"  # 추가 권한 예시 

@@ -22,6 +22,43 @@
 - 포트폴리오 최적화
 - 리스크 관리 모델
 
+## 설정 파일 관리
+
+### 설정 파일 구조
+프로젝트는 `resource/application.yml` 파일을 통해 다음 설정들을 관리합니다:
+- API 키 (거래소, 외부 서비스)
+- 메신저 설정 (Slack, Gmail 등)
+- 데이터베이스 연결 정보
+- 사용자 정보
+
+### 초기 설정 방법
+1. 설정 파일 템플릿을 복사합니다:
+```bash
+cp resource/application.yml.bak resource/application.yml
+```
+
+2. 복사한 파일에서 실제 값을 설정합니다:
+```bash
+vim resource/application.yml
+```
+
+### 새로운 설정 추가 방법
+1. `application.yml.bak` 파일에 새로운 설정 구조를 먼저 추가합니다:
+```yaml
+api_keys:
+  new_exchange:    # 새로운 거래소 추가 예시
+    access_key: "your_access_key"
+    secret_key: "your_secret_key"
+```
+
+2. 팀원들에게 설정 변경 사항을 공유합니다.
+3. 각자의 `application.yml`에 실제 값을 추가합니다.
+
+### 주의사항
+- `application.yml`은 `.gitignore`에 포함되어 있어 깃허브에 업로드되지 않습니다.
+- 실제 API 키와 비밀번호는 절대 `application.yml.bak`에 포함하지 마세요.
+- 설정 구조를 변경할 때는 반드시 팀원들과 상의 후 진행하세요.
+
 ## 기술 스택
 - Python
 - pandas
