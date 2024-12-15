@@ -58,27 +58,28 @@ class UpbitCall:
 
     def get_candle(self, symbol: str, interval: str, count: int = 200) -> List[Dict]:
         """캔들 데이터 조회
-        interval: '1', '3', '5', '10', '15', '30', '60', '240', 'D', 'W', 'M'
+        interval: '1', '3', '5', '10', '15', '30', '60', '240', 'D'
         """
         try:
+            base_url = 'https://crix-api-endpoint.upbit.com/v1/crix/candles'
+            
             if interval in ['1', '3', '5', '10', '15', '30', '60', '240']:
-                url = f"{self.server_url}/v1/candles/minutes/{interval}"
+                url = f"{base_url}/minutes/{interval}"
             elif interval == 'D':
-                url = f"{self.server_url}/v1/candles/days"
-            elif interval == 'W':
-                url = f"{self.server_url}/v1/candles/weeks"
-            elif interval == 'M':
-                url = f"{self.server_url}/v1/candles/months"
+                url = f"{base_url}/days"
             else:
                 raise ValueError("Invalid interval")
 
-            query = {
-                'market': symbol,
-                'count': count
+            # CRIX API 형식에 맞게 심볼 변환
+            crix_symbol = f"CRIX.UPBIT.{symbol}"
+            
+            params = {
+                'code': crix_symbol,
+                'count': count,
+                'to': ''  # 현재 시각 기준
             }
             
-            headers = self._get_auth_header(query)
-            response = requests.get(url, params=query, headers=headers)
+            response = requests.get(url, params=params, headers=self.user_agent)
             return response.json()
 
         except Exception as e:
