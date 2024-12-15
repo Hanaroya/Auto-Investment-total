@@ -6,28 +6,25 @@ from datetime import datetime
 import yaml
 import logging
 from pathlib import Path
+from trade_market_api.UpbitCall import UpbitCall
+from messenger.Messenger import Messenger
 
 class MessengerInterface(ABC):
     @abstractmethod
     def send_message(self, message: str) -> bool:
         pass
 
-class ExchangeInterface(ABC):
-    @abstractmethod
-    def buy(self, symbol: str, amount: float) -> bool:
-        pass
-    
-    @abstractmethod
-    def sell(self, symbol: str, amount: float) -> bool:
-        pass
-    
-    @abstractmethod
-    def get_price(self, symbol: str) -> float:
-        pass
-    
-    @abstractmethod
-    def check_connection(self) -> bool:
-        pass
+class ExchangeFactory:
+    @staticmethod
+    def create_exchange(exchange_name: str, config: Dict) -> Any:
+        if exchange_name.lower() == "upbit":
+            return UpbitCall(
+                access_key=config['api_keys']['upbit']['access_key'],
+                secret_key=config['api_keys']['upbit']['secret_key']
+            )
+        # 다른 거래소들 추가 가능
+        else:
+            raise ValueError(f"지원하지 않는 거래소입니다: {exchange_name}")
 
 class InvestmentCenter:
     def __init__(self, exchange_name: str):
@@ -42,7 +39,7 @@ class InvestmentCenter:
         """설정 파일 로드"""
         config_path = Path("resource/application.yml")
         try:
-            with open(config_path, 'r') as file:
+            with open(config_path, 'r', encoding='utf-8') as file:
                 return yaml.safe_load(file)
         except Exception as e:
             raise RuntimeError(f"설정 파일 로드 실패: {str(e)}")
@@ -57,79 +54,82 @@ class InvestmentCenter:
         logger.addHandler(handler)
         return logger
 
-    def _initialize_exchange(self, exchange_name: str) -> ExchangeInterface:
+    def _initialize_exchange(self, exchange_name: str) -> Any:
         """거래소 초기화"""
-        # 실제 거래소 구현체 반환
-        pass
+        try:
+            exchange = ExchangeFactory.create_exchange(exchange_name, self.config)
+            self.logger.info(f"{exchange_name} 거래소 초기화 성공")
+            return exchange
+        except Exception as e:
+            self.logger.error(f"거래소 초기화 실패: {str(e)}")
+            raise
 
-    def _initialize_messenger(self) -> MessengerInterface:
+    def _initialize_messenger(self) -> Messenger:
         """메신저 초기화"""
-        # 실제 메신저 구현체 반환
-        pass
+        try:
+            messenger = Messenger(self.config)
+            self.logger.info("메신저 초기화 성공")
+            return messenger
+        except Exception as e:
+            self.logger.error(f"메신저 초기화 실패: {str(e)}")
+            raise
 
-    def buy(self, symbol: str, amount: float) -> bool:
+    def buy(self, symbol: str, amount: float, price: Optional[float] = None) -> bool:
         """매수 실행"""
         try:
             if not self._check_api_status():
                 return False
                 
-            result = self.exchange.buy(symbol, amount)
-            if result:
-                message = f"매수 성공: {symbol}, 수량: {amount}"
+            result = self.exchange.place_order(
+                symbol=symbol,
+                side="bid",
+                volume=amount,
+                price=price
+            )
+            
+            if result and 'uuid' in result:
+                message = f"매수 주문 성공: {symbol}, 수량: {amount}"
                 self.messenger.send_message(message)
                 self.logger.info(message)
-            return result
+                return True
+            return False
+            
         except Exception as e:
             self.logger.error(f"매수 실패: {str(e)}")
             self.messenger.send_message(f"매수 실패: {symbol}, 오류: {str(e)}")
             return False
 
-    def sell(self, symbol: str, amount: float) -> bool:
+    def sell(self, symbol: str, amount: float, price: Optional[float] = None) -> bool:
         """매도 실행"""
         try:
             if not self._check_api_status():
                 return False
                 
-            result = self.exchange.sell(symbol, amount)
-            if result:
-                message = f"매도 성공: {symbol}, 수량: {amount}"
+            result = self.exchange.place_order(
+                symbol=symbol,
+                side="ask",
+                volume=amount,
+                price=price
+            )
+            
+            if result and 'uuid' in result:
+                message = f"매도 주문 성공: {symbol}, 수량: {amount}"
                 self.messenger.send_message(message)
                 self.logger.info(message)
-            return result
+                return True
+            return False
+            
         except Exception as e:
             self.logger.error(f"매도 실패: {str(e)}")
             self.messenger.send_message(f"매도 실패: {symbol}, 오류: {str(e)}")
             return False
 
-    def schedule_task(self, task: callable, interval: str) -> None:
-        """작업 스케줄링"""
-        self.scheduled_tasks.append((task, interval))
-        schedule.every().day.at(interval).do(task)
-
-    def start(self) -> None:
-        """시스템 시작"""
-        self.is_running = True
-        self.messenger.send_message("투자 시스템이 시작되었습니다.")
-        
-        while self.is_running:
-            try:
-                schedule.run_pending()
-                if not self._check_api_status():
-                    self._handle_emergency()
-                time.sleep(1)
-            except Exception as e:
-                self.logger.error(f"시스템 오류: {str(e)}")
-                self._handle_emergency()
-
-    def stop(self) -> None:
-        """시스템 중지"""
-        self.is_running = False
-        self.messenger.send_message("투자 시스템이 중지되었습니다.")
-
     def _check_api_status(self) -> bool:
         """API 상태 확인"""
         try:
-            return self.exchange.check_connection()
+            # 간단한 API 호출로 상태 확인
+            markets = self.exchange.get_krw_markets()
+            return bool(markets)
         except Exception:
             return False
 
@@ -147,11 +147,16 @@ class InvestmentCenter:
 
 if __name__ == "__main__":
     # 사용 예시
-    center = InvestmentCenter("upbit")
-    
-    # 스케줄 작업 예시
-    def daily_report():
-        print("일일 리포트 생성")
-    
-    center.schedule_task(daily_report, "17:00")
-    center.start()
+    try:
+        center = InvestmentCenter("upbit")
+        print("투자 센터 초기화 성공")
+        
+        # 스케줄 작업 예시
+        def daily_report():
+            print("일일 리포트 생성")
+        
+        center.schedule_task(daily_report, "17:00")
+        center.start()
+        
+    except Exception as e:
+        print(f"초기화 실패: {str(e)}")
