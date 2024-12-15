@@ -10,6 +10,7 @@ from trade_market_api.UpbitCall import UpbitCall
 from messenger.Messenger import Messenger
 from strategy.StrategyBase import StrategyManager
 from strategy.Strategies import *
+from trade_market_api.MarketDataConverter import MarketDataConverter
 
 class MessengerInterface(ABC):
     @abstractmethod
@@ -189,8 +190,19 @@ class InvestmentCenter:
             
     def _collect_market_data(self, symbol: str) -> Dict[str, Any]:
         """시장 데이터 수집"""
-        # 실제 구현에서는 각 전략에 필요한 데이터를 수집
-        pass
+        try:
+            # 캔들 데이터 조회
+            candle_data = self.exchange.get_candles(symbol, interval="1m", count=200)
+            
+            # 데이터 변환
+            converter = MarketDataConverter()
+            market_data = converter.convert_upbit_candle(candle_data)
+            
+            return market_data
+            
+        except Exception as e:
+            self.logger.error(f"시장 데이터 수집 실패: {str(e)}")
+            return {}
 
 if __name__ == "__main__":
     # 사용 예시
