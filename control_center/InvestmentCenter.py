@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from trade_market_api.UpbitCall import UpbitCall
 from messenger.Messenger import Messenger
+from strategy.StrategyBase import StrategyManager
+from strategy.Strategies import *
 
 class MessengerInterface(ABC):
     @abstractmethod
@@ -34,6 +36,7 @@ class InvestmentCenter:
         self.logger = self._setup_logger()
         self.is_running = False
         self.scheduled_tasks = []
+        self.strategy_manager = self._initialize_strategies()
         
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
@@ -74,6 +77,29 @@ class InvestmentCenter:
             self.logger.error(f"메신저 초기화 실패: {str(e)}")
             raise
 
+    def _initialize_strategies(self) -> StrategyManager:
+        """전략 초기화"""
+        manager = StrategyManager()
+        
+        # 기본 전략들 추가
+        strategies = [
+            RSIStrategy(),
+            MACDStrategy(),
+            BollingerBandStrategy(),
+            VolumeStrategy(),
+            PriceChangeStrategy(),
+            MovingAverageStrategy(),
+            MomentumStrategy(),
+            StochasticStrategy(),
+            IchimokuStrategy(),
+            MarketSentimentStrategy()
+        ]
+        
+        for strategy in strategies:
+            manager.add_strategy(strategy)
+            
+        return manager
+        
     def buy(self, symbol: str, amount: float, price: Optional[float] = None) -> bool:
         """매수 실행"""
         try:
@@ -144,6 +170,27 @@ class InvestmentCenter:
             
         self.logger.info("API 재연결 성공")
         self.messenger.send_message("✅ API 재연결 성공. 시스템 재개.")
+
+    def analyze_market(self, symbol: str) -> str:
+        """시장 분석 및 투자 결정"""
+        try:
+            # 시장 데이터 수집
+            market_data = self._collect_market_data(symbol)
+            
+            # 전략 분석 결과 획득
+            decision = self.strategy_manager.get_decision(market_data)
+            
+            self.logger.info(f"투자 결정 - {symbol}: {decision}")
+            return decision
+            
+        except Exception as e:
+            self.logger.error(f"시장 분석 실패: {str(e)}")
+            return "hold"
+            
+    def _collect_market_data(self, symbol: str) -> Dict[str, Any]:
+        """시장 데이터 수집"""
+        # 실제 구현에서는 각 전략에 필요한 데이터를 수집
+        pass
 
 if __name__ == "__main__":
     # 사용 예시
