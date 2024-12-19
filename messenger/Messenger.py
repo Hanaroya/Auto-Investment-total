@@ -5,6 +5,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import COMMASPACE, formatdate
 import logging
+from pathlib import Path
+from datetime import datetime
 
 class Messenger:
     def __init__(self, config: Dict):
@@ -12,9 +14,26 @@ class Messenger:
         self.logger = self._setup_logger()
         
     def _setup_logger(self) -> logging.Logger:
+        """로깅 설정
+        
+        Returns:
+            logging.Logger: 설정된 로거 인스턴스
+            
+        Notes:
+            - 로그 파일은 /log 디렉토리에 날짜별로 저장
+            - 메시지 전송 관련 로그는 WARNING 레벨로 처리
+        """
         logger = logging.getLogger('Messenger')
-        logger.setLevel(logging.INFO)
-        handler = logging.FileHandler('messenger.log')
+        logger.setLevel(logging.DEBUG if self.config.get('debug', False) else logging.INFO)
+        
+        # 로그 디렉토리 생성
+        log_dir = Path(self.config.get('logging', {}).get('directory', 'log'))
+        log_dir.mkdir(exist_ok=True)
+        
+        # 날짜별 로그 파일 설정
+        today = datetime.now().strftime('%Y-%m-%d')
+        handler = logging.FileHandler(f'{log_dir}/{today}-messenger.log')
+        
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
