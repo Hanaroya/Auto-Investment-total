@@ -1,15 +1,19 @@
+mode: "test"  # 가능한 값: "test", "market"
+
 api_keys:
   upbit:
     access_key: "your_upbit_access_key"
     secret_key: "your_upbit_secret_key"
-  # 새로운 거래소 API 추가 예시
+    test_mode: true  # test 모드일 때 API 검증 스킵
   binance:
     access_key: "your_binance_access_key"
     secret_key: "your_binance_secret_key"
+    test_mode: true  # test 모드일 때 API 검증 스킵
 
 messenger:
   slack:
-    bot_token: "your_slack_bot_token"
+    bot_token: "your_slack_bot_token" # 슬랙 봇 토큰
+    channel: "#slack-channel-name" # 슬랙 채널
   gmail:
     address: "your_email@gmail.com"
     sender: "your_sender_name"

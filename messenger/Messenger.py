@@ -47,7 +47,7 @@ class Messenger:
                     "Authorization": f"Bearer {self.config['messenger']['slack']['bot_token']}"
                 },
                 json={
-                    "channel": "#auto-trade",
+                    "channel": self.config['messenger']['slack']['channel'],
                     "text": message
                 }
             )
