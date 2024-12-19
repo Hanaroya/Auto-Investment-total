@@ -19,6 +19,8 @@ class UpbitCall:
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
         }
         self.logger = self._setup_logger()
+        # test 모드 여부 확인
+        self.is_test = (access_key == "test_access_key" and secret_key == "test_secret_key")
 
     def _setup_logger(self) -> logging.Logger:
         """로깅 설정"""
@@ -102,6 +104,19 @@ class UpbitCall:
         side: 'bid'(매수) 또는 'ask'(매도)
         """
         try:
+            # 테스트 모드일 경우 모의 주문 응답 반환
+            if self.is_test:
+                test_uuid = str(uuid.uuid4())
+                return {
+                    'uuid': test_uuid,
+                    'side': side,
+                    'market': symbol,
+                    'volume': volume,
+                    'price': price,
+                    'test_mode': True
+                }
+
+            # 실제 주문 로직
             url = f"{self.server_url}/v1/orders"
             query = {
                 'market': symbol,
@@ -124,6 +139,15 @@ class UpbitCall:
     def cancel_order(self, uuid: str) -> Dict:
         """주문 취소"""
         try:
+            # 테스트 모드일 경우 모의 취소 응답 반환
+            if self.is_test:
+                return {
+                    'uuid': uuid,
+                    'status': 'cancel',
+                    'test_mode': True
+                }
+
+            # 실제 취소 로직
             url = f"{self.server_url}/v1/order"
             query = {'uuid': uuid}
             headers = self._get_auth_header(query)
@@ -136,6 +160,15 @@ class UpbitCall:
     def get_order_status(self, uuid: str) -> Dict:
         """주문 상태 조회"""
         try:
+            # 테스트 모드일 경우 모의 상태 응답 반환
+            if self.is_test:
+                return {
+                    'uuid': uuid,
+                    'status': 'done',
+                    'test_mode': True
+                }
+
+            # 실제 상태 조회 로직
             url = f"{self.server_url}/v1/order"
             query = {'uuid': uuid}
             headers = self._get_auth_header(query)

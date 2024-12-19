@@ -20,18 +20,25 @@ class MessengerInterface(ABC):
 class ExchangeFactory:
     @staticmethod
     def create_exchange(exchange_name: str, config: Dict) -> Any:
+        mode = config.get('mode', 'market')  # 기본값은 'market'
         if exchange_name.lower() == "upbit":
+            if mode == 'test':
+                # 테스트 모드에서는 API 키 검증 스킵
+                return UpbitCall(
+                    access_key="test_access_key",
+                    secret_key="test_secret_key"
+                )
             return UpbitCall(
                 access_key=config['api_keys']['upbit']['access_key'],
                 secret_key=config['api_keys']['upbit']['secret_key']
             )
-        # 다른 거래소들 추가 가능
         else:
             raise ValueError(f"지원하지 않는 거래소입니다: {exchange_name}")
 
 class InvestmentCenter:
     def __init__(self, exchange_name: str):
         self.config = self._load_config()
+        self.mode = self.config.get('mode', 'market')
         self.exchange = self._initialize_exchange(exchange_name)
         self.messenger = self._initialize_messenger()
         self.logger = self._setup_logger()
@@ -107,6 +114,13 @@ class InvestmentCenter:
             if not self._check_api_status():
                 return False
                 
+            if self.mode == 'test':
+                # 테스트 모드에서는 로그만 남기고 성공으로 처리
+                message = f"[테스트 모드] 매수 주문 시뮬레이션: {symbol}, 수량: {amount}"
+                self.logger.info(message)
+                self.messenger.send_message(message)
+                return True
+
             result = self.exchange.place_order(
                 symbol=symbol,
                 side="bid",
@@ -132,6 +146,13 @@ class InvestmentCenter:
             if not self._check_api_status():
                 return False
                 
+            if self.mode == 'test':
+                # 테스트 모드에서는 로그만 남기고 성공으로 처리
+                message = f"[테스트 모드] 매도 주문 시뮬레이션: {symbol}, 수량: {amount}"
+                self.logger.info(message)
+                self.messenger.send_message(message)
+                return True
+
             result = self.exchange.place_order(
                 symbol=symbol,
                 side="ask",
@@ -154,7 +175,6 @@ class InvestmentCenter:
     def _check_api_status(self) -> bool:
         """API 상태 확인"""
         try:
-            # 간단한 API 호출로 상태 확인
             markets = self.exchange.get_krw_markets()
             return bool(markets)
         except Exception:
