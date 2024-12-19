@@ -9,6 +9,7 @@ import jwt
 import uuid
 import hashlib
 from urllib.parse import urlencode
+from pathlib import Path
 
 class UpbitCall:
     def __init__(self, access_key: str, secret_key: str):
@@ -23,11 +24,25 @@ class UpbitCall:
         self.is_test = (access_key == "test_access_key" and secret_key == "test_secret_key")
 
     def _setup_logger(self) -> logging.Logger:
-        """로깅 설정"""
+        """로깅 설정
+        
+        Returns:
+            logging.Logger: 설정된 로거 인스턴스
+            
+        Notes:
+            - API 호출 결과는 INFO 레벨로 기록
+            - 주문 관련 작업은 WARNING 레벨로 처리
+        """
         logger = logging.getLogger('UpbitCall')
-        logger.setLevel(logging.INFO)
+        logger.setLevel(logging.DEBUG if self.is_test else logging.INFO)
+        
+        log_dir = Path('log')
+        log_dir.mkdir(exist_ok=True)
+        
+        today = datetime.now().strftime('%Y-%m-%d')
+        handler = logging.FileHandler(f'{log_dir}/{today}-trade.log')
+        
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler = logging.FileHandler('upbit.log')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         return logger

@@ -1,4 +1,9 @@
 mode: "test"  # 가능한 값: "test", "market"
+debug: true
+
+logging:
+  level: "debug"  # 가능한 값: "debug", "info", "warning", "error"
+  directory: "log"  # 로그 저장 디렉토리
 
 api_keys:
   upbit:

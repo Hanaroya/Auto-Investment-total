@@ -56,10 +56,25 @@ class InvestmentCenter:
             raise RuntimeError(f"설정 파일 로드 실패: {str(e)}")
 
     def _setup_logger(self) -> logging.Logger:
-        """로깅 설정"""
+        """로깅 설정
+        
+        Returns:
+            logging.Logger: 설정된 로거 인스턴스
+            
+        Notes:
+            - 투자 결정은 WARNING 레벨로 기록
+            - 시장 데이터 분석은 INFO 레벨로 처리
+            - 디버그 모드에서는 모든 로그 저장
+        """
         logger = logging.getLogger('InvestmentCenter')
-        logger.setLevel(logging.INFO)
-        handler = logging.FileHandler('investment.log')
+        logger.setLevel(logging.DEBUG if self.mode == 'test' else logging.INFO)
+        
+        log_dir = Path(self.config.get('logging', {}).get('directory', 'log'))
+        log_dir.mkdir(exist_ok=True)
+        
+        today = datetime.now().strftime('%Y-%m-%d')
+        handler = logging.FileHandler(f'{log_dir}/{today}-investment.log')
+        
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -193,15 +208,29 @@ class InvestmentCenter:
         self.messenger.send_message("✅ API 재연결 성공. 시스템 재개.")
 
     def analyze_market(self, symbol: str) -> str:
-        """시장 분석 및 투자 결정"""
-        try:
-            # 시장 데이터 수집
-            market_data = self._collect_market_data(symbol)
+        """시장 분석 및 투자 결정
+        
+        Args:
+            symbol (str): 분석할 코인 심볼 (예: "KRW-BTC")
             
-            # 전략 분석 결과 획득
+        Returns:
+            str: 투자 결정 ("buy", "sell", "hold")
+            
+        Notes:
+            - 여러 전략의 분석 결과를 종합하여 결정
+            - 각 전략의 가중치는 동일하게 적용
+            - 임계값을 넘는 경우에만 매수/매도 결정
+        """
+        try:
+            market_data = self._collect_market_data(symbol)
             decision = self.strategy_manager.get_decision(market_data)
             
-            self.logger.info(f"투자 결정 - {symbol}: {decision}")
+            # 중요 결정은 WARNING 레벨로 로깅
+            if decision in ["buy", "sell"]:
+                self.logger.warning(f"투자 결정 - {symbol}: {decision}")
+            else:
+                self.logger.info(f"투자 결정 - {symbol}: {decision}")
+            
             return decision
             
         except Exception as e:
