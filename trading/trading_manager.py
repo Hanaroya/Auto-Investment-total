@@ -1,14 +1,14 @@
 from typing import Dict, List
 import logging
 from database.mongodb_manager import MongoDBManager
-from messenger import Messenger
+from messenger.messenger import Messenger
 from datetime import datetime
 import pandas as pd
 
 class TradingManager:
     def __init__(self):
         self.db = MongoDBManager()
-        self.messenger = Messenger()
+        self.messenger = Messenger({})
         self.logger = logging.getLogger(__name__)
 
     async def process_buy_signal(self, coin: str, thread_id: int, signal_strength: float, 
@@ -103,9 +103,12 @@ class TradingManager:
         """매수 메시지 생성"""
         strategy_data = trade_data['strategy_data']
         
+        # 구매 경로 확인
+        buy_reason = "상승세 감지" if strategy_data.get('uptrend_signal', 0) > 0.5 else "하락세 종료"
+        
         message = (
             f"------------------------------------------------\n"
-            f"Coin: {trade_data['coin']}, 구매\n"
+            f"Coin: {trade_data['coin']}, 구매 ({buy_reason})\n"
             f" 구매 시간: {trade_data['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}\n"
             f" 구매 가격: {trade_data['price']:,}\n"
             f" 구매 신호: {trade_data['signal_strength']:.2f}\n"
