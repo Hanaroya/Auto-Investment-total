@@ -122,6 +122,30 @@ class TradingThread(threading.Thread):
             self.logger.error(f"Error getting current investment: {e}")
             return 0
 
+    async def analyze_signals(self, candle_data: List[Dict]) -> Dict:
+        """
+        캔들 데이터를 분석하여 매매 신호를 생성
+        """
+        try:
+            # MarketAnalyzer를 통해 신호 분석
+            signal = await self.market_analyzer.analyze_trading_signals(candle_data)
+            
+            return {
+                'action': signal.get('action', 'hold'),  # 'buy', 'sell', 'hold' 중 하나
+                'strength': signal.get('strength', 0),   # 신호 강도 (0-1)
+                'price': signal.get('price', 0),         # 현재 가격
+                'strategy_data': signal.get('strategy_data', {})  # 전략 관련 추가 데이터
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing signals: {e}")
+            return {
+                'action': 'hold',
+                'strength': 0,
+                'price': 0,
+                'strategy_data': {}
+            }
+
 class ThreadManager:
     def __init__(self):
         self.threads: List[TradingThread] = []

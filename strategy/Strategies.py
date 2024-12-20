@@ -91,3 +91,16 @@ class MarketSentimentStrategy(StrategyBase):
     def analyze(self, market_data: Dict[str, Any]) -> float:
         sentiment = market_data.get('market_sentiment', 0)  # -1 to 1
         return (sentiment + 1) / 2  # normalize to 0-1 
+
+__all__ = [
+    'RSIStrategy',
+    'MACDStrategy',
+    'BollingerBandStrategy',
+    'VolumeStrategy',
+    'PriceChangeStrategy',
+    'MovingAverageStrategy',
+    'MomentumStrategy',
+    'StochasticStrategy',
+    'IchimokuStrategy',
+    'MarketSentimentStrategy'
+]

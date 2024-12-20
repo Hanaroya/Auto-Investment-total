@@ -16,9 +16,31 @@ class StrategyBase(ABC):
 
 class StrategyManager:
     def __init__(self, buy_threshold: float = 0.65, sell_threshold: float = 0.35):
-        self.strategies: List[StrategyBase] = []
+        self.strategies: List[StrategyBase] = self._load_all_strategies()
         self.buy_threshold = buy_threshold
         self.sell_threshold = sell_threshold
+        
+    def _load_all_strategies(self) -> List[StrategyBase]:
+        """모든 전략 클래스를 자동으로 로드"""
+        import inspect
+        import sys
+        import pkgutil
+        import importlib
+        import strategy  # strategy 패키지
+
+        strategies = []
+        # strategy 패키지 내의 모든 모듈을 순회
+        for _, name, _ in pkgutil.iter_modules(strategy.__path__):
+            module = importlib.import_module(f'strategy.{name}')
+            # 모듈 내의 모든 클래스를 검사
+            for _, obj in inspect.getmembers(module, inspect.isclass):
+                # StrategyBase를 상속받은 클래스이고 추상 클래스가 아닌 경우
+                if (issubclass(obj, StrategyBase) and 
+                    obj != StrategyBase and 
+                    not inspect.isabstract(obj)):
+                    strategies.append(obj())
+        
+        return strategies
         
     def add_strategy(self, strategy: StrategyBase) -> None:
         """전략 추가"""
