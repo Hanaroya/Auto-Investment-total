@@ -4,6 +4,9 @@ from pymongo.database import Database
 from typing import Optional, Dict, Any
 import logging
 from datetime import datetime
+import sys
+
+from config.mongodb_config import MONGODB_CONFIG
 
 class MongoDBManager:
     _instance = None
@@ -15,37 +18,50 @@ class MongoDBManager:
 
     def __init__(self):
         if not hasattr(self, 'initialized'):
-            self.client: Optional[MongoClient] = None
-            self.db: Optional[Database] = None
+            self.client = None
+            self.db = None
             self.initialized = True
             self._connect()
             self._setup_collections()
 
-    def _connect(self):
+    def __del__(self):
+        """소멸자에서 연결 종료"""
         try:
-            # MongoDB 연결 설정
-            self.client = MongoClient('mongodb://localhost:27017/')
-            self.db = self.client['crypto_trading']
+            if hasattr(self, 'client') and self.client and not hasattr(sys, 'is_finalizing'):
+                self.client.close()
+                logging.info("MongoDB 연결 종료")
+        except Exception as e:
+            if not hasattr(sys, 'is_finalizing'):
+                logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
+
+    def _connect(self):
+        """MongoDB 연결"""
+        try:
+            self.client = MongoClient(
+                host=MONGODB_CONFIG['host'],
+                port=MONGODB_CONFIG['port'],
+                serverSelectionTimeoutMS=5000,  # 5초 타임아웃
+                connectTimeoutMS=5000,
+                socketTimeoutMS=5000
+            )
+            # 연결 테스트
+            self.client.server_info()
+            self.db = self.client[MONGODB_CONFIG['db_name']]
             logging.info("MongoDB 연결 성공")
         except Exception as e:
             logging.error(f"MongoDB 연결 실패: {str(e)}")
             raise
 
     def _setup_collections(self):
-        """컬렉션 초기 설정 및 인덱스 생성"""
-        # 거래 기록 컬렉션
-        trades_collection = self.db.trades
-        trades_collection.create_index([("coin", 1), ("timestamp", -1)])
-        trades_collection.create_index([("thread_id", 1)])
-        trades_collection.create_index([("status", 1)])
-
-        # 시장 데이터 컬렉션
-        market_data_collection = self.db.market_data
-        market_data_collection.create_index([("coin", 1), ("timestamp", -1)])
-
-        # 스레드 상태 컬렉션
-        thread_status_collection = self.db.thread_status
-        thread_status_collection.create_index([("thread_id", 1)], unique=True)
+        """컬렉션 초기화"""
+        try:
+            self.trades = self.db['trades']
+            self.trades.create_index([("market", 1), ("timestamp", -1)])
+            self.trades.create_index([("status", 1)])
+            logging.info("MongoDB 컬렉션 설정 완료")
+        except Exception as e:
+            logging.error(f"컬렉션 설정 실패: {str(e)}")
+            raise
 
     def get_collection(self, collection_name: str) -> Collection:
         """컬렉션 가져오기"""
@@ -100,4 +116,34 @@ class MongoDBManager:
             {'$set': config_data},
             upsert=True
         )
-        return True if result.upserted_id or result.modified_count > 0 else False 
+        return True if result.upserted_id or result.modified_count > 0 else False
+
+    def _initialize_system_config(self):
+        """시스템 설정 초기화"""
+        try:
+            config_collection = self.db['system_config']
+            if not config_collection.find_one({'_id': 'config'}):
+                initial_config = {
+                    '_id': 'config',
+                    'initial_investment': 1000000,  # 초기 투자금
+                    'min_trade_amount': 5000,      # 최소 거래금액
+                    'max_thread_investment': 80000, # 스레드당 최대 투자금액
+                    'reserve_amount': 200000,       # 예비금
+                    'total_max_investment': 800000, # 총 최대 투자금액
+                    'emergency_stop': False,        # 긴급정지 플래그
+                    'created_at': datetime.utcnow()
+                }
+                config_collection.insert_one(initial_config)
+                logging.info("시스템 설정 초기화 완료")
+        except Exception as e:
+            logging.error(f"시스템 설정 초기화 실패: {str(e)}")
+            raise 
+
+    def close(self):
+        """MongoDB 연결 종료"""
+        try:
+            if self.client:
+                self.client.close()
+                logging.info("MongoDB 연결 종료")
+        except Exception as e:
+            logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
