@@ -41,3 +41,20 @@ user:
     - "trade"
     - "analyze"
     - "admin"  # 추가 권한 예시 
+
+  strategy:
+  buy_threshold: 0.65 # 매수 임계값
+  sell_threshold: 0.35 # 매도 임계값
+  indicators:
+    rsi:
+      period: 14 # RSI 기간
+    macd:
+      fast_period: 12 # MACD 빠른 기간
+      slow_period: 26 # MACD 느린 기간
+      signal_period: 9 # MACD 신호 기간
+    bollinger:
+      period: 20 # 볼린저 밴드 기간
+      std_dev: 2 # 볼린저 밴드 표준 편차
+    stochastic:
+      k_period: 14
+      d_period: 3
