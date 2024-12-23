@@ -5,7 +5,7 @@ from trading.market_analyzer import MarketAnalyzer
 from trading.trading_manager import TradingManager
 from trading.thread_manager import ThreadManager
 from database.mongodb_manager import MongoDBManager
-from messenger.messenger import Messenger
+from messenger.Messenger import Messenger
 from utils.scheduler import Scheduler
 
 logging.basicConfig(level=logging.INFO)

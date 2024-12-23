@@ -1,7 +1,7 @@
 from typing import Dict, List
 import logging
 from database.mongodb_manager import MongoDBManager
-from messenger import Messenger
+from messenger.Messenger import Messenger
 from datetime import datetime
 import pandas as pd
 

@@ -7,7 +7,7 @@ import yaml
 import logging
 from pathlib import Path
 from trade_market_api.UpbitCall import UpbitCall
-from messenger import Messenger
+from messenger.Messenger import Messenger
 from strategy.StrategyBase import StrategyManager
 from strategy.Strategies import *
 from trade_market_api.MarketDataConverter import MarketDataConverter
