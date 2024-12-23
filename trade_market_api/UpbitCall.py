@@ -16,6 +16,16 @@ import asyncio
 import aiohttp
 
 class ThreadLock:
+    """싱글톤 패턴으로 구현된 스레드 락 관리자
+    
+    전역적으로 하나의 인스턴스만 존재하며, API 호출에 대한 동시성을 제어합니다.
+    
+    Attributes:
+        _instance: 싱글톤 인스턴스
+        lock: 스레드 간 동기화를 위한 Lock 객체
+        current_thread: 현재 락을 보유한 스레드 ID
+        logger: 로깅을 위한 logger 인스턴스
+    """
     _instance = None
     
     def __new__(cls):
@@ -42,14 +52,26 @@ class ThreadLock:
             self.logger.info(f"Thread {thread_id} released lock")
 
 def with_thread_lock(operation: str):
-    """데코레이터: 스레드 락 적용"""
+    """API 작업에 대한 스레드 락을 제공하는 데코레이터
+    
+    Args:
+        operation (str): 락을 획득하려는 작업의 이름 (예: "buy", "sell", "get_candle")
+    
+    Notes:
+        - 최대 3회까지 락 획득을 시도
+        - 각 시도 사이에 1초 대기
+        - ThreadManager의 락과 별개로 작동하는 전역 락
+        - API 호출의 동시성을 제어하여 rate limit 준수
+    
+    Raises:
+        RuntimeError: 3회 시도 후에도 락 획득 실패시
+    """
     def decorator(func):
         @wraps(func)
         async def wrapper(self, *args, **kwargs):
             thread_id = getattr(self, 'thread_id', 0)
             lock_manager = ThreadLock()
             
-            # 락 획득 시도 (최대 3회)
             for attempt in range(3):
                 if lock_manager.acquire_lock(thread_id, operation):
                     try:
@@ -64,6 +86,18 @@ def with_thread_lock(operation: str):
     return decorator
 
 class UpbitCall:
+    """업비트 API 호출을 담당하는 클래스
+    
+    Notes:
+        - API 메서드들은 두 단계의 락으로 보호됨:
+            1. ThreadManager의 공유 락: 스레드 그룹 간의 동기화
+            2. ThreadLock 데코레이터: API 호출의 전역적 동기화
+        
+        - 주요 보호 대상 메서드:
+            - get_candle: 캔들 데이터 조회
+            - buy_market_order: 시장가 매수
+            - sell_market_order: 시장가 매도
+    """
     def __init__(self, access_key: str, secret_key: str, is_test: bool = False):
         self.access_key = access_key
         self.secret_key = secret_key
@@ -99,7 +133,15 @@ class UpbitCall:
         return logger
 
     def _get_auth_header(self, query: Optional[Dict] = None) -> Dict:
-        """인증 헤더 생성"""
+        """
+        인증 헤더 생성
+        
+        Args:
+            query (Optional[Dict]): 쿼리 매개변수 (기본값: None)
+        
+        Returns:
+            Dict: 인증 헤더
+        """
         payload = {
             'access_key': self.access_key,
             'nonce': str(uuid.uuid4())
@@ -113,7 +155,11 @@ class UpbitCall:
         return {'Authorization': f'Bearer {jwt_token}'}
 
     async def get_krw_markets(self) -> List[str]:
-        """원화 마켓 목록 조회 (거래량 순)"""
+        """원화 마켓 목록 조회 (거래량 순)
+        
+        Returns:
+            List[str]: 원화 마켓 목록
+        """
         try:
             url = "https://crix-api.upbit.com/v1/crix/trends/change_rate"
             async with aiohttp.ClientSession() as session:
@@ -153,7 +199,12 @@ class UpbitCall:
 
     @with_thread_lock("get_candle")
     async def get_candle(self, market: str, interval: str, count: int = 200) -> List[Dict]:
-        """캔들 데이터 조회"""
+        """캔들 데이터 조회
+        
+        Notes:
+            - ThreadManager의 candle_data 락과 함께 동작
+            - API rate limit 준수를 위한 0.1초 대기 포함
+        """
         try:
             base_url = 'https://crix-api-endpoint.upbit.com/v1/crix/candles'
             
@@ -205,7 +256,14 @@ class UpbitCall:
             return []
 
     def get_current_price(self, symbol: str) -> float:
-        """현재가 조회"""
+        """현재가 조회
+        
+        Args:
+            symbol (str): 조회할 마켓 심볼 (예: "KRW-BTC")
+        
+        Returns:
+            float: 현재가
+        """
         try:
             url = f"{self.server_url}/v1/ticker"
             query = {'markets': symbol}
@@ -217,7 +275,15 @@ class UpbitCall:
 
     def place_order(self, symbol: str, side: str, volume: float, price: Optional[float] = None) -> Dict:
         """주문 실행
-        side: 'bid'(매수) 또는 'ask'(매도)
+        
+        Args:
+            symbol (str): 주문할 마켓 심볼 (예: "KRW-BTC")
+            side (str): 'bid'(매수) 또는 'ask'(매도)
+            volume (float): 주문 수량
+            price (Optional[float]): 주문 가격 (기본값: None)
+        
+        Returns:
+            Dict: 주문 응답
         """
         try:
             # 테스트 모드일 경우 모의 주문 응답 반환
@@ -253,7 +319,14 @@ class UpbitCall:
             return {}
 
     def cancel_order(self, uuid: str) -> Dict:
-        """주문 취소"""
+        """주문 취소
+        
+        Args:
+            uuid (str): 취소할 주문의 UUID
+        
+        Returns:
+            Dict: 주문 취소 응답
+        """
         try:
             # 테스트 모드일 경우 모의 취소 응답 반환
             if self.is_test:
@@ -274,7 +347,14 @@ class UpbitCall:
             return {}
 
     def get_order_status(self, uuid: str) -> Dict:
-        """주문 상태 조회"""
+        """주문 상태 조회
+        
+        Args:
+            uuid (str): 조회할 주문의 UUID
+        
+        Returns:
+            Dict: 주문 상태 응답
+        """
         try:
             # 테스트 모드일 경우 모의 상태 응답 반환
             if self.is_test:
@@ -295,7 +375,15 @@ class UpbitCall:
             return {}
 
     def calculate_rsi(self, data: List[float], period: int = 14) -> float:
-        """RSI 계산"""
+        """RSI 계산
+        
+        Args:
+            data (List[float]): 캔들 데이터 리스트
+            period (int): 계산할 기간 (기본값: 14)
+        
+        Returns:
+            float: 계산된 RSI 값
+        """
         try:
             df = pd.DataFrame({'close': data})
             delta = df['close'].diff()
@@ -313,7 +401,12 @@ class UpbitCall:
 
     @with_thread_lock("buy")
     async def buy_market_order(self, market: str, price: float) -> Dict:
-        """시장가 매수"""
+        """시장가 매수
+        
+        Notes:
+            - ThreadManager의 buy 락과 함께 동작
+            - 주문 실행의 동시성 제어
+        """
         try:
             query = {
                 'market': market,
@@ -347,7 +440,12 @@ class UpbitCall:
 
     @with_thread_lock("sell")
     async def sell_market_order(self, market: str, volume: float) -> Dict:
-        """시장가 매도"""
+        """시장가 매도
+        
+        Notes:
+            - ThreadManager의 sell 락과 함께 동작
+            - 주문 실행의 동시성 제어
+        """
         try:
             query = {
                 'market': market,
@@ -380,7 +478,14 @@ class UpbitCall:
             return {}
 
     def _create_jwt_token(self, query: Dict) -> str:
-        """JWT 토큰 생성"""
+        """JWT 토큰 생성
+        
+        Args:
+            query (Dict): 쿼리 매개변수
+        
+        Returns:
+            str: 생성된 JWT 토큰
+        """
         payload = {
             'access_key': self.access_key,
             'nonce': str(uuid.uuid4()),
@@ -391,7 +496,14 @@ class UpbitCall:
         return jwt.encode(payload, self.secret_key)
 
     def _create_query_hash(self, query: Dict) -> str:
-        """쿼리 해시 생성"""
+        """쿼리 해시 생성
+        
+        Args:
+            query (Dict): 쿼리 매개변수
+        
+        Returns:
+            str: 생성된 쿼리 해시
+        """
         query_string = urlencode(query).encode()
         m = hashlib.sha512()
         m.update(query_string)

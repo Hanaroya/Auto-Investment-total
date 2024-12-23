@@ -60,12 +60,64 @@ api_keys:
 - 설정 구조를 변경할 때는 반드시 팀원들과 상의 후 진행하세요.
 
 ## 기술 스택
+
+### 핵심 기술
 - Python
 - pandas
 - numpy
 - scikit-learn
 - TensorFlow/PyTorch
 - TA-Lib
+
+### 동시성 제어 시스템
+#### 이중 락 시스템
+프로젝트는 두 단계의 락 시스템을 통해 안전한 거래를 보장합니다:
+
+1. **ThreadManager 락**
+   - 스레드 그룹 간의 동기화 담당
+   - 비즈니스 로직 레벨에서 작동
+   - 주요 보호 대상:
+     - 매수 작업 (`buy`)
+     - 매도 작업 (`sell`)
+     - 캔들 데이터 조회 (`candle_data`)
+
+2. **ThreadLock 데코레이터**
+   - API 호출에 대한 전역적 동기화 담당
+   - Rate limit 준수를 위한 제어
+   - 싱글톤 패턴으로 구현
+   - 주요 보호 메서드:
+     - `get_candle()`
+     - `buy_market_order()`
+     - `sell_market_order()`
+
+#### 락 시스템 작동 예시
+```python
+# ThreadManager의 락 사용 예시
+with self.shared_locks['buy']:
+    await trading_manager.process_buy_signal()
+
+# ThreadLock 데코레이터 사용 예시
+@with_thread_lock("buy")
+async def buy_market_order(self, market: str, price: float):
+    # API 호출 로직
+```
+
+#### 주의사항
+- 데드락 방지를 위해 락 획득 순서 준수
+- API 호출 시 최대 3회 재시도
+- 각 재시도 사이 1초 대기
+- 모든 락은 자동 해제 보장
+
+### 데이터베이스
+- MongoDB
+
+### API 통합
+- Upbit API
+- 기타 거래소 API
+
+### 메시징 시스템
+- Slack
+- Gmail
 
 ## 설치 방법
 

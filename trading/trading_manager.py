@@ -1,11 +1,16 @@
 from typing import Dict, List
 import logging
 from database.mongodb_manager import MongoDBManager
-from messenger.messenger import Messenger
+from messenger import Messenger
 from datetime import datetime
 import pandas as pd
 
 class TradingManager:
+    """
+    거래 관리자
+    
+    거래 신호 처리 및 거래 데이터 관리를 담당합니다.
+    """
     def __init__(self):
         self.db = MongoDBManager()
         self.messenger = Messenger({})
@@ -13,10 +18,16 @@ class TradingManager:
 
     async def process_buy_signal(self, coin: str, thread_id: int, signal_strength: float, 
                                price: float, strategy_data: Dict):
-        """매수 신호 처리"""
+        """매수 신호 처리
+        
+        주의사항:
+        - investment_amount가 strategy_data에 포함되어 있지 않으면 메시지에 0으로 표시됨
+        - 실제 매수 로직이 구현되어 있지 않음 (거래소 API 연동 필요)
+        """
         try:
-            # 투자 가능 금액 확인
+            # 투자 가능 금액 확인 (이 메서드는 구현되어 있지 않음)
             if not await self.check_investment_limit(thread_id):
+                self.logger.warning(f"투자 한도 초과: thread_id={thread_id}")
                 return False
 
             trade_data = {
@@ -27,7 +38,8 @@ class TradingManager:
                 'signal_strength': signal_strength,
                 'thread_id': thread_id,
                 'strategy_data': strategy_data,
-                'status': 'active'
+                'status': 'active',
+                'investment_amount': strategy_data.get('investment_amount', 0)  # 명시적으로 추가
             }
 
             trade_id = await self.db.insert_trade(trade_data)
@@ -44,7 +56,12 @@ class TradingManager:
 
     async def process_sell_signal(self, coin: str, thread_id: int, signal_strength: float,
                                 price: float, strategy_data: Dict):
-        """매도 신호 처리"""
+        """매도 신호 처리
+        
+        개선사항:
+        - current_strategy_data 추가하여 매도 시점의 전략 데이터 저장
+        - 수익률 계산 및 기록
+        """
         try:
             # 활성 거래 조회
             active_trade = await self.db.get_collection('trades').find_one({
@@ -56,13 +73,18 @@ class TradingManager:
             if not active_trade:
                 return False
 
-            # 거래 종료 처리
-            await self.db.update_trade(active_trade['_id'], {
+            # 매도 시 전략 데이터 및 수익률 정보 추가
+            profit_rate = ((price - active_trade['price']) / active_trade['price']) * 100
+            update_data = {
                 'status': 'closed',
                 'sell_price': price,
                 'sell_timestamp': datetime.utcnow(),
-                'sell_signal_strength': signal_strength
-            })
+                'sell_signal_strength': signal_strength,
+                'current_strategy_data': strategy_data,  # 매도 시점의 전략 데이터
+                'profit_rate': profit_rate  # 수익률 추가
+            }
+            
+            await self.db.update_trade(active_trade['_id'], update_data)
 
             # 메신저로 매도 알림
             message = self.create_sell_message(active_trade, price, signal_strength)
@@ -75,32 +97,56 @@ class TradingManager:
             return False
 
     async def generate_daily_report(self):
-        """일일 리포트 생성"""
+        """일일 리포트 생성
+        
+        개선사항:
+        - 예외 처리 강화
+        - 파일 처리 후 정리
+        """
         try:
             trades = await self.db.get_collection('trades').find({}).to_list(None)
+            
+            if not trades:
+                self.logger.info("거래 데이터가 없습니다.")
+                return
             
             # DataFrame 생성
             df = pd.DataFrame(trades)
             
             # 엑셀 파일 생성
             filename = f"투자현황-{datetime.now().strftime('%Y%m%d')}.xlsx"
-            df.to_excel(filename)
+            df.to_excel(filename, index=False)  # index 제외
             
-            # 이메일 전송
-            await self.messenger.send_email(
-                subject="일일 투자 현황 리포트",
-                body="일일 투자 현황 리포트가 첨부되어 있습니다.",
-                attachment=filename
-            )
-            
-            # 메신저 알림
-            await self.messenger.send_message(f"{filename} 파일이 전달되었습니다.")
-
+            try:
+                # 이메일 전송
+                await self.messenger.send_email(
+                    subject="일일 투자 현황 리포트",
+                    body="일일 투자 현황 리포트가 첨부되어 있습니다.",
+                    attachment=filename
+                )
+                
+                # 메신저 알림
+                await self.messenger.send_message(f"{filename} 파일이 전달되었습니다.")
+            finally:
+                # 파일 정리 (이메일 전송 성공 여부와 관계없이 실행)
+                import os
+                if os.path.exists(filename):
+                    os.remove(filename)
+                    
         except Exception as e:
-            self.logger.error(f"Error generating daily report: {e}") 
+            self.logger.error(f"Error generating daily report: {e}")
+            raise  # 상위 레벨에서 처리할 수 있도록 예외 전파
 
     def create_buy_message(self, trade_data: Dict) -> str:
-        """매수 메시지 생성"""
+        """매수 메시지 생성
+        
+        매수 시점의 전략 데이터를 기반으로 메시지를 생성합니다.
+
+        Args:
+            trade_data: 거래 데이터
+        Returns:
+            매수 메시지
+        """
         strategy_data = trade_data['strategy_data']
         
         # 구매 경로 확인
@@ -136,7 +182,17 @@ class TradingManager:
 
     def create_sell_message(self, trade_data: Dict, sell_price: float, 
                            sell_signal: float) -> str:
-        """매도 메시지 생성"""
+        """매도 메시지 생성
+        
+        매도 시점의 전략 데이터를 기반으로 메시지를 생성합니다.
+
+        Args:
+            trade_data: 거래 데이터
+            sell_price: 판매 가격
+            sell_signal: 판매 신호
+        Returns:
+            매도 메시지
+        """
         strategy_data = trade_data['strategy_data']
         total_investment = trade_data.get('total_investment', 0)
         

@@ -15,12 +15,23 @@ from strategy.Strategies import (
     IchimokuStrategy,
     MarketSentimentStrategy,
     DowntrendEndStrategy,
-    UptrendEndStrategy
+    UptrendEndStrategy,
+    DivergenceStrategy
 )
 import pandas as pd
 
 class MarketAnalyzer:
+    """
+    시장 분석을 위한 클래스
+    여러 기술적 지표와 전략을 사용하여 거래 신호를 생성합니다.
+    """
     def __init__(self):
+        """
+        MarketAnalyzer 초기화
+        - MongoDB 연결 설정
+        - 로깅 설정
+        - 다양한 거래 전략 초기화
+        """
         self.db = MongoDBManager()
         self.logger = logging.getLogger(__name__)
         self.strategies = {
@@ -35,10 +46,17 @@ class MarketAnalyzer:
             'Ichimoku': IchimokuStrategy(),
             'Market_Sentiment': MarketSentimentStrategy(),
             'Downtrend_End': DowntrendEndStrategy(),
-            'Uptrend_End': UptrendEndStrategy()
+            'Uptrend_End': UptrendEndStrategy(),
+            'Divergence': DivergenceStrategy()
         }
 
     async def get_sorted_markets(self) -> List[Dict]:
+        """
+        거래량 기준으로 정렬된 시장 목록을 반환합니다.
+        
+        Returns:
+            List[Dict]: 거래량 순으로 정렬된 시장 정보 목록
+        """
         try:
             markets = await self.get_krw_markets()
             sorted_markets = sorted(
@@ -63,7 +81,16 @@ class MarketAnalyzer:
             return []
 
     async def get_candle_data(self, market: str, interval: str = "240"):
-        """4시간 봉 데이터 조회"""
+        """
+        특정 시장의 캔들 데이터를 조회합니다.
+        
+        Args:
+            market (str): 시장 코드 (예: KRW-BTC)
+            interval (str): 캔들 간격 (기본값: 240분/4시간)
+        
+        Returns:
+            List[Dict]: 변환된 캔들 데이터 또는 오류 시 None
+        """
         try:
             candle_data = await self.get_candle(market, interval)
             return self.convert_candle_data(candle_data)
@@ -72,7 +99,15 @@ class MarketAnalyzer:
             return None
 
     def convert_candle_data(self, raw_data: List[Dict]) -> List[Dict]:
-        """캔들 데이터 변환"""
+        """
+        원시 캔들 데이터를 분석하기 쉬운 형식으로 변환합니다.
+        
+        Args:
+            raw_data (List[Dict]): API에서 받은 원시 캔들 데이터
+            
+        Returns:
+            List[Dict]: 변환된 캔들 데이터
+        """
         converted_data = []
         for candle in raw_data:
             converted_data.append({
@@ -86,13 +121,35 @@ class MarketAnalyzer:
         return converted_data 
 
     def _process_strategy_result(self, result):
-        """전략 결과 처리"""
+        """
+        전략 분석 결과를 표준화된 형식으로 변환합니다.
+        
+        Args:
+            result: 전략에서 반환된 원시 결과
+            
+        Returns:
+            Dict: 표준화된 결과 ('signal'과 'strength' 포함)
+        """
         if isinstance(result, (int, float)):
             return {'signal': 'hold', 'strength': float(result)}
         return result
 
     async def analyze_market(self, market: str, candles: List[Dict]) -> Dict:
-        """시장 분석 수행"""
+        """
+        주어진 시장에 대해 모든 전략을 실행하여 종합적인 분석을 수행합니다.
+        
+        Args:
+            market (str): 분석할 시장 코드
+            candles (List[Dict]): 분석에 사용할 캔들 데이터
+            
+        Returns:
+            Dict: {
+                'action': 매수/홀드 신호,
+                'strength': 신호 강도 (0-1),
+                'price': 현재 가격,
+                'strategy_data': 각 전략별 상세 결과
+            }
+        """
         try:
             if not candles:
                 return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
