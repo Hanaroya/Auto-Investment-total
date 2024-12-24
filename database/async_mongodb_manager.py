@@ -2,6 +2,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Dict, Any
 import logging
 
+from config.mongodb_config import MONGODB_CONFIG
+
 class AsyncMongoDBManager:
     """
     MongoDB 비동기 연결 및 작업을 관리하는 싱글톤 클래스
@@ -30,7 +32,11 @@ class AsyncMongoDBManager:
         """
         if not hasattr(self, 'client'):
             try:
-                self.client = AsyncIOMotorClient('mongodb://localhost:27017/')
+                connection_url = f"mongodb://{MONGODB_CONFIG['username']}:{MONGODB_CONFIG['password']}@{MONGODB_CONFIG['host']}:{MONGODB_CONFIG['port']}"
+                self.client = AsyncIOMotorClient(
+                    connection_url,
+                    authSource='admin'
+                )
                 self.db = self.client.crypto_trading
                 logging.info("Async MongoDB 연결 성공")
             except Exception as e:

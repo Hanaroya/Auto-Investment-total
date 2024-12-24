@@ -60,7 +60,10 @@ class MongoDBManager:
             self.client = MongoClient(
                 host=MONGODB_CONFIG['host'],
                 port=MONGODB_CONFIG['port'],
-                serverSelectionTimeoutMS=5000,  # 5초 타임아웃
+                username=MONGODB_CONFIG['username'],
+                password=MONGODB_CONFIG['password'],
+                authSource='admin',  # 인증 데이터베이스
+                serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=5000,
                 socketTimeoutMS=5000
             )

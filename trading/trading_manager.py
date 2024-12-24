@@ -99,7 +99,7 @@ class TradingManager:
     async def generate_daily_report(self):
         """일일 리포트 생성
         
-        개선사항:
+        Note:
         - 예외 처리 강화
         - 파일 처리 후 정리
         """
@@ -110,12 +110,51 @@ class TradingManager:
                 self.logger.info("거래 데이터가 없습니다.")
                 return
             
-            # DataFrame 생성
-            df = pd.DataFrame(trades)
+            # 전체 거래 기록용 DataFrame
+            trades_df = pd.DataFrame(trades)
             
-            # 엑셀 파일 생성
+            # 현재 보유 현황 계산
+            holdings_df = pd.DataFrame([
+                trade for trade in trades 
+                if trade['status'] == 'active'
+            ])
+            
+            if not holdings_df.empty:
+                holdings_df = holdings_df[['coin', 'investment_amount', 'status', 'price', 'timestamp']]
+                total_investment = holdings_df['investment_amount'].sum()
+                
+                # 투자 비중 계산
+                holdings_df['investment_ratio'] = holdings_df['investment_amount'] / total_investment * 100
+            
+            # Excel 파일 생성
             filename = f"투자현황-{datetime.now().strftime('%Y%m%d')}.xlsx"
-            df.to_excel(filename, index=False)  # index 제외
+            with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+                # 거래 기록 시트
+                trades_df.to_excel(writer, sheet_name='거래기록', index=False)
+                
+                # 보유 현황 시트
+                if not holdings_df.empty:
+                    holdings_df.to_excel(writer, sheet_name='거래현황', index=False)
+                    
+                    # 원형 그래프 생성
+                    workbook = writer.book
+                    worksheet = writer.sheets['거래현황']
+                    
+                    chart = workbook.add_chart({'type': 'pie'})
+                    
+                    # 데이터 범위 설정
+                    last_row = len(holdings_df) + 1
+                    chart.add_series({
+                        'name': '투자 비중',
+                        'categories': f'=거래현황!$A$2:$A${last_row}',  # 코인명
+                        'values': f'=거래현황!$B$2:$B${last_row}',      # 투자금액
+                    })
+                    
+                    chart.set_title({'name': '코인별 투자 비중'})
+                    chart.set_style(10)
+                    
+                    # 차트 삽입
+                    worksheet.insert_chart('G2', chart)
             
             try:
                 # 이메일 전송
@@ -128,14 +167,14 @@ class TradingManager:
                 # 메신저 알림
                 await self.messenger.send_message(f"{filename} 파일이 전달되었습니다.")
             finally:
-                # 파일 정리 (이메일 전송 성공 여부와 관계없이 실행)
+                # 파일 정리
                 import os
                 if os.path.exists(filename):
                     os.remove(filename)
                     
         except Exception as e:
-            self.logger.error(f"Error generating daily report: {e}")
-            raise  # 상위 레벨에서 처리할 수 있도록 예외 전파
+            self.logger.error(f"일일 리포트 생성 중 오류 발생: {e}")
+            raise
 
     def create_buy_message(self, trade_data: Dict) -> str:
         """매수 메시지 생성

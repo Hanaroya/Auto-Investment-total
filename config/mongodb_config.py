@@ -2,6 +2,8 @@ MONGODB_CONFIG = { # 몽고DB 설정
     'host': 'localhost', # 호스트
     'port': 27017, # 포트
     'db_name': 'crypto_trading', # 데이터베이스 이름
+    'username': 'autotrade',
+    'password': '[REDACTED]',
     'collections': {
         'trades': 'trades', # 거래 데이터
         'market_data': 'market_data', # 시장 데이터

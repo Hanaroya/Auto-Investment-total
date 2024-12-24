@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: auto_trading_db
+    ports:
+      - 27017:27017
+    volumes:
+      - ./containers/mongoDB/db:/data/db/
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=[REDACTED]
+      - MONGO_INITDB_ROOT_PASSWORD=[REDACTED]
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "1" 
+        max-size: "500m"
