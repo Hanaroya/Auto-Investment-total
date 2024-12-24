@@ -19,21 +19,27 @@ from strategy.Strategies import (
     DivergenceStrategy
 )
 import pandas as pd
+from trade_market_api.UpbitCall import UpbitCall
 
 class MarketAnalyzer:
     """
     시장 분석을 위한 클래스
     여러 기술적 지표와 전략을 사용하여 거래 신호를 생성합니다.
     """
-    def __init__(self):
+    def __init__(self, config):
         """
         MarketAnalyzer 초기화
-        - MongoDB 연결 설정
-        - 로깅 설정
-        - 다양한 거래 전략 초기화
+        Args:
+            config: 설정 정보가 담긴 딕셔너리
         """
+        self.config = config
         self.db = MongoDBManager()
         self.logger = logging.getLogger(__name__)
+        self.upbit = UpbitCall(
+            self.config['api_keys']['upbit']['access_key'],
+            self.config['api_keys']['upbit']['secret_key'],
+            is_test=True
+        )
         self.strategies = {
             'RSI': RSIStrategy(),
             'MACD': MACDStrategy(),
@@ -53,29 +59,24 @@ class MarketAnalyzer:
     async def get_sorted_markets(self) -> List[Dict]:
         """
         거래량 기준으로 정렬된 시장 목록을 반환합니다.
-        
-        Returns:
-            List[Dict]: 거래량 순으로 정렬된 시장 정보 목록
         """
         try:
-            markets = await self.get_krw_markets()
-            sorted_markets = sorted(
-                markets, 
-                key=lambda x: float(x.get('accTradeVolume', 0)), 
-                reverse=True
-            )
+            # 동기 함수로 호출
+            markets = self.upbit.get_krw_markets() 
             
-            # 시장 데이터 저장
-            for market in sorted_markets:
-                await self.db.update_market_data(
-                    market['market'],
-                    {
-                        'acc_trade_volume': market['accTradeVolume'],
-                        'timestamp': datetime.utcnow()
-                    }
-                )
+            # 마켓 데이터를 딕셔너리 형태로 변환
+            market_data = []
+            for market in markets:
+                data = {
+                    'market': market,
+                    'timestamp': datetime.utcnow()
+                }
+                # DB 업데이트
+                self.db.update_market_data(market, data)
+                market_data.append(data)
             
-            return sorted_markets
+            return market_data
+            
         except Exception as e:
             self.logger.error(f"Error in get_sorted_markets: {e}")
             return []

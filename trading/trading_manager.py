@@ -268,3 +268,43 @@ class TradingManager:
 
         message += "\n------------------------------------------------"
         return message
+
+    async def close_all_positions(self):
+        """
+        모든 활성 포지션 종료
+        
+        Args:
+            coin: 종목명
+            thread_id: 스레드 ID
+            signal_strength: 신호 강도
+            price: 현재 가격
+            strategy_data: 전략 데이터
+
+        Returns:
+            True: 성공
+            False: 실패
+        
+        Notes:
+        - 포지션 정리 시 강제 매도 신호를 사용하여 모든 포지션을 종료합니다.
+        - 강제 매도 신호는 1.0으로 설정되어 있으며, 이는 강제적인 매도를 의미합니다.
+        """
+        try:
+            # 활성 거래 조회
+            active_trades = await self.db.get_collection('trades').find({
+                'status': 'active'
+            }).to_list(None)
+
+            for trade in active_trades:
+                # 각 거래에 대해 매도 처리
+                await self.process_sell_signal(
+                    coin=trade['coin'],
+                    thread_id=trade['thread_id'],
+                    signal_strength=1.0,  # 강제 매도 신호
+                    price=trade['price'],  # 현재 가격 필요
+                    strategy_data={'forced_sell': True}
+                )
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"포지션 정리 중 오류 발생: {e}")
+            return False

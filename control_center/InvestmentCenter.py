@@ -61,6 +61,10 @@ class InvestmentCenter:
         self.messenger = self._initialize_messenger()  # 메신저 초기화
         self.logger = self._setup_logger()  # 로거 설정
         self.is_running = False  # 실행 상태 플래그
+        self.upbit = UpbitCall(
+            access_key=self.config['api_keys']['upbit']['access_key'],
+            secret_key=self.config['api_keys']['upbit']['secret_key']   
+        )
         self.scheduled_tasks = []  # 예약된 작업 목록
         self.strategy_manager = self._initialize_strategies()  # 전략 관리자 초기화
         
@@ -219,7 +223,7 @@ class InvestmentCenter:
     def _check_api_status(self) -> bool:
         """API 상태 확인"""
         try:
-            markets = self.exchange.get_krw_markets()
+            markets = self.upbit.get_krw_markets() # 원화 마켓 목록 조회 (거래량 순)
             return bool(markets)
         except Exception:
             return False

@@ -5,6 +5,8 @@ import logging
 from datetime import datetime
 import sys
 from config.mongodb_config import MONGODB_CONFIG, INITIAL_SYSTEM_CONFIG
+import os
+from urllib.parse import quote_plus
 
 class MongoDBManager:
     _instance = None
@@ -50,21 +52,26 @@ class MongoDBManager:
         MongoDB 연결 URL을 생성하고 MongoClient를 사용하여 연결합니다.
         """
         try:
-            connection_url = (
-                f"mongodb://{MONGODB_CONFIG['username']}:{MONGODB_CONFIG['password']}"
-                f"@{MONGODB_CONFIG['host']}:{MONGODB_CONFIG['port']}/{MONGODB_CONFIG['db_name']}"
-            )
-            self.client = MongoClient(
-                connection_url,
-                authSource=MONGODB_CONFIG['db_name'],
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000
-            )
+            # MongoDB 연결 문자열 구성
+            username = os.getenv('MONGO_ROOT_USERNAME')
+            password = os.getenv('MONGO_ROOT_PASSWORD')
+            host = os.getenv('MONGO_HOST', 'localhost')
+            port = int(os.getenv('MONGO_PORT', '25000'))
+            db_name = os.getenv('MONGO_DB_NAME', 'trading_db')
+
+            # URL 인코딩된 비밀번호 생성
+            encoded_password = quote_plus(password)
+
+            # MongoDB 연결 (authSource=admin 추가)
+            connection_string = f"mongodb://{username}:{encoded_password}@{host}:{port}/{db_name}?authSource=admin"
+            
+            self.client = MongoClient(connection_string)
+            self.db = self.client[db_name]
+            
             # 연결 테스트
             self.client.server_info()
-            self.db = self.client[MONGODB_CONFIG['db_name']]
             logging.info("MongoDB 연결 성공")
+
         except Exception as e:
             logging.error(f"MongoDB 연결 실패: {str(e)}")
             raise
@@ -113,7 +120,7 @@ class MongoDBManager:
         """특정 컬렉션 반환
         컬렉션 이름을 기반으로 컬렉션 참조를 반환합니다.
         """
-        return self.db[MONGODB_CONFIG['collections'].get(collection_name, collection_name)]
+        return self.db[collection_name]
 
     # 거래 관련 메서드
     def insert_trade(self, trade_data: Dict[str, Any]) -> str:
@@ -225,36 +232,39 @@ class MongoDBManager:
 
     def _check_docker_container(self):
         """도커 컨테이너 상태 확인 및 실행
-        trading_db 컨테이너가 실행 중인지 확인하고, 없으면 실행합니다.
+        auto_trading_db 컨테이너가 실행 중인지 확인하고, 없으면 실행합니다.
         """
         try:
             import docker
-            client = docker.from_client()
+            client = docker.from_env()
             
-            # 컨테이너 찾기
-            containers = client.containers.list(all=True, filters={'name': 'trading_db'})
+            containers = client.containers.list(all=True, filters={'name': 'auto_trading_db'})
             
             if not containers:
-                logging.warning("trading_db 컨테이너를 찾을 수 없습니다. 새로 실행합니다.")
+                logging.warning("auto_trading_db 컨테이너를 찾을 수 없습니다. 새로 실행합니다.")
                 client.containers.run(
                     'mongo:latest',
-                    name='trading_db',
-                    ports={'27017/tcp': 25000},
+                    name='auto_trading_db',
+                    ports={'25000/tcp': 25000},  # 27017을 25000으로 변경
+                    command='mongod --port 25000',  # MongoDB 서버 포트를 25000으로 설정
+                    environment={
+                        'MONGO_INITDB_ROOT_USERNAME': MONGODB_CONFIG['username'],
+                        'MONGO_INITDB_ROOT_PASSWORD': MONGODB_CONFIG['password'],
+                        'MONGO_INITDB_DATABASE': MONGODB_CONFIG['db_name']
+                    },
                     detach=True
                 )
-                logging.info("trading_db 컨테이너가 성공적으로 시작되었습니다.")
+                logging.info("auto_trading_db 컨테이너가 성공적으로 시작되었습니다.")
             else:
                 container = containers[0]
-                # 컨테이너가 실행 중이 아니면 시작
                 if container.status != 'running':
                     container.start()
-                    logging.info("trading_db 컨테이너를 시작했습니다.")
+                    logging.info("auto_trading_db 컨테이너를 시작했습니다.")
                 
-                # 포트 확인
                 container_info = container.attrs
                 port_bindings = container_info['HostConfig']['PortBindings']
-                if '27017/tcp' not in port_bindings or port_bindings['27017/tcp'][0]['HostPort'] != '25000':
-                    raise Exception("trading_db 컨테이너의 포트가 25000이 아닙니다.")
+                if '25000/tcp' not in port_bindings or port_bindings['25000/tcp'][0]['HostPort'] != '25000':
+                    raise Exception("auto_trading_db 컨테이너의 포트가 25000이 아닙니다.")
                 
         except Exception as e:
             logging.error(f"도커 컨테이너 확인 중 오류 발생: {str(e)}")

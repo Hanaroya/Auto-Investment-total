@@ -5,7 +5,7 @@ def get_mongodb_config() -> Dict[str, Any]:
     """MongoDB 설정을 환경 변수에서 가져옵니다."""
     return {
         'host': os.getenv('MONGO_HOST', 'localhost'),
-        'port': int(os.getenv('MONGO_PORT', '27017')),
+        'port': int(os.getenv('MONGO_PORT', '25000')),
         'db_name': os.getenv('MONGO_DB_NAME', 'trading_db'),
         'username': os.getenv('MONGO_USER_USERNAME'),
         'password': os.getenv('MONGO_USER_PASSWORD'),

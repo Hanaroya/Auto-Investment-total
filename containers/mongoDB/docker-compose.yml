@@ -5,14 +5,15 @@ services:
     image: mongo:latest
     container_name: auto_trading_db
     ports:
-      - 25000:27017 # 포트 포워딩 : 컨테이너 포트 -> 호스트 포트 
+      - 25000:25000
     volumes:
       - ./containers/mongoDB/db:/data/db/
       - ./containers/mongoDB/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    command: mongod --port 25000 --auth
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
-      - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - MONGO_INITDB_DATABASE=${MONGO_DB_NAME}
       - MONGO_USER_USERNAME=${MONGO_USER_USERNAME}
       - MONGO_USER_PASSWORD=${MONGO_USER_PASSWORD}
     restart: always

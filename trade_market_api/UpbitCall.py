@@ -154,7 +154,7 @@ class UpbitCall:
         jwt_token = jwt.encode(payload, self.secret_key)
         return {'Authorization': f'Bearer {jwt_token}'}
 
-    async def get_krw_markets(self) -> List[str]:
+    def get_krw_markets(self) -> List[str]:
         """원화 마켓 목록 조회 (거래량 순)
         
         Returns:
@@ -162,29 +162,28 @@ class UpbitCall:
         """
         try:
             url = "https://crix-api.upbit.com/v1/crix/trends/change_rate"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self.user_agent) as response:
-                    markets = await response.json()
-                    
-                    # KRW 마켓만 필터링하고 거래량으로 정렬
-                    krw_markets = [
-                        market for market in markets 
-                        if 'KRW-' in market['code']
-                    ]
-                    
-                    # accTradeVolume 기준으로 정렬
-                    sorted_markets = sorted(
-                        krw_markets,
-                        key=lambda x: float(x.get('accTradeVolume', 0)),
-                        reverse=True
-                    )
-                    
-                    # 코인 이름만 추출
-                    return [
-                        market['code'].replace("CRIX.UPBIT.", '')
-                        for market in sorted_markets
-                    ]
-                    
+            response = requests.get(url, headers=self.user_agent)
+            markets = response.json()
+            
+            # KRW 마켓만 필터링하고 거래량으로 정렬
+            krw_markets = [
+                market for market in markets 
+                if 'KRW-' in market['code']
+            ]
+            
+            # accTradeVolume 기준으로 정렬
+            sorted_markets = sorted(
+                krw_markets,
+                key=lambda x: float(x.get('accTradeVolume', 0)),
+                reverse=True
+            )
+            
+            # 코인 이름만 추출
+            return [
+                market['code'].replace("CRIX.UPBIT.", '')
+                for market in sorted_markets
+            ]
+                
         except Exception as e:
             self.logger.error(f"원화 마켓 목록 조회 실패: {str(e)}")
             return []
