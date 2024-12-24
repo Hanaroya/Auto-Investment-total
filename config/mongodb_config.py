@@ -1,23 +1,33 @@
-MONGODB_CONFIG = { # 몽고DB 설정
-    'host': 'localhost', # 호스트
-    'port': 27017, # 포트
-    'db_name': 'crypto_trading', # 데이터베이스 이름
-    'username': 'autotrade',
-    'password': '[REDACTED]',
-    'collections': {
-        'trades': 'trades', # 거래 데이터
-        'market_data': 'market_data', # 시장 데이터
-        'thread_status': 'thread_status', # 스레드 상태
-        'system_config': 'system_config' # 시스템 설정
-    }
-}
+import os
+from typing import Dict, Any
 
-# 초기 시스템 설정
-INITIAL_SYSTEM_CONFIG = {
-    'initial_investment': 1000000, # 초기 투자 금액
-    'min_trade_amount': 5000, # 최소 거래 금액
-    'max_thread_investment': 80000, # 스레드 최대 투자 금액
-    'reserve_amount': 200000, # 예비 금액
-    'total_max_investment': 800000, # 총 최대 투자 금액
-    'emergency_stop': False # 긴급 중지 여부
-} 
+def get_mongodb_config() -> Dict[str, Any]:
+    """MongoDB 설정을 환경 변수에서 가져옵니다."""
+    return {
+        'host': os.getenv('MONGO_HOST', 'localhost'),
+        'port': int(os.getenv('MONGO_PORT', '27017')),
+        'db_name': os.getenv('MONGO_DB_NAME', 'trading_db'),
+        'username': os.getenv('MONGO_USER_USERNAME'),
+        'password': os.getenv('MONGO_USER_PASSWORD'),
+        'collections': {
+            'trades': 'trades',           # 거래 데이터
+            'market_data': 'market_data', # 시장 데이터
+            'thread_status': 'thread_status', # 스레드 상태
+            'system_config': 'system_config'  # 시스템 설정
+        }
+    }
+
+def get_initial_system_config() -> Dict[str, Any]:
+    """시스템 초기 설정을 환경 변수에서 가져옵니다."""
+    return {
+        'initial_investment': int(os.getenv('INITIAL_INVESTMENT', '1000000')),
+        'min_trade_amount': int(os.getenv('MIN_TRADE_AMOUNT', '5000')),
+        'max_thread_investment': int(os.getenv('MAX_THREAD_INVESTMENT', '80000')),
+        'reserve_amount': int(os.getenv('RESERVE_AMOUNT', '200000')),
+        'total_max_investment': int(os.getenv('TOTAL_MAX_INVESTMENT', '800000')),
+        'emergency_stop': False
+    }
+
+# 설정 객체 생성
+MONGODB_CONFIG = get_mongodb_config()
+INITIAL_SYSTEM_CONFIG = get_initial_system_config() 

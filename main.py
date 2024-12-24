@@ -16,10 +16,6 @@ logger = logging.getLogger(__name__)
 # .env 파일 로드
 load_dotenv()
 
-# 환경 변수 사용 예시
-mongo_username = os.getenv('MONGO_ROOT_USERNAME')
-mongo_password = os.getenv('MONGO_ROOT_PASSWORD')
-
 class CryptoTradingBot:
     def __init__(self):
         self.db = MongoDBManager()

@@ -1,8 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Dict, Any
 import logging
-
-from config.mongodb_config import MONGODB_CONFIG
+from config.mongodb_config import MONGODB_CONFIG, INITIAL_SYSTEM_CONFIG
 
 class AsyncMongoDBManager:
     """
@@ -23,25 +22,33 @@ class AsyncMongoDBManager:
     async def initialize(self):
         """
         MongoDB 데이터베이스 연결 초기화
-        - 로컬호스트의 27017 포트에 연결을 시도합니다.
-        - 데이터베이스 이름: crypto_trading
-        - 이미 연결된 경우 재연결하지 않습니다.
-        
-        Raises:
-            Exception: MongoDB 연결 실패시 발생
         """
         if not hasattr(self, 'client'):
             try:
-                connection_url = f"mongodb://{MONGODB_CONFIG['username']}:{MONGODB_CONFIG['password']}@{MONGODB_CONFIG['host']}:{MONGODB_CONFIG['port']}"
+                connection_url = (
+                    f"mongodb://{MONGODB_CONFIG['username']}:{MONGODB_CONFIG['password']}"
+                    f"@{MONGODB_CONFIG['host']}:{MONGODB_CONFIG['port']}/{MONGODB_CONFIG['db_name']}"
+                )
                 self.client = AsyncIOMotorClient(
                     connection_url,
-                    authSource='admin'
+                    authSource=MONGODB_CONFIG['db_name']
                 )
-                self.db = self.client.crypto_trading
+                self.db = self.client[MONGODB_CONFIG['db_name']]
+                
+                # 시스템 설정 초기화 확인
+                await self._ensure_system_config()
+                
                 logging.info("Async MongoDB 연결 성공")
             except Exception as e:
                 logging.error(f"Async MongoDB 연결 실패: {str(e)}")
                 raise
+
+    async def _ensure_system_config(self):
+        """시스템 설정이 없는 경우 초기 설정을 생성합니다."""
+        config_collection = self.db[MONGODB_CONFIG['collections']['system_config']]
+        if await config_collection.count_documents({}) == 0:
+            await config_collection.insert_one(INITIAL_SYSTEM_CONFIG)
+            logging.info("시스템 초기 설정이 생성되었습니다.")
 
     async def get_active_trades(self):
         """

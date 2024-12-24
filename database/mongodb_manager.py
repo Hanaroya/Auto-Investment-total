@@ -1,33 +1,28 @@
 from pymongo import MongoClient
 from pymongo.collection import Collection
-from pymongo.database import Database
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 import logging
 from datetime import datetime
 import sys
-
-from config.mongodb_config import MONGODB_CONFIG
+from config.mongodb_config import MONGODB_CONFIG, INITIAL_SYSTEM_CONFIG
 
 class MongoDBManager:
-    """
-    MongoDB 데이터베이스 관리를 위한 싱글톤 클래스
-    모든 데이터베이스 연결과 작업을 관리합니다.
-    """
     _instance = None
-
+    """
+    MongoDB 연결 및 작업을 관리하는 싱글톤 클래스
+    """
     def __new__(cls):
         """
         싱글톤 패턴 구현
-        한 번만 인스턴스화되도록 보장합니다.
+        한 번만 인스턴스를 생성하고 이후에는 동일한 인스턴스를 반환합니다.
         """
         if cls._instance is None:
             cls._instance = super(MongoDBManager, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
-        """
-        초기화 메서드
-        - 이미 초기화된 경우 재연결하지 않습니다.
+        """초기화 메서드
+        MongoDB 연결 및 컬렉션 설정을 초기화합니다.
         """
         if not hasattr(self, 'initialized'):
             self.client = None
@@ -37,9 +32,8 @@ class MongoDBManager:
             self._setup_collections()
 
     def __del__(self):
-        """
-        소멸자에서 연결 종료
-        - 연결이 열려 있는 경우 닫습니다.
+        """소멸자에서 연결 종료
+        MongoDB 연결을 종료하고 로깅합니다.
         """
         try:
             if hasattr(self, 'client') and self.client and not hasattr(sys, 'is_finalizing'):
@@ -50,19 +44,17 @@ class MongoDBManager:
                 logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
 
     def _connect(self):
-        """
-        MongoDB 서버에 연결을 설정합니다.
-        - host, port: 설정 파일에서 정의된 연결 정보 사용
-        - 타임아웃: 연결(5초), 소켓(5초), 서버선택(5초) 설정
-        - 연결 실패시 예외 발생
+        """MongoDB 서버에 연결
+        MongoDB 연결 URL을 생성하고 MongoClient를 사용하여 연결합니다.
         """
         try:
+            connection_url = (
+                f"mongodb://{MONGODB_CONFIG['username']}:{MONGODB_CONFIG['password']}"
+                f"@{MONGODB_CONFIG['host']}:{MONGODB_CONFIG['port']}/{MONGODB_CONFIG['db_name']}"
+            )
             self.client = MongoClient(
-                host=MONGODB_CONFIG['host'],
-                port=MONGODB_CONFIG['port'],
-                username=MONGODB_CONFIG['username'],
-                password=MONGODB_CONFIG['password'],
-                authSource='admin',  # 인증 데이터베이스
+                connection_url,
+                authSource=MONGODB_CONFIG['db_name'],
                 serverSelectionTimeoutMS=5000,
                 connectTimeoutMS=5000,
                 socketTimeoutMS=5000
@@ -76,25 +68,50 @@ class MongoDBManager:
             raise
 
     def _setup_collections(self):
-        """
-        필요한 컬렉션들을 초기화하고 인덱스를 생성합니다.
-        - trades 컬렉션: 거래 기록 저장
-        - 인덱스: market(오름차순), timestamp(내림차순), status(오름차순)
+        """컬렉션 설정 및 인덱스 생성
+        컬렉션 참조 설정 및 인덱스 생성을 수행합니다.
         """
         try:
-            self.trades = self.db['trades']
+            # 컬렉션 참조 설정
+            self.trades = self.db[MONGODB_CONFIG['collections']['trades']]
+            self.market_data = self.db[MONGODB_CONFIG['collections']['market_data']]
+            self.thread_status = self.db[MONGODB_CONFIG['collections']['thread_status']]
+            self.system_config = self.db[MONGODB_CONFIG['collections']['system_config']]
+
+            # 인덱스 생성
             self.trades.create_index([("market", 1), ("timestamp", -1)])
             self.trades.create_index([("status", 1)])
+            
+            # 시스템 설정 초기화 확인
+            self._initialize_system_config()
+            
             logging.info("MongoDB 컬렉션 설정 완료")
         except Exception as e:
             logging.error(f"컬렉션 설정 실패: {str(e)}")
             raise
 
+    def _initialize_system_config(self):
+        """시스템 설정 초기화
+        시스템 설정이 초기화되지 않은 경우 초기 설정을 삽입합니다.
+        """
+        try:
+            if not self.system_config.find_one({'_id': 'config'}):
+                initial_config = {
+                    '_id': 'config',
+                    **INITIAL_SYSTEM_CONFIG,
+                    'created_at': datetime.utcnow()
+                }
+                self.system_config.insert_one(initial_config)
+                logging.info("시스템 설정 초기화 완료")
+        except Exception as e:
+            logging.error(f"시스템 설정 초기화 실패: {str(e)}")
+            raise
+
     def get_collection(self, collection_name: str) -> Collection:
+        """특정 컬렉션 반환
+        컬렉션 이름을 기반으로 컬렉션 참조를 반환합니다.
         """
-        특정 컬렉션을 가져옵니다.
-        """
-        return self.db[collection_name]
+        return self.db[MONGODB_CONFIG['collections'].get(collection_name, collection_name)]
 
     # 거래 관련 메서드
     def insert_trade(self, trade_data: Dict[str, Any]) -> str:
@@ -171,48 +188,26 @@ class MongoDBManager:
     def get_system_config(self) -> Dict[str, Any]:
         """
         시스템 설정을 가져옵니다.
+
+        Returns:
+            Dict[str, Any]: 시스템 설정 데이터
         """
         config = self.db.system_config.find_one({'_id': 'config'})
         return config if config else {}
 
     def update_system_config(self, config_data: Dict[str, Any]) -> bool:
-        """시스템 설정 업데이트"""
+        """시스템 설정 업데이트
+        - 시스템 설정을 업데이트하고 결과를 반환합니다.
+
+        Returns:
+            bool: 업데이트 성공 여부
+        """
         result = self.db.system_config.update_one(
             {'_id': 'config'},
             {'$set': config_data},
             upsert=True
         )
         return True if result.upserted_id or result.modified_count > 0 else False
-
-    def _initialize_system_config(self):
-        """
-        시스템 설정을 초기화합니다.
-        기본 설정값:
-        - initial_investment: 초기 투자금 (1,000,000원)
-        - min_trade_amount: 최소 거래금액 (5,000원)
-        - max_thread_investment: 스레드당 최대 투자금액 (80,000원)
-        - reserve_amount: 예비금 (200,000원)
-        - total_max_investment: 총 최대 투자금액 (800,000원)
-        - emergency_stop: 긴급정지 플래그
-        """
-        try:
-            config_collection = self.db['system_config']
-            if not config_collection.find_one({'_id': 'config'}):
-                initial_config = {
-                    '_id': 'config',
-                    'initial_investment': 1000000,  # 초기 투자금
-                    'min_trade_amount': 5000,      # 최소 거래금액
-                    'max_thread_investment': 80000, # 스레드당 최대 투자금액
-                    'reserve_amount': 200000,       # 예비금
-                    'total_max_investment': 800000, # 총 최대 투자금액
-                    'emergency_stop': False,        # 긴급정지 플래그
-                    'created_at': datetime.utcnow()
-                }
-                config_collection.insert_one(initial_config)
-                logging.info("시스템 설정 초기화 완료")
-        except Exception as e:
-            logging.error(f"시스템 설정 초기화 실패: {str(e)}")
-            raise 
 
     def close(self):
         """

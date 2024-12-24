@@ -8,9 +8,13 @@ services:
       - 27017:27017
     volumes:
       - ./containers/mongoDB/db:/data/db/
+      - ./containers/mongoDB/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - MONGO_DB_NAME=${MONGO_DB_NAME}
+      - MONGO_USER_USERNAME=${MONGO_USER_USERNAME}
+      - MONGO_USER_PASSWORD=${MONGO_USER_PASSWORD}
     restart: always
     logging:
       driver: "json-file"
