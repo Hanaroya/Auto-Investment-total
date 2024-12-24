@@ -30,3 +30,9 @@ autotrade/
 .Trashes
 ehthumbs.db
 Thumbs.db 
+
+# MongoDB
+db/
+
+# Environment
+.env
