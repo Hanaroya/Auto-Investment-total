@@ -319,43 +319,68 @@ class TradingManager:
         """
         try:
             # 활성 거래(현재 보유 중인 포지션) 조회
-            active_trades = await self.db.get_collection('trades').find({
-                'status': 'active'
-            }).to_list(None)
+            collection = self.db.get_collection('trades')
+            active_trades = await collection.find({'status': 'active'}).to_list(None)
             
             if not active_trades:
                 message = "현재 보유 중인 코인이 없습니다."
                 await self.messenger.send_message(message)
                 return
             
-            # 총 투자금액 계산
-            total_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
+            # 총 투자금액과 현재 가치 계산을 위한 변수
+            total_investment = 0
+            total_current_value = 0
             
             # 메시지 생성
             current_time = datetime.now().strftime('%Y-%m-%d %H:00')
             message = (
                 f"📊 시간별 투자 현황 ({current_time})\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 총 투자금액: ₩{total_investment:,}\n"
-                f"📈 보유 코인: {len(active_trades)}개\n\n"
             )
             
             # 각 코인별 상세 정보
             for trade in active_trades:
                 hold_time = datetime.utcnow() - trade['timestamp']
-                hours = hold_time.total_seconds() / 3600  # 보유 시간(시간 단위)
+                hours = hold_time.total_seconds() / 3600
+                
+                # 현재 가격 조회 (이 부분은 거래소 API를 통해 구현 필요)
+                current_price = await self.get_current_price(trade['coin'])
+                investment_amount = trade.get('investment_amount', 0)
+                
+                # 수익률 계산
+                profit_rate = ((current_price - trade['price']) / trade['price']) * 100
+                profit_amount = investment_amount * (profit_rate / 100)
+                
+                # 총계 계산
+                total_investment += investment_amount
+                total_current_value += (investment_amount + profit_amount)
                 
                 coin_info = (
                     f"• {trade['coin']}\n"
                     f"  └ 매수가: ₩{trade['price']:,}\n"
+                    f"  └ 현재가: ₩{current_price:,}\n"
+                    f"  └ 수익률: {profit_rate:+.2f}% (₩{profit_amount:+,.0f})\n"
                     f"  └ 매수시간: {trade['timestamp'].strftime('%Y-%m-%d %H:%M')}"
                     f" ({hours:.1f}시간 전)\n"
                     f"  └ 매수 임계값: {trade['strategy_data'].get('buy_threshold', 'N/A')}\n"
-                    f"  └ 투자금액: ₩{trade.get('investment_amount', 0):,}\n"
+                    f"  └ 투자금액: ₩{investment_amount:,}\n"
                 )
                 message += coin_info + "\n"
             
-            message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            # 전체 포트폴리오 수익률
+            total_profit_rate = ((total_current_value - total_investment) / total_investment * 100) if total_investment > 0 else 0
+            total_profit_amount = total_current_value - total_investment
+            
+            portfolio_summary = (
+                f"📈 포트폴리오 요약\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 총 투자금액: ₩{total_investment:,}\n"
+                f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
+                f"📊 총 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"🔢 보유 코인: {len(active_trades)}개\n"
+            )
+            
+            message = portfolio_summary + "\n" + message + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # Slack으로 메시지 전송
             await self.messenger.send_message(message)

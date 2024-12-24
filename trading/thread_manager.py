@@ -9,6 +9,7 @@ from trading.trading_manager import TradingManager
 from datetime import datetime, timedelta
 import time
 import signal
+from control_center.InvestmentCenter import InvestmentCenter
 
 class TradingThread(threading.Thread):
     """
@@ -19,7 +20,8 @@ class TradingThread(threading.Thread):
                  market_analyzer: MarketAnalyzer, 
                  trading_manager: TradingManager,
                  event_loop,
-                 shared_locks: Dict[str, threading.Lock]):
+                 shared_locks: Dict[str, threading.Lock],
+                 config: Dict):
         """
         Args:
             thread_id (int): 스레드 식별자
@@ -28,6 +30,7 @@ class TradingThread(threading.Thread):
             trading_manager (TradingManager): 거래 관리자 인스턴스
             event_loop: 비동기 이벤트 루프
             shared_locks (Dict[str, threading.Lock]): 공유 리소스에 대한 락
+            config: 설정 정보가 담긴 딕셔너리
         """
         super().__init__()
         self.thread_id = thread_id
@@ -37,7 +40,9 @@ class TradingThread(threading.Thread):
         self.db = MongoDBManager()
         self.event_loop = event_loop
         self.stop_flag = threading.Event()
-        self.logger = logging.getLogger(f"TradingThread-{thread_id}")
+        
+        # InvestmentCenter의 로거 사용
+        self.logger = logging.getLogger('InvestmentCenter').getChild(f'Thread-{thread_id}')
         self.shared_locks = shared_locks
 
     def run(self):
@@ -227,7 +232,10 @@ class ThreadManager:
         self.threads: List[TradingThread] = []
         self.trading_manager = TradingManager()
         self.db = MongoDBManager()
-        self.logger = logging.getLogger(__name__)
+        
+        # InvestmentCenter의 로거 사용
+        self.logger = logging.getLogger('InvestmentCenter').getChild('ThreadManager')
+        
         self.event_loop = asyncio.get_event_loop()
         
         # 공유 리소스에 대한 락 초기화
@@ -278,7 +286,8 @@ class ThreadManager:
                     market_analyzer=self.market_analyzer,
                     trading_manager=self.trading_manager,
                     event_loop=self.event_loop,
-                    shared_locks=self.shared_locks
+                    shared_locks=self.shared_locks,
+                    config=self.config
                 )
                 thread.start()
                 self.threads.append(thread)

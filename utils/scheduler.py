@@ -4,6 +4,7 @@ from datetime import datetime, time, timedelta
 from typing import Callable, Dict, Any
 import aioschedule as schedule
 from database.mongodb_manager import MongoDBManager
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 class Scheduler:
     def __init__(self):
@@ -32,39 +33,35 @@ class Scheduler:
         except Exception as e:
             self.logger.error(f"Error scheduling daily report: {e}")
 
-    async def schedule_task(self, task_id: str, func: Callable, 
-                          interval: int = None, at_time: str = None):
-        """새로운 작업 스케줄링"""
+    async def schedule_task(self, task_name: str, task_func, interval: int = 3600):
+        """태스크 스케줄링
+        
+        Args:
+            task_name: 태스크 이름
+            task_func: 실행할 함수
+            interval: 실행 간격 (초)
+        """
         try:
-            if interval:
-                schedule.every(interval).seconds.do(func)
-            elif at_time:
-                schedule.every().day.at(at_time).do(func)
-
-            self.tasks[task_id] = {
-                'func': func,
-                'interval': interval,
-                'at_time': at_time,
-                'last_run': datetime.now()
-            }
-
-            await self.db.get_collection('scheduled_tasks').update_one(
-                {'_id': task_id},
-                {
-                    '$set': {
-                        'interval': interval,
-                        'at_time': at_time,
-                        'last_run': datetime.now(),
-                        'status': 'active'
-                    }
-                },
-                upsert=True
+            # 스케줄러 설정
+            scheduler = AsyncIOScheduler()
+            
+            # 태스크 등록 (매 interval 초마다 실행)
+            scheduler.add_job(
+                task_func,
+                'interval',
+                seconds=interval,
+                id=task_name,
+                next_run_time=datetime.now()  # 즉시 첫 실행
             )
-
-            self.logger.info(f"Task {task_id} scheduled successfully")
-
+            
+            # 스케줄러 시작
+            scheduler.start()
+            
+            self.logger.info(f"Task {task_name} scheduled to run every {interval} seconds")
+            
         except Exception as e:
-            self.logger.error(f"Error scheduling task {task_id}: {e}")
+            self.logger.error(f"Error scheduling task {task_name}: {str(e)}")
+            raise
 
     async def cancel_task(self, task_id: str):
         """예약된 작업 취소"""

@@ -48,7 +48,7 @@ class CryptoTradingBot:
         try:
             await self.initialize()
             
-            # 코인 시장 정보 수집 및 정렬 (이미 있는 메서드 사용)
+            # 코인 시장 정보 수집 및 정렬
             markets = await self.market_analyzer.get_sorted_markets()
             if not markets:
                 await self.messenger.send_message("마켓 정보를 가져오는데 실패했습니다.")
@@ -63,7 +63,9 @@ class CryptoTradingBot:
             self.scheduler.schedule_daily_report(self.trading_manager.generate_daily_report)
             
             # 시간별 리포트 스케줄러 설정
-            self.scheduler.schedule_task('hourly_report', self.trading_manager.generate_hourly_report, interval=3600)
+            await self.scheduler.schedule_task('hourly_report', 
+                                            self.trading_manager.generate_hourly_report, 
+                                            interval=3600)
             
             # 메인 루프
             while True:

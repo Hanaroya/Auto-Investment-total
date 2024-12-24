@@ -1,3 +1,4 @@
+from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from typing import Dict, Any
@@ -28,12 +29,19 @@ class MongoDBManager:
         """
         
         if not hasattr(self, 'initialized'):
-            self.client = None
-            self.db = None
-            self.initialized = True
             self._check_docker_container()
-            self._connect()
+            self.logger = logging.getLogger(__name__)
+            
+            # 동기 클라이언트
+            self.client = MongoClient('mongodb://localhost:27017/')
+            # 비동기 클라이언트
+            self.async_client = AsyncIOMotorClient('mongodb://localhost:27017/')
+            
+            self.db = self.client['crypto_trading']
+            self.async_db = self.async_client['crypto_trading']
+            
             self._setup_collections()
+            self.logger.info("MongoDB 연결 성공")
 
     def __del__(self):
         """소멸자에서 연결 종료
@@ -47,45 +55,16 @@ class MongoDBManager:
             if not hasattr(sys, 'is_finalizing'):
                 logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
 
-    def _connect(self):
-        """MongoDB 서버에 연결
-        MongoDB 연결 URL을 생성하고 MongoClient를 사용하여 연결합니다.
-        """
-        try:
-            # MongoDB 연결 문자열 구성
-            username = os.getenv('MONGO_ROOT_USERNAME')
-            password = os.getenv('MONGO_ROOT_PASSWORD')
-            host = os.getenv('MONGO_HOST', 'localhost')
-            port = int(os.getenv('MONGO_PORT', '25000'))
-            db_name = os.getenv('MONGO_DB_NAME', 'trading_db')
-
-            # URL 인코딩된 비밀번호 생성
-            encoded_password = quote_plus(password)
-
-            # MongoDB 연결 (authSource=admin 추가)
-            connection_string = f"mongodb://{username}:{encoded_password}@{host}:{port}/{db_name}?authSource=admin"
-            
-            self.client = MongoClient(connection_string)
-            self.db = self.client[db_name]
-            
-            # 연결 테스트
-            self.client.server_info()
-            logging.info("MongoDB 연결 성공")
-
-        except Exception as e:
-            logging.error(f"MongoDB 연결 실패: {str(e)}")
-            raise
-
     def _setup_collections(self):
         """컬렉션 설정 및 인덱스 생성
         컬렉션 참조 설정 및 인덱스 생성을 수행합니다.
         """
         try:
             # 컬렉션 참조 설정
-            self.trades = self.db[MONGODB_CONFIG['collections']['trades']]
+            self.trades = self.db['trades']
             self.market_data = self.db[MONGODB_CONFIG['collections']['market_data']]
             self.thread_status = self.db[MONGODB_CONFIG['collections']['thread_status']]
-            self.system_config = self.db[MONGODB_CONFIG['collections']['system_config']]
+            self.system_config = self.db['system_config']
 
             # 인덱스 생성
             self.trades.create_index([("market", 1), ("timestamp", -1)])
@@ -116,11 +95,9 @@ class MongoDBManager:
             logging.error(f"시스템 설정 초기화 실패: {str(e)}")
             raise
 
-    def get_collection(self, collection_name: str) -> Collection:
-        """특정 컬렉션 반환
-        컬렉션 이름을 기반으로 컬렉션 참조를 반환합니다.
-        """
-        return self.db[collection_name]
+    def get_collection(self, name):
+        """비동기 컬렉션 반환"""
+        return self.async_db[name]
 
     # 거래 관련 메서드
     def insert_trade(self, trade_data: Dict[str, Any]) -> str:
