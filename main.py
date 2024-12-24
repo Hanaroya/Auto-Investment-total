@@ -62,6 +62,9 @@ class CryptoTradingBot:
             # 일일 리포트 스케줄러 설정
             self.scheduler.schedule_daily_report(self.trading_manager.generate_daily_report)
             
+            # 시간별 리포트 스케줄러 설정
+            self.scheduler.schedule_task('hourly_report', self.trading_manager.generate_hourly_report, interval=3600)
+            
             # 메인 루프
             while True:
                 emergency_stop = await self.check_emergency_stop()

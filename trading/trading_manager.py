@@ -308,3 +308,60 @@ class TradingManager:
         except Exception as e:
             self.logger.error(f"포지션 정리 중 오류 발생: {e}")
             return False
+
+    async def generate_hourly_report(self):
+        """시간별 리포트 생성
+        
+        매 시간 정각에 실행되며 현재 보유 포지션과 투자 현황을 보고합니다.
+        - 현재 보유 코인 목록
+        - 각 코인별 매수 시간과 임계값
+        - 총 투자금액
+        """
+        try:
+            # 활성 거래(현재 보유 중인 포지션) 조회
+            active_trades = await self.db.get_collection('trades').find({
+                'status': 'active'
+            }).to_list(None)
+            
+            if not active_trades:
+                message = "현재 보유 중인 코인이 없습니다."
+                await self.messenger.send_message(message)
+                return
+            
+            # 총 투자금액 계산
+            total_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
+            
+            # 메시지 생성
+            current_time = datetime.now().strftime('%Y-%m-%d %H:00')
+            message = (
+                f"📊 시간별 투자 현황 ({current_time})\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 총 투자금액: ₩{total_investment:,}\n"
+                f"📈 보유 코인: {len(active_trades)}개\n\n"
+            )
+            
+            # 각 코인별 상세 정보
+            for trade in active_trades:
+                hold_time = datetime.utcnow() - trade['timestamp']
+                hours = hold_time.total_seconds() / 3600  # 보유 시간(시간 단위)
+                
+                coin_info = (
+                    f"• {trade['coin']}\n"
+                    f"  └ 매수가: ₩{trade['price']:,}\n"
+                    f"  └ 매수시간: {trade['timestamp'].strftime('%Y-%m-%d %H:%M')}"
+                    f" ({hours:.1f}시간 전)\n"
+                    f"  └ 매수 임계값: {trade['strategy_data'].get('buy_threshold', 'N/A')}\n"
+                    f"  └ 투자금액: ₩{trade.get('investment_amount', 0):,}\n"
+                )
+                message += coin_info + "\n"
+            
+            message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Slack으로 메시지 전송
+            await self.messenger.send_message(message)
+            
+            self.logger.info(f"시간별 리포트 생성 완료: {current_time}")
+            
+        except Exception as e:
+            self.logger.error(f"시간별 리포트 생성 중 오류 발생: {e}")
+            raise
