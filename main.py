@@ -7,9 +7,18 @@ from trading.thread_manager import ThreadManager
 from database.mongodb_manager import MongoDBManager
 from messenger.Messenger import Messenger
 from utils.scheduler import Scheduler
+from dotenv import load_dotenv
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# .env 파일 로드
+load_dotenv()
+
+# 환경 변수 사용 예시
+mongo_username = os.getenv('MONGO_ROOT_USERNAME')
+mongo_password = os.getenv('MONGO_ROOT_PASSWORD')
 
 class CryptoTradingBot:
     def __init__(self):
