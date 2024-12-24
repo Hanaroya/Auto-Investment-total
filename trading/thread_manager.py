@@ -45,6 +45,7 @@ class TradingThread(threading.Thread):
         asyncio.set_event_loop(self.event_loop)
         while not self.stop_flag.is_set():
             try:
+                self.logger.info(f"Thread {self.thread_id}: Analyzing {len(self.coins)} markets...")
                 self.process_coins()
                 # 4시간 캔들 기준으로 대기
                 self.stop_flag.wait(60)  # 1분마다 체크
@@ -92,11 +93,15 @@ class TradingThread(threading.Thread):
             
             # 최대 투자 금액 체크
             if current_investment >= 80000:  # 스레드당 최대 투자금액
-                await self.check_sell_signals(coin, candle_data)
+                analysis_result = await self.check_sell_signals(coin, candle_data)
+                if analysis_result:
+                    self.logger.info(f"Thread {self.thread_id}: {coin} - {analysis_result}")
                 return
 
             # 매수/매도 신호 확인
-            await self.check_trading_signals(coin, candle_data)
+            analysis_result = await self.check_trading_signals(coin, candle_data)
+            if analysis_result:
+                self.logger.info(f"Thread {self.thread_id}: {coin} - {analysis_result}")
 
         except Exception as e:
             self.logger.error(f"Error in process_single_coin for {coin}: {e}")
@@ -380,53 +385,33 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"Error checking thread health: {e}") 
 
-    async def market_analysis_loop(self, market_codes: List[str]):
+    async def market_analysis_loop(self, thread_id: int, coins: List[str]):
         """
-        각 스레드에서 실행될 마켓 분석 루프
-        
-        Args:
-            market_codes (List[str]): 분석할 마켓 코드 리스트
+        마켓 분석 루프
+        - 10분마다 코인별 매수/매도 조건 체크
         """
         try:
             while self.running:
-                for market in market_codes:
-                    if not self.running:
-                        break
-                        
+                self.logger.info(f"Thread {thread_id}: Analyzing {len(coins)} markets...")
+                
+                for coin in coins:
                     try:
-                        # 캔들 데이터 조회 시 락 사용
-                        with self.shared_locks['candle_data']:
-                            candle_data = await self.market_analyzer.get_candle_data(market)
-                            if not candle_data:
-                                continue
-
-                        # 거래 신호 분석
-                        signal = await self.market_analyzer.analyze_market(market, candle_data)
-                        
-                        # 매수/매도 신호 처리
-                        if signal['action'] == 'buy':
-                            with self.shared_locks['buy']:
-                                await self.trading_manager.process_buy_signal(
-                                    market=market,
-                                    signal_strength=signal['strength'],
-                                    price=signal['price']
-                                )
-                        elif signal['action'] == 'sell':
-                            with self.shared_locks['sell']:
-                                await self.trading_manager.process_sell_signal(
-                                    market=market,
-                                    signal_strength=signal['strength'],
-                                    price=signal['price']
-                                )
-                                
+                        # 마켓 분석 및 거래 실행
+                        analysis_result = await self.market_analyzer.analyze_market(coin)
+                        if analysis_result:
+                            self.logger.info(f"Thread {thread_id}: {coin} - {analysis_result}")
                     except Exception as e:
-                        self.logger.error(f"Error analyzing market {market}: {e}")
-                        
-                # 4시간 캔들 기준으로 대기
-                await asyncio.sleep(60)
+                        self.logger.error(f"Thread {thread_id}: Error analyzing {coin}: {e}")
+                
+                # 스레드 상태 업데이트
+                await self.update_thread_status(thread_id, coins)
+                
+                # 10분 대기
+                await asyncio.sleep(600)
                 
         except Exception as e:
-            self.logger.error(f"Error in market analysis loop: {e}") 
+            self.logger.error(f"Thread {thread_id}: Analysis loop error: {e}")
+            self.running = False
 
     async def cleanup_market_data(self):
         """
