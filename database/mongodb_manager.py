@@ -24,10 +24,12 @@ class MongoDBManager:
         """초기화 메서드
         MongoDB 연결 및 컬렉션 설정을 초기화합니다.
         """
+        
         if not hasattr(self, 'initialized'):
             self.client = None
             self.db = None
             self.initialized = True
+            self._check_docker_container()
             self._connect()
             self._setup_collections()
 
@@ -220,3 +222,40 @@ class MongoDBManager:
                 logging.info("MongoDB 연결 종료")
         except Exception as e:
             logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
+
+    def _check_docker_container(self):
+        """도커 컨테이너 상태 확인 및 실행
+        trading_db 컨테이너가 실행 중인지 확인하고, 없으면 실행합니다.
+        """
+        try:
+            import docker
+            client = docker.from_client()
+            
+            # 컨테이너 찾기
+            containers = client.containers.list(all=True, filters={'name': 'trading_db'})
+            
+            if not containers:
+                logging.warning("trading_db 컨테이너를 찾을 수 없습니다. 새로 실행합니다.")
+                client.containers.run(
+                    'mongo:latest',
+                    name='trading_db',
+                    ports={'27017/tcp': 25000},
+                    detach=True
+                )
+                logging.info("trading_db 컨테이너가 성공적으로 시작되었습니다.")
+            else:
+                container = containers[0]
+                # 컨테이너가 실행 중이 아니면 시작
+                if container.status != 'running':
+                    container.start()
+                    logging.info("trading_db 컨테이너를 시작했습니다.")
+                
+                # 포트 확인
+                container_info = container.attrs
+                port_bindings = container_info['HostConfig']['PortBindings']
+                if '27017/tcp' not in port_bindings or port_bindings['27017/tcp'][0]['HostPort'] != '25000':
+                    raise Exception("trading_db 컨테이너의 포트가 25000이 아닙니다.")
+                
+        except Exception as e:
+            logging.error(f"도커 컨테이너 확인 중 오류 발생: {str(e)}")
+            raise

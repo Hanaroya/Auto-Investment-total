@@ -5,7 +5,7 @@ services:
     image: mongo:latest
     container_name: auto_trading_db
     ports:
-      - 27017:27017
+      - 25000:27017
     volumes:
       - ./containers/mongoDB/db:/data/db/
       - ./containers/mongoDB/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
