@@ -101,6 +101,13 @@ class TradingThread(threading.Thread):
                 analysis_result = await self.check_sell_signals(coin, candle_data)
                 if analysis_result:
                     self.logger.info(f"Thread {self.thread_id}: {coin} - {analysis_result}")
+                
+                # 매도 신호 분석 후에도 전략 데이터 저장
+                await self.trading_manager.update_strategy_data(
+                    coin=coin,
+                    price=candle_data[-1]['close'],
+                    strategy_results=analysis_result if analysis_result else {}
+                )
                 return
 
             # 매수/매도 신호 확인
@@ -108,10 +115,17 @@ class TradingThread(threading.Thread):
             if analysis_result:
                 self.logger.info(f"Thread {self.thread_id}: {coin} - {analysis_result}")
 
+            # 분석 결과와 관계없이 전략 데이터 저장
+            await self.trading_manager.update_strategy_data(
+                coin=coin,
+                price=candle_data[-1]['close'],
+                strategy_results=analysis_result if analysis_result else {}
+            )
+
         except Exception as e:
             self.logger.error(f"Error in process_single_coin for {coin}: {e}")
 
-    async def check_trading_signals(self, coin: str, candle_data: List[Dict]):
+    async def check_trading_signals(self, coin: str, candle_data: List[Dict]) -> Dict:
         """
         코인의 매매 신호를 확인하고 적절한 거래를 실행합니다.
         

@@ -1,7 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
 from pymongo.collection import Collection
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
 from datetime import datetime
 import sys
@@ -69,6 +69,16 @@ class MongoDBManager:
             # 인덱스 생성
             self.trades.create_index([("market", 1), ("timestamp", -1)])
             self.trades.create_index([("status", 1)])
+            
+            # 전략 데이터를 위한 새로운 컬렉션 추가
+            self.strategy_data = self.db['strategy_data']
+            
+            # 전략 데이터 컬렉션 인덱스 생성
+            self.strategy_data.create_index([
+                ("coin", 1),
+                ("timestamp", -1)
+            ])
+            self.strategy_data.create_index([("timestamp", -1)])
             
             # 시스템 설정 초기화 확인
             self._initialize_system_config()
@@ -246,3 +256,129 @@ class MongoDBManager:
         except Exception as e:
             logging.error(f"도커 컨테이너 확인 중 오류 발생: {str(e)}")
             raise
+
+    async def save_strategy_data(self, coin: str, strategy_data: Dict[str, Any]) -> bool:
+        """코인별 전략 데이터 저장
+
+        Args:
+            coin: 코인 심볼
+            strategy_data: 전략 데이터 딕셔너리
+
+        Returns:
+            bool: 저장 성공 여부
+        """
+        try:
+            document = {
+                'coin': coin,
+                'timestamp': datetime.utcnow(),
+                'current_price': strategy_data.get('current_price', 0),
+                'strategies': {
+                    'rsi': {
+                        'value': strategy_data.get('rsi', 0),
+                        'signal': strategy_data.get('rsi_signal', 0),
+                        'buy_threshold': strategy_data.get('rsi_buy_threshold', 30),
+                        'sell_threshold': strategy_data.get('rsi_sell_threshold', 70)
+                    },
+                    'stochastic': {
+                        'k': strategy_data.get('stochastic_k', 0),
+                        'd': strategy_data.get('stochastic_d', 0),
+                        'signal': strategy_data.get('stochastic_signal', 0),
+                        'buy_threshold': strategy_data.get('stochastic_buy_threshold', 20),
+                        'sell_threshold': strategy_data.get('stochastic_sell_threshold', 80)
+                    },
+                    'macd': {
+                        'macd': strategy_data.get('macd', 0),
+                        'signal': strategy_data.get('macd_signal', 0),
+                        'histogram': strategy_data.get('macd_hist', 0),
+                        'buy_threshold': strategy_data.get('macd_buy_threshold', 0),
+                        'sell_threshold': strategy_data.get('macd_sell_threshold', 0)
+                    },
+                    'bollinger': {
+                        'upper': strategy_data.get('bb_upper', 0),
+                        'middle': strategy_data.get('bb_middle', 0),
+                        'lower': strategy_data.get('bb_lower', 0),
+                        'buy_threshold': strategy_data.get('bb_buy_threshold', 0),
+                        'sell_threshold': strategy_data.get('bb_sell_threshold', 0)
+                    }
+                },
+                'market_data': {
+                    'volume': strategy_data.get('volume', 0),
+                    'market_cap': strategy_data.get('market_cap', 0),
+                    'rank': strategy_data.get('coin_rank', 0)
+                },
+                'signals': {
+                    'buy_strength': strategy_data.get('buy_signal', 0),
+                    'sell_strength': strategy_data.get('sell_signal', 0),
+                    'overall_signal': strategy_data.get('overall_signal', 0),
+                    'combined_threshold': {
+                        'buy': strategy_data.get('combined_buy_threshold', 0.7),
+                        'sell': strategy_data.get('combined_sell_threshold', 0.3)
+                    }
+                },
+                'thresholds': {
+                    'price_change': strategy_data.get('price_change_threshold', 0.02),
+                    'volume_change': strategy_data.get('volume_change_threshold', 0.5),
+                    'trend_strength': strategy_data.get('trend_strength_threshold', 0.6)
+                }
+            }
+
+            result = await self.strategy_data.insert_one(document)
+            return bool(result.inserted_id)
+
+        except Exception as e:
+            logging.error(f"전략 데이터 저장 실패 - 코인: {coin}, 오류: {str(e)}")
+            return False
+
+    async def get_strategy_history(self, coin: str, 
+                                 start_time: datetime = None, 
+                                 end_time: datetime = None,
+                                 limit: int = 100) -> List[Dict]:
+        """특정 코인의 전략 데이터 히스토리 조회
+
+        Args:
+            coin: 코인 심볼
+            start_time: 시작 시간 (선택)
+            end_time: 종료 시간 (선택)
+            limit: 조회할 최대 데이터 수
+
+        Returns:
+            List[Dict]: 전략 데이터 히스토리
+        """
+        try:
+            query = {'coin': coin}
+            if start_time or end_time:
+                query['timestamp'] = {}
+                if start_time:
+                    query['timestamp']['$gte'] = start_time
+                if end_time:
+                    query['timestamp']['$lte'] = end_time
+
+            cursor = self.strategy_data.find(query)
+            cursor.sort('timestamp', -1)
+            cursor.limit(limit)
+
+            return await cursor.to_list(length=limit)
+
+        except Exception as e:
+            logging.error(f"전략 데이터 조회 실패 - 코인: {coin}, 오류: {str(e)}")
+            return []
+
+    async def get_latest_strategy_data(self, coin: str) -> Dict:
+        """특정 코인의 최신 전략 데이터 조회
+
+        Args:
+            coin: 코인 심볼
+
+        Returns:
+            Dict: 최신 전략 데이터
+        """
+        try:
+            result = await self.strategy_data.find_one(
+                {'coin': coin},
+                sort=[('timestamp', -1)]
+            )
+            return result or {}
+
+        except Exception as e:
+            logging.error(f"최신 전략 데이터 조회 실패 - 코인: {coin}, 오류: {str(e)}")
+            return {}
