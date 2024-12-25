@@ -59,13 +59,22 @@ class CryptoTradingBot:
             # 스레드 매니저 시작
             await self.thread_manager.start(markets)
             
-            # 일일 리포트 스케줄러 설정
-            self.scheduler.schedule_daily_report(self.trading_manager.generate_daily_report)
+            # 스케줄러 시작
+            asyncio.create_task(self.scheduler.start())
             
-            # 시간별 리포트 스케줄러 설정
-            await self.scheduler.schedule_task('hourly_report', 
-                                            self.trading_manager.generate_hourly_report, 
-                                            interval=3600)
+            # 일일 리포트 스케줄러 설정 (매일 20:00에 실행)
+            await self.scheduler.schedule_task(
+                'daily_report',
+                self.trading_manager.generate_daily_report,
+                cron='0 20 * * *'  # 매일 저녁 8시에 실행
+            )
+            
+            # 시간별 리포트 스케줄러 설정 (매 시간 정각에 실행)
+            await self.scheduler.schedule_task(
+                'hourly_report',
+                self.trading_manager.generate_hourly_report,
+                cron='0 * * * *'  # 매 시간 0분에 실행
+            )
             
             # 메인 루프
             while True:

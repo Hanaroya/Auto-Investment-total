@@ -33,38 +33,72 @@ class Scheduler:
         except Exception as e:
             self.logger.error(f"Error scheduling daily report: {e}")
 
-    async def schedule_task(self, task_name: str, task_func, interval: int = 3600):
+    async def schedule_task(self, task_name: str, task_func, interval: int = None, cron: str = None):
         """태스크 스케줄링
         
         Args:
             task_name: 태스크 이름
             task_func: 실행할 함수
             interval: 실행 간격 (초)
+            cron: Cron 표현식 (예: "0 */1 * * *")
         """
         try:
-            # 스케줄러 설정
             scheduler = AsyncIOScheduler()
             
-            # 태스크 등록 (매 interval 초마다 실행)
-            scheduler.add_job(
-                task_func,
-                'interval',
-                seconds=interval,
-                id=task_name,
-                next_run_time=datetime.now()  # 즉시 첫 실행
-            )
+            if cron:
+                # Cron 표현식으로 스케줄링
+                scheduler.add_job(
+                    task_func,
+                    'cron',
+                    id=task_name,
+                    next_run_time=datetime.now(),
+                    **self._parse_cron(cron)
+                )
+            else:
+                # 기존 interval 스케줄링
+                scheduler.add_job(
+                    task_func,
+                    'interval',
+                    seconds=interval or 3600,
+                    id=task_name,
+                    next_run_time=datetime.now()
+                )
             
-            # 스케줄러 시작
             scheduler.start()
-            
-            self.logger.info(f"Task {task_name} scheduled to run every {interval} seconds")
+            self.logger.info(f"Task {task_name} scheduled successfully")
             
         except Exception as e:
             self.logger.error(f"Error scheduling task {task_name}: {str(e)}")
             raise
 
+    def _parse_cron(self, cron_expression: str) -> dict:
+        """Cron 표현식을 APScheduler 파라미터로 변환
+        
+        Args:
+            cron_expression: "분 시 일 월 요일" 형식의 cron 표현식
+            
+        Returns:
+            dict: APScheduler cron 파라미터
+        """
+        try:
+            minute, hour, day, month, day_of_week = cron_expression.split()
+            return {
+                'minute': minute,
+                'hour': hour,
+                'day': day,
+                'month': month,
+                'day_of_week': day_of_week
+            }
+        except Exception as e:
+            self.logger.error(f"Invalid cron expression: {cron_expression}")
+            raise ValueError(f"Invalid cron expression: {cron_expression}")
+
     async def cancel_task(self, task_id: str):
-        """예약된 작업 취소"""
+        """예약된 작업 취소
+        
+        Args:
+            task_id: 취소할 작업의 ID
+        """
         try:
             if task_id in self.tasks:
                 schedule.cancel_job(self.tasks[task_id]['func'])
@@ -81,7 +115,10 @@ class Scheduler:
             self.logger.error(f"Error cancelling task {task_id}: {e}")
 
     async def check_missed_tasks(self):
-        """누락된 작업 확인 및 재실행"""
+        """누락된 작업 확인 및 재실행
+        Args:
+            task_id: 취소할 작업의 ID
+        """
         try:
             tasks = await self.db.get_collection('scheduled_tasks').find(
                 {'status': 'active'}
