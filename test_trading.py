@@ -48,7 +48,9 @@ class TestTradingBot:
         self.messenger = Messenger(self.config)
         self.market_analyzer = MarketAnalyzer()
         self.trading_manager = TradingManager()
-        self.thread_manager = ThreadManager()
+        self.thread_manager = ThreadManager(
+            config=self.config
+        )
         self.upbit = UpbitCall(
             self.config['api_keys']['upbit']['access_key'],
             self.config['api_keys']['upbit']['secret_key'],

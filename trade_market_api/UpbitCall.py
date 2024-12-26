@@ -14,6 +14,7 @@ from threading import Lock
 from functools import wraps
 import asyncio
 import aiohttp
+import threading
 
 class ThreadLock:
     """싱글톤 패턴으로 구현된 스레드 락 관리자
@@ -107,6 +108,8 @@ class UpbitCall:
         self.user_agent = {
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
         }
+        self.session = None
+        self.thread_id = None  # 스레드 식별용
 
     def _setup_logger(self) -> logging.Logger:
         """로깅 설정
@@ -174,7 +177,7 @@ class UpbitCall:
             # accTradeVolume 기준으로 정렬
             sorted_markets = sorted(
                 krw_markets,
-                key=lambda x: float(x.get('accTradeVolume', 0)),
+                key=lambda x: float(x.get('accTradePrice24h', 0)),
                 reverse=True
             )
             
@@ -192,66 +195,98 @@ class UpbitCall:
         """충분한 캔들 데이터가 있는지 확인"""
         required_candles = 200  # 필요한 최소 캔들 수
         if not candle_data or len(candle_data) < required_candles:
-            self.logger.warning(f"불충분한 캔들 데이터 ({market}): {len(candle_data) if candle_data else 0}/{required_candles}")
+            self.logger.warning(f"Thread {threading.current_thread().name} - {market} - 불충분한 캔들 데이터 (수신: {len(candle_data) if candle_data else 0})")
             return False
         return True
 
-    @with_thread_lock("get_candle")
-    async def get_candle(self, market: str, interval: str, count: int = 200) -> List[Dict]:
-        """캔들 데이터 조회
+    def get_candle(self, market: str, interval: str = '1', count: int = 200) -> List[Dict]:
+        """
+        캔들 데이터를 가져옵니다.
         
-        Notes:
-            - ThreadManager의 candle_data 락과 함께 동작
-            - API rate limit 준수를 위한 0.1초 대기 포함
+        Args:
+            market (str): 마켓 코드 (예: KRW-BTC)
+            interval (str): 시간 간격
+                - 분 단위: '1', '3', '5', '10', '15', '30', '60', '240'
+                - 일 단위: 'D'
+                - 월 단위: 'M'
+            count (int): 가져올 캔들 개수 (최대 200)
+                
+        Returns:
+            List[Dict]: 캔들 데이터 리스트. 각 캔들은 다음 정보를 포함:
+                - timestamp: 타임스탬프
+                - datetime: 캔들 시각 (KST)
+                - opening_price: 시가
+                - high_price: 고가
+                - low_price: 저가
+                - trade_price: 종가
+                - candle_acc_trade_volume: 누적 거래량
+                - candle_acc_trade_price: 누적 거래대금
+                - market: 마켓 코드
         """
         try:
-            base_url = 'https://crix-api-endpoint.upbit.com/v1/crix/candles'
+            # URL 구성
+            base_url = "https://crix-api-endpoint.upbit.com/v1/crix/candles"
             
+            # market이 딕셔너리인 경우 market 키의 값을 추출
+            if isinstance(market, dict):
+                market = market.get('market', '')
+            
+            # 시간 간격에 따른 URL 설정
             if interval in ['1', '3', '5', '10', '15', '30', '60', '240']:
-                url = f"{base_url}/minutes/{interval}"
+                url = base_url + "/minutes/" + str(interval)
             elif interval == 'D':
-                url = f"{base_url}/days"
+                url = base_url + "/days"
+            elif interval == 'W':
+                url = base_url + "/weeks"
+            elif interval == 'M':
+                url = base_url + "/months"
             else:
-                raise ValueError("Invalid interval")
+                self.logger.error(f"Thread {threading.current_thread().name} - 잘못된 시간 간격: {interval}")
+                return []
 
-            crix_symbol = f"CRIX.UPBIT.{market}"
-                
-            params = {
-                'code': f"CRIX.UPBIT.{market}",
-                'count': count
+            # CRIX.UPBIT. 접두어 추가
+            market_code = "CRIX.UPBIT." + str(market)
+            
+            # 최종 URL 구성
+            final_url = url + "?code=" + market_code + "&count=" + str(count) + "&to"
+            
+            # URL 로깅
+            self.logger.info(f"Thread {threading.current_thread().name} - API 요청 URL: {final_url}")
+            
+            headers = {
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
             }
             
-            await asyncio.sleep(0.1)  # API 호출 전 0.1초 대기
+            response = requests.get(url=final_url, headers=headers)
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, headers=self.user_agent) as response:
-                    if response.status != 200:
-                        self.logger.error(f"API 요청 실패 ({market}): {response.status}")
-                        return []
-                        
-                    candles = await response.json()
-                    
-                    # API 응답 필드명 매핑
-                    if not self._has_sufficient_data(candles, market):
-                        return []
+            if response.status_code != 200:
+                self.logger.error(f"Thread {threading.current_thread().name} - API 요청 실패 ({market}): {response.status_code}")
+                return []
+            
+            candles = response.json()
+            
+            # 데이터 유효성 검증
+            if not self._has_sufficient_data(candles, market):
+                return []
+             
+            # 데이터 처리
+            processed_candles = [{
+                'timestamp': candle['timestamp'],
+                'datetime': candle['candleDateTimeKst'],
+                'opening_price': candle['openingPrice'],
+                'high_price': candle['highPrice'],
+                'low_price': candle['lowPrice'],
+                'trade_price': candle['tradePrice'],
+                'candle_acc_trade_volume': candle['candleAccTradeVolume'],
+                'candle_acc_trade_price': candle['candleAccTradePrice'],
+                'market': market
+            } for candle in candles]
 
-                     # 데이터 처리
-                    processed_candles = [{
-                        'timestamp': candle['timestamp'],
-                        'datetime': candle['candleDateTimeKst'],
-                        'opening_price': candle['openingPrice'],
-                        'high_price': candle['highPrice'],
-                        'low_price': candle['lowPrice'],
-                        'trade_price': candle['tradePrice'],
-                        'candle_acc_trade_volume': candle['candleAccTradeVolume'],
-                        'candle_acc_trade_price': candle['candleAccTradePrice'],
-                        'market': market
-                    } for candle in candles]
-
-                    return processed_candles
-                
+            self.logger.debug(f"Thread {threading.current_thread().name} - {market} 캔들 데이터 수신: {len(candles)}개")
+            return processed_candles
+            
         except Exception as e:
-            self.logger.error(f"캔들 데이터 조회 실패 ({market}): {str(e)}")
+            self.logger.error(f"Thread {threading.current_thread().name} - 캔들 데이터 조회 중 오류: {str(e)}")
             return []
 
     def get_current_price(self, symbol: str) -> float:
@@ -507,6 +542,21 @@ class UpbitCall:
         m = hashlib.sha512()
         m.update(query_string)
         return m.hexdigest()
+
+    async def initialize(self, thread_id: int, loop=None):
+        """비동기 초기화"""
+        self.thread_id = thread_id
+        if not self.session:
+            self.session = aiohttp.ClientSession(
+                headers=self.user_agent,
+                loop=loop
+            )
+
+    async def close(self):
+        """세션 정리"""
+        if self.session:
+            await self.session.close()
+            self.session = None
 
 if __name__ == "__main__":
     # 사용 예시

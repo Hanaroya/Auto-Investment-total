@@ -20,6 +20,8 @@ from strategy.Strategies import (
 )
 import pandas as pd
 from trade_market_api.UpbitCall import UpbitCall
+import asyncio
+import time
 
 class MarketAnalyzer:
     """
@@ -71,9 +73,17 @@ class MarketAnalyzer:
                     'market': market,
                     'timestamp': datetime.utcnow()
                 }
-                # DB 업데이트
-                self.db.update_market_data(market, data)
-                market_data.append(data)
+                try:
+                    # DB 업데이트
+                    self.db.market_data.update_one(
+                        {'market': market},
+                        {'$set': data},
+                        upsert=True
+                    )
+                    market_data.append(data)
+                except Exception as e:
+                    self.logger.error(f"마켓 데이터 업데이트 실패 - {market}: {str(e)}")
+                    continue
             
             return market_data
             
@@ -81,23 +91,37 @@ class MarketAnalyzer:
             self.logger.error(f"Error in get_sorted_markets: {e}")
             return []
 
-    async def get_candle_data(self, market: str, interval: str = "240"):
+    async def get_candle_data(self, market: str, interval: str = "240", max_retries: int = 3):
         """
         특정 시장의 캔들 데이터를 조회합니다.
         
         Args:
             market (str): 시장 코드 (예: KRW-BTC)
             interval (str): 캔들 간격 (기본값: 240분/4시간)
-        
-        Returns:
-            List[Dict]: 변환된 캔들 데이터 또는 오류 시 None
+            max_retries (int): 최대 재시도 횟수
         """
-        try:
-            candle_data = await self.get_candle(market, interval)
-            return self.convert_candle_data(candle_data)
-        except Exception as e:
-            self.logger.error(f"Error getting candle data for {market}: {e}")
-            return None
+        for attempt in range(max_retries):
+            try:
+                self.logger.debug(f"{market} - 캔들 데이터 조회 시작 (시도: {attempt + 1})")
+                candle_data = await self.upbit.get_candle(market, interval)
+                
+                if not candle_data:
+                    self.logger.warning(f"{market} - 캔들 데이터 조회 실패")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(1)  # 재시도 전 대기
+                        continue
+                    return None
+                    
+                converted_data = self.convert_candle_data(candle_data)
+                self.logger.debug(f"{market} - 캔들 데이터 조회 완료 (개수: {len(converted_data)})")
+                return converted_data
+                
+            except Exception as e:
+                self.logger.error(f"{market} - 캔들 데이터 조회 중 오류: {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    continue
+                return None
 
     def convert_candle_data(self, raw_data: List[Dict]) -> List[Dict]:
         """
@@ -152,49 +176,70 @@ class MarketAnalyzer:
             }
         """
         try:
+            self.logger.debug(f"{market} - 시장 분석 시작")
+            
             if not candles:
+                self.logger.warning(f"{market} - 분석할 캔들 데이터 없음")
                 return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
 
-            # 캔들 데이터를 DataFrame으로 변환
+            # 필수 컬럼 확인
+            required_columns = ['trade_price', 'candle_acc_trade_volume']
             df = pd.DataFrame(candles)
             
-            if df.empty:
-                self.logger.warning(f"{market}: 캔들 데이터 없음")
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                self.logger.error(f"{market} - 필수 컬럼 누락: {missing_columns}")
                 return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
 
-            strategy_results = {}
+            if df.empty:
+                self.logger.warning(f"{market} - 캔들 데이터 없음")
+                return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
+
+            # 데이터 전처리
             market_data = {
                 'df': df,
-                'current_price': df['trade_price'].iloc[-1],
-                'volume': df['candle_acc_trade_volume'].iloc[-1]
+                'current_price': float(df['trade_price'].iloc[-1]),
+                'volume': float(df['candle_acc_trade_volume'].iloc[-1])
             }
             
-            # 각 전략 실행
+            # 각 전략 실행 및 결과 수집
+            strategy_results = {}
             for name, strategy in self.strategies.items():
                 try:
+                    start_time = time.time()
                     result = strategy.analyze(market_data)
-                    # float 값을 반환하는 전략 결과를 딕셔너리로 변환
+                    execution_time = time.time() - start_time
+                    
+                    # 전략 실행 시간 모니터링
+                    if execution_time > 1.0:  # 1초 이상 소요되는 전략 감지
+                        self.logger.warning(f"{market} - {name} 전략 실행 시간 과다: {execution_time:.2f}초")
+                    
                     if isinstance(result, (int, float)):
                         strategy_results[name] = {'signal': 'hold', 'strength': float(result)}
                     else:
                         strategy_results[name] = result
+                        
                 except Exception as e:
-                    self.logger.error(f"{market} - {name} 전략 분석 실패: {str(e)}")
+                    self.logger.error(f"{market} - {name} 전략 분석 실패: {str(e)}", exc_info=True)
                     strategy_results[name] = {'signal': 'hold', 'strength': 0}
 
-            # 전략 결과 로깅
+            # 전략 결과 상세 로깅
             self.logger.info(f"\n[{market}] 전략 분석 결과:")
             for strategy, result in strategy_results.items():
                 self.logger.info(f"{strategy}: {result}")
 
-            # 종합 강도 계산 (모든 결과가 딕셔너리임을 보장)
+            # 종합 강도 계산 및 검증
+            if not strategy_results:
+                self.logger.error(f"{market} - 유효한 전략 결과 없음")
+                return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
+
             total_strength = sum(r['strength'] for r in strategy_results.values()) / len(strategy_results)
-            self.logger.info(f"종합 강도: {round(total_strength, 2)}")
+            self.logger.info(f"{market} - 종합 강도: {round(total_strength, 2)}")
 
             return {
                 'action': 'buy' if total_strength >= 0.65 else 'hold',
                 'strength': round(total_strength, 2),
-                'price': float(market_data['current_price']),
+                'price': market_data['current_price'],
                 'strategy_data': strategy_results
             }
 

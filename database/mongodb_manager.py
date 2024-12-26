@@ -8,40 +8,220 @@ import sys
 from config.mongodb_config import MONGODB_CONFIG, INITIAL_SYSTEM_CONFIG
 import os
 from urllib.parse import quote_plus
+import motor
+import asyncio
+import time
 
 class MongoDBManager:
     _instance = None
     """
     MongoDB 연결 및 작업을 관리하는 싱글톤 클래스
     """
-    def __new__(cls):
-        """
-        싱글톤 패턴 구현
-        한 번만 인스턴스를 생성하고 이후에는 동일한 인스턴스를 반환합니다.
-        """
+    def __new__(cls, *args, **kwargs):
+        """싱글톤 패턴 구현"""
         if cls._instance is None:
             cls._instance = super(MongoDBManager, cls).__new__(cls)
+            cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
-        """초기화 메서드
-        MongoDB 연결 및 컬렉션 설정을 초기화합니다.
-        """
+        """MongoDB 연결 초기화"""
+        if getattr(self, '_initialized', False):
+            return
+            
+        self.logger = logging.getLogger(__name__)
         
-        if not hasattr(self, 'initialized'):
+        try:
+            # Docker 컨테이너 상태 확인 및 실행
             self._check_docker_container()
-            self.logger = logging.getLogger(__name__)
             
-            # 동기 클라이언트
-            self.client = MongoClient('mongodb://localhost:27017/')
-            # 비동기 클라이언트
-            self.async_client = AsyncIOMotorClient('mongodb://localhost:27017/')
+            # MongoDB 설정 가져오기
+            config = MONGODB_CONFIG
             
-            self.db = self.client['crypto_trading']
-            self.async_db = self.async_client['crypto_trading']
+            # 연결 문자열 로깅 (비밀번호는 가림)
+            safe_connection_string = f'mongodb://{config["username"]}:****@{config["host"]}:{config["port"]}/{config["db_name"]}?authSource=admin'
+            self.logger.info(f"MongoDB 연결 시도: {safe_connection_string}")
             
+            # 사용자 생성 시도
+            self._create_mongodb_user()  # 여기서 명시적으로 호출
+            
+            # 동기식 클라이언트로 연결
+            self.client = MongoClient(
+                host=config['host'],
+                port=config['port'],
+                username=config['username'],
+                password=config['password'],
+                authSource='admin'
+            )
+            
+            # 데이터베이스와 컬렉션 설정
+            self.db = self.client[config['db_name']]
             self._setup_collections()
+            
+            self._initialized = True
+            
+        except Exception as e:
+            self.logger.error(f"MongoDB 연결 실패: {str(e)}")
+            raise
+
+    def update_system_config(self, config_data: Dict[str, Any]) -> bool:
+        """시스템 설정 업데이트"""
+        try:
+            result = self.system_config.update_one(
+                {'_id': 'system_config'},
+                {'$set': config_data},
+                upsert=True
+            )
+            # modified_count 또는 upserted_id가 있는 경우 성공
+            return bool(result.modified_count > 0 or result.upserted_id is not None)
+        except Exception as e:
+            self.logger.error(f"시스템 설정 업데이트 중 오류: {str(e)}")
+            return False
+
+    def test_connection(self):
+        """동기식 연결 테스트"""
+        try:
+            # 현재 연결 확인
+            if not hasattr(self, 'client') or self.client is None:
+                # 환경 변수 값 직접 확인
+                username = os.getenv('MONGO_ROOT_USERNAME')
+                password = os.getenv('MONGO_ROOT_PASSWORD')
+                host = os.getenv('MONGO_HOST', 'localhost')
+                port = int(os.getenv('MONGO_PORT', '25000'))
+                db_name = os.getenv('MONGO_DB_NAME', 'trading_db')
+                
+                # 연결 정보 로깅
+                self.logger.info("=== MongoDB 연결 정보 ===")
+                self.logger.info(f"Username: {username}")
+                self.logger.info(f"Host: {host}")
+                self.logger.info(f"Port: {port}")
+                self.logger.info(f"DB: {db_name}")
+                
+                self.client = MongoClient(
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+                    authSource='admin',
+                    serverSelectionTimeoutMS=5000
+                )
+                self.db = self.client[db_name]
+            
+            # 연결 테스트
+            self.client.admin.command('ping')
             self.logger.info("MongoDB 연결 성공")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"MongoDB 연결 테스트 실패: {str(e)}")
+            self.logger.error(f"상세 오류: {str(e.__dict__)}")
+            return False
+
+    def initialize(self):
+        """동기식 초기화"""
+        try:
+            # MongoDB 접속 정보
+            username = quote_plus(os.getenv('MONGO_ROOT_USERNAME'))
+            password = quote_plus(os.getenv('MONGO_ROOT_PASSWORD'))
+            host = os.getenv('MONGO_HOST', 'localhost')
+            port = int(os.getenv('MONGO_PORT', '25000'))
+            db_name = os.getenv('MONGO_DB_NAME', 'trading_db')
+            
+            connection_string = f"mongodb://{username}:{password}@{host}:{port}/{db_name}?authSource=admin"
+            self.logger.info(f"MongoDB 연결 시도: {connection_string.replace(password, '****')}")
+            
+            # 동기식 클라이언트로 연결
+            self.client = MongoClient(
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                authSource='admin'
+            )
+            self.db = self.client[db_name]
+            self.logger.info("MongoDB 연결 성공")
+            
+        except Exception as e:
+            self.logger.error(f"MongoDB 연결 실패: {str(e)}")
+            raise
+
+    def _check_docker_container(self):
+        """도커 컨테이너 상태 확인 및 실행"""
+        try:
+            import docker
+            client = docker.from_env()
+            
+            try:
+                # 기존 컨테이너 확인
+                container = client.containers.get('auto_trading_db')
+                
+                # 컨테이너가 실행 중이 아니면 시작
+                if container.status != 'running':
+                    self.logger.info("기존 auto_trading_db 컨테이너 시작")
+                    container.start()
+                    time.sleep(5)  # 컨테이너 시작 대기
+                else:
+                    self.logger.info("기존 auto_trading_db 컨테이너가 이미 실행 중입니다")
+                    
+                # MongoDB 사용자 생성 시도
+                self._create_mongodb_user()
+                    
+            except docker.errors.NotFound:
+                # MongoDB 설정 가져오기
+                config = MONGODB_CONFIG
+                
+                # 컨테이너가 없는 경우에만 새로 생성
+                self.logger.info("새로운 auto_trading_db 컨테이너 생성")
+                container = client.containers.run(
+                    'mongo:latest',
+                    name='auto_trading_db',
+                    ports={'27017/tcp': config['port']},
+                    environment={
+                        'MONGO_INITDB_ROOT_USERNAME': config['username'],
+                        'MONGO_INITDB_ROOT_PASSWORD': config['password'],
+                        'MONGO_INITDB_DATABASE': config['db_name']
+                    },
+                    detach=True
+                )
+                
+                # 새 컨테이너 시작 대기
+                time.sleep(10)
+                
+                # MongoDB 사용자 생성
+                self._create_mongodb_user()
+            
+        except Exception as e:
+            self.logger.error(f"도커 컨테이너 확인 중 오류 발생: {str(e)}")
+            raise
+
+    def _create_mongodb_user(self):
+        """MongoDB 사용자 생성"""
+        try:
+            config = MONGODB_CONFIG
+            client = MongoClient(
+                host=config['host'],
+                port=config['port'],
+                username=config['username'],
+                password=config['password'],
+                authSource='admin'
+            )
+            
+            db = client[config['db_name']]
+            
+            # 사용자가 이미 존재하는지 확인
+            try:
+                db.command('usersInfo', config['username'])
+            except Exception:
+                # 사용자가 없으면 생성
+                db.command('createUser', config['username'],
+                          pwd=config['password'],
+                          roles=[{'role': 'readWrite', 'db': config['db_name']}])
+                self.logger.info("MongoDB 사용자 생성 완료")
+            
+            client.close()
+            
+        except Exception as e:
+            self.logger.error(f"MongoDB 사용자 생성 실패: {str(e)}")
 
     def __del__(self):
         """소멸자에서 연결 종료
@@ -56,22 +236,19 @@ class MongoDBManager:
                 logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
 
     def _setup_collections(self):
-        """컬렉션 설정 및 인덱스 생성
-        컬렉션 참조 설정 및 인덱스 생성을 수행합니다.
-        """
+        """컬렉션 설정 및 인덱스 생성"""
         try:
             # 컬렉션 참조 설정
             self.trades = self.db['trades']
             self.market_data = self.db[MONGODB_CONFIG['collections']['market_data']]
             self.thread_status = self.db[MONGODB_CONFIG['collections']['thread_status']]
             self.system_config = self.db['system_config']
-
+            self.strategy_data = self.db['strategy_data']  # strategy_data 컬렉션 추가
+            
             # 인덱스 생성
             self.trades.create_index([("market", 1), ("timestamp", -1)])
             self.trades.create_index([("status", 1)])
-            
-            # 전략 데이터를 위한 새로운 컬렉션 추가
-            self.strategy_data = self.db['strategy_data']
+            self.strategy_data.create_index([("coin", 1), ("timestamp", -1)])  # strategy_data 인덱스
             
             # 전략 데이터 컬렉션 인덱스 생성
             self.strategy_data.create_index([
@@ -80,12 +257,18 @@ class MongoDBManager:
             ])
             self.strategy_data.create_index([("timestamp", -1)])
             
+            self.logger.info("MongoDB 컬렉션 설정 완료 - 컬렉션 목록:")
+            self.logger.info(f"- trades: {self.trades.name}")
+            self.logger.info(f"- market_data: {self.market_data.name}")
+            self.logger.info(f"- thread_status: {self.thread_status.name}")
+            self.logger.info(f"- system_config: {self.system_config.name}")
+            self.logger.info(f"- strategy_data: {self.strategy_data.name}")
+            
             # 시스템 설정 초기화 확인
             self._initialize_system_config()
             
-            logging.info("MongoDB 컬렉션 설정 완료")
         except Exception as e:
-            logging.error(f"컬렉션 설정 실패: {str(e)}")
+            self.logger.error(f"컬렉션 설정 실패: {str(e)}")
             raise
 
     def _initialize_system_config(self):
@@ -191,20 +374,6 @@ class MongoDBManager:
         config = self.db.system_config.find_one({'_id': 'config'})
         return config if config else {}
 
-    def update_system_config(self, config_data: Dict[str, Any]) -> bool:
-        """시스템 설정 업데이트
-        - 시스템 설정을 업데이트하고 결과를 반환합니다.
-
-        Returns:
-            bool: 업데이트 성공 여부
-        """
-        result = self.db.system_config.update_one(
-            {'_id': 'config'},
-            {'$set': config_data},
-            upsert=True
-        )
-        return True if result.upserted_id or result.modified_count > 0 else False
-
     def close(self):
         """
         MongoDB 연결 종료
@@ -217,47 +386,7 @@ class MongoDBManager:
         except Exception as e:
             logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
 
-    def _check_docker_container(self):
-        """도커 컨테이너 상태 확인 및 실행
-        auto_trading_db 컨테이너가 실행 중인지 확인하고, 없으면 실행합니다.
-        """
-        try:
-            import docker
-            client = docker.from_env()
-            
-            containers = client.containers.list(all=True, filters={'name': 'auto_trading_db'})
-            
-            if not containers:
-                logging.warning("auto_trading_db 컨테이너를 찾을 수 없습니다. 새로 실행합니다.")
-                client.containers.run(
-                    'mongo:latest',
-                    name='auto_trading_db',
-                    ports={'25000/tcp': 25000},  # 27017을 25000으로 변경
-                    command='mongod --port 25000',  # MongoDB 서버 포트를 25000으로 설정
-                    environment={
-                        'MONGO_INITDB_ROOT_USERNAME': MONGODB_CONFIG['username'],
-                        'MONGO_INITDB_ROOT_PASSWORD': MONGODB_CONFIG['password'],
-                        'MONGO_INITDB_DATABASE': MONGODB_CONFIG['db_name']
-                    },
-                    detach=True
-                )
-                logging.info("auto_trading_db 컨테이너가 성공적으로 시작되었습니다.")
-            else:
-                container = containers[0]
-                if container.status != 'running':
-                    container.start()
-                    logging.info("auto_trading_db 컨테이너를 시작했습니다.")
-                
-                container_info = container.attrs
-                port_bindings = container_info['HostConfig']['PortBindings']
-                if '25000/tcp' not in port_bindings or port_bindings['25000/tcp'][0]['HostPort'] != '25000':
-                    raise Exception("auto_trading_db 컨테이너의 포트가 25000이 아닙니다.")
-                
-        except Exception as e:
-            logging.error(f"도커 컨테이너 확인 중 오류 발생: {str(e)}")
-            raise
-
-    async def save_strategy_data(self, coin: str, strategy_data: Dict[str, Any]) -> bool:
+    def save_strategy_data(self, coin: str, strategy_data: Dict[str, Any]) -> bool:
         """코인별 전략 데이터 저장
 
         Args:
@@ -279,13 +408,6 @@ class MongoDBManager:
                         'buy_threshold': strategy_data.get('rsi_buy_threshold', 30),
                         'sell_threshold': strategy_data.get('rsi_sell_threshold', 70)
                     },
-                    'stochastic': {
-                        'k': strategy_data.get('stochastic_k', 0),
-                        'd': strategy_data.get('stochastic_d', 0),
-                        'signal': strategy_data.get('stochastic_signal', 0),
-                        'buy_threshold': strategy_data.get('stochastic_buy_threshold', 20),
-                        'sell_threshold': strategy_data.get('stochastic_sell_threshold', 80)
-                    },
                     'macd': {
                         'macd': strategy_data.get('macd', 0),
                         'signal': strategy_data.get('macd_signal', 0),
@@ -299,12 +421,48 @@ class MongoDBManager:
                         'lower': strategy_data.get('bb_lower', 0),
                         'buy_threshold': strategy_data.get('bb_buy_threshold', 0),
                         'sell_threshold': strategy_data.get('bb_sell_threshold', 0)
+                    },
+                    'volume': {
+                        'current': strategy_data.get('current_volume', 0),
+                        'average': strategy_data.get('average_volume', 0),
+                        'change_rate': strategy_data.get('volume_change_rate', 0)
+                    },
+                    'price_change': {
+                        'rate': strategy_data.get('price_change_rate', 0),
+                        'threshold': strategy_data.get('price_change_threshold', 0.02)
+                    },
+                    'moving_average': {
+                        'ma5': strategy_data.get('ma5', 0),
+                        'ma20': strategy_data.get('ma20', 0)
+                    },
+                    'momentum': {
+                        'value': strategy_data.get('momentum', 0)
+                    },
+                    'stochastic': {
+                        'k': strategy_data.get('stoch_k', 0),
+                        'd': strategy_data.get('stoch_d', 0),
+                        'buy_threshold': strategy_data.get('stoch_buy_threshold', 20),
+                        'sell_threshold': strategy_data.get('stoch_sell_threshold', 80)
+                    },
+                    'ichimoku': {
+                        'cloud_top': strategy_data.get('ichimoku_cloud_top', 0),
+                        'cloud_bottom': strategy_data.get('ichimoku_cloud_bottom', 0)
+                    },
+                    'market_sentiment': {
+                        'value': strategy_data.get('market_sentiment', 0)
+                    },
+                    'downtrend_end': {
+                        'trend_strength': strategy_data.get('trend_strength', 0),
+                        'volume_change': strategy_data.get('volume_change_24h', 0)
+                    },
+                    'uptrend_end': {
+                        'trend_strength': strategy_data.get('trend_strength', 0),
+                        'resistance_level': strategy_data.get('resistance_level', 0)
+                    },
+                    'divergence': {
+                        'price_rsi': strategy_data.get('price_rsi_divergence', 0),
+                        'price_macd': strategy_data.get('price_macd_divergence', 0)
                     }
-                },
-                'market_data': {
-                    'volume': strategy_data.get('volume', 0),
-                    'market_cap': strategy_data.get('market_cap', 0),
-                    'rank': strategy_data.get('coin_rank', 0)
                 },
                 'signals': {
                     'buy_strength': strategy_data.get('buy_signal', 0),
@@ -315,6 +473,13 @@ class MongoDBManager:
                         'sell': strategy_data.get('combined_sell_threshold', 0.3)
                     }
                 },
+                'market_metrics': {
+                    'volume': strategy_data.get('volume', 0),
+                    'market_cap': strategy_data.get('market_cap', 0),
+                    'rank': strategy_data.get('coin_rank', 0),
+                    'price_change_24h': strategy_data.get('price_change_24h', 0),
+                    'volume_change_24h': strategy_data.get('volume_change_24h', 0)
+                },
                 'thresholds': {
                     'price_change': strategy_data.get('price_change_threshold', 0.02),
                     'volume_change': strategy_data.get('volume_change_threshold', 0.5),
@@ -322,14 +487,25 @@ class MongoDBManager:
                 }
             }
 
-            result = await self.strategy_data.insert_one(document)
-            return bool(result.inserted_id)
+            result = self.strategy_data.insert_one(document)
+            success = bool(result.inserted_id)
+            
+            if success:
+                self.logger.debug(f"전략 데이터 저장 성공 - 코인: {coin}, ID: {result.inserted_id}")
+                self.logger.debug(f"저장된 데이터: RSI={document['strategies']['rsi']['value']:.2f}, "
+                              f"MACD={document['strategies']['macd']['macd']:.2f}, "
+                              f"매수신호={document['signals']['buy_strength']:.2f}, "
+                              f"매도신호={document['signals']['sell_strength']:.2f}")
+            else:
+                self.logger.warning(f"전략 데이터 저장 실패 - 코인: {coin}")
+                
+            return success
 
         except Exception as e:
-            logging.error(f"전략 데이터 저장 실패 - 코인: {coin}, 오류: {str(e)}")
+            self.logger.error(f"전략 데이터 저장 실패 - 코인: {coin}, 오류: {str(e)}")
             return False
 
-    async def get_strategy_history(self, coin: str, 
+    def get_strategy_history(self, coin: str, 
                                  start_time: datetime = None, 
                                  end_time: datetime = None,
                                  limit: int = 100) -> List[Dict]:
@@ -357,13 +533,13 @@ class MongoDBManager:
             cursor.sort('timestamp', -1)
             cursor.limit(limit)
 
-            return await cursor.to_list(length=limit)
+            return cursor.to_list(length=limit)
 
         except Exception as e:
             logging.error(f"전략 데이터 조회 실패 - 코인: {coin}, 오류: {str(e)}")
             return []
 
-    async def get_latest_strategy_data(self, coin: str) -> Dict:
+    def get_latest_strategy_data(self, coin: str) -> Dict:
         """특정 코인의 최신 전략 데이터 조회
 
         Args:
@@ -373,12 +549,28 @@ class MongoDBManager:
             Dict: 최신 전략 데이터
         """
         try:
-            result = await self.strategy_data.find_one(
+            result = self.strategy_data.find_one(
                 {'coin': coin},
                 sort=[('timestamp', -1)]
             )
+            
+            if result:
+                self.logger.debug(f"최신 전략 데이터 조회 성공 - 코인: {coin}, 시간: {result['timestamp']}")
+            else:
+                self.logger.warning(f"전략 데이터 없음 - 코인: {coin}")
+                
             return result or {}
 
         except Exception as e:
-            logging.error(f"최신 전략 데이터 조회 실패 - 코인: {coin}, 오류: {str(e)}")
+            self.logger.error(f"전략 데이터 조회 실패 - 코인: {coin}, 오류: {str(e)}")
             return {}
+
+    def get_sorted_markets(self) -> List[Dict]:
+        """정렬된 마켓 데이터 조회"""
+        try:
+            cursor = self.market_data.find().sort('volume', -1)
+            markets = cursor.to_list(length=None)
+            return markets
+        except Exception as e:
+            self.logger.error(f"마켓 데이터 조회 중 오류: {str(e)}")
+            return []

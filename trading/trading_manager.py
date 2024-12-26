@@ -485,3 +485,18 @@ class TradingManager:
                 
         except Exception as e:
             self.logger.error(f"전략 데이터 업데이트 중 오류 발생: {str(e)}")
+
+    def get_active_trades(self) -> List[Dict]:
+        """
+        현재 활성화된 거래 목록을 조회합니다.
+        
+        Returns:
+            List[Dict]: 활성 거래 목록
+        """
+        try:
+            # 직접 컬렉션 접근
+            active_trades = self.db.trades.find({"status": "active"})
+            return list(active_trades)
+        except Exception as e:
+            self.logger.error(f"활성 거래 조회 중 오류: {str(e)}")
+            return []
