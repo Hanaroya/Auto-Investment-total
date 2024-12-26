@@ -182,64 +182,68 @@ class MarketAnalyzer:
                 self.logger.warning(f"{market} - 분석할 캔들 데이터 없음")
                 return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
 
-            # 컬럼 이름 수정
-            required_columns = ['close', 'volume']
-            df = pd.DataFrame(candles)
+            # 입력 캔들 데이터 구조 확인
+            self.logger.debug(f"{market} - 입력 캔들 데이터 첫번째 항목:")
+            self.logger.debug(f"{candles[0]}")
+
+            # 캔들 데이터에서 필요한 정보 추출
+            current_candle = candles[-1]
+            self.logger.debug(f"{market} - 현재 캔들 데이터:")
+            self.logger.debug(f"{current_candle}")
             
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                self.logger.error(f"{market} - 필수 컬럼 누락: {missing_columns}")
-                return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
-
-            if df.empty:
-                self.logger.warning(f"{market} - 캔들 데이터 없음")
-                return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
-
-            # 데이터 전처리
+            # 변환된 데이터 확인
             market_data = {
-                'df': df,
-                'current_price': float(df['close'].iloc[-1]),
-                'volume': float(df['volume'].iloc[-1])
+                'current_price': float(current_candle['close']),
+                'price_history': [float(c['close']) for c in candles],
+                'volume': float(current_candle['volume']),
+                'volume_history': [float(c['volume']) for c in candles],
+                'high': float(current_candle['high']),
+                'low': float(current_candle['low']),
+                
+                # 기술적 지표들
+                'rsi': float(current_candle.get('rsi', 50)),
+                'macd': float(current_candle.get('macd', 0)),
+                'signal': float(current_candle.get('signal', 0)),
+                'upper_band': float(current_candle.get('upper_band', 0)),
+                'lower_band': float(current_candle.get('lower_band', 0)),
+                'middle_band': float(current_candle.get('middle_band', 0)),
+                'stochastic_k': float(current_candle.get('stochastic_k', 50)),
+                'stochastic_d': float(current_candle.get('stochastic_d', 50)),
+                'momentum': float(current_candle.get('momentum', 0))
             }
-            
+
+            # 변환된 데이터 로깅
+            self.logger.debug(f"{market} - 전략에 전달되는 데이터:")
+            for key, value in market_data.items():
+                if key not in ['price_history', 'volume_history']:
+                    self.logger.debug(f"  {key}: {value}")
+
             # 각 전략 실행 및 결과 수집
             strategy_results = {}
             for name, strategy in self.strategies.items():
                 try:
-                    start_time = time.time()
+                    self.logger.debug(f"{market} - {name} 전략 실행 시작")
+                    self.logger.debug(f"{market} - {name} 전략에 전달되는 데이터 타입:")
+                    for key, value in market_data.items():
+                        if key not in ['price_history', 'volume_history']:
+                            self.logger.debug(f"  {key}: {type(value)}")
+                    
                     result = strategy.analyze(market_data)
-                    execution_time = time.time() - start_time
+                    self.logger.debug(f"{market} - {name} 전략 결과: {result}")
                     
-                    # 전략 실행 시간 모니터링
-                    if execution_time > 1.0:
-                        self.logger.warning(f"{market} - {name} 전략 실행 시간 과다: {execution_time:.2f}초")
-                    
-                    # float 값을 딕셔너리로 변환
-                    if isinstance(result, (int, float)):
-                        strategy_results[name] = {
-                            'signal': 'buy' if result >= 0.65 else 'hold',
-                            'strength': float(result),
-                            'value': float(result)
-                        }
-                    elif isinstance(result, dict):
-                        if 'strength' not in result:
-                            result['strength'] = result.get('value', 0.5)
-                        strategy_results[name] = result
-                    else:
-                        self.logger.error(f"{market} - {name} 전략이 잘못된 형식의 결과를 반환: {result}")
-                        strategy_results[name] = {'signal': 'hold', 'strength': 0.5, 'value': 0.5}
+                    strategy_results[name] = {
+                        'signal': 'buy' if result >= 0.65 else 'sell' if result <= 0.35 else 'hold',
+                        'strength': float(result),
+                        'value': float(result)
+                    }
                         
                 except Exception as e:
                     self.logger.error(f"{market} - {name} 전략 분석 실패: {str(e)}", exc_info=True)
                     strategy_results[name] = {'signal': 'hold', 'strength': 0.5, 'value': 0.5}
 
-            # 종합 강도 계산
-            total_strength = sum(r['strength'] for r in strategy_results.values()) / len(strategy_results)
-            self.logger.info(f"{market} - 종합 강도: {round(total_strength, 2)}")
-
             return {
-                'action': 'buy' if total_strength >= 0.65 else 'hold',
-                'strength': round(total_strength, 2),
+                'action': 'buy' if sum(r['strength'] for r in strategy_results.values()) / len(strategy_results) >= 0.65 else 'hold',
+                'strength': round(sum(r['strength'] for r in strategy_results.values()) / len(strategy_results), 2),
                 'price': market_data['current_price'],
                 'strategy_data': strategy_results
             }

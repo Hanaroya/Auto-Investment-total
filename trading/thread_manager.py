@@ -178,16 +178,6 @@ class TradingThread(threading.Thread):
                         })
                         self.logger.info(f"매수 신호: {coin} - 투자금액: {investment_amount:,}원")
 
-                # 전략 데이터 업데이트 (동기식)
-                self.db.strategy_data.update_one(
-                    {'coin': coin},
-                    {'$set': {
-                        'signals': signals,
-                        'current_price': current_price,
-                        'updated_at': datetime.now(timezone(timedelta(hours=9)))
-                    }},
-                    upsert=True
-                )
 
             # 스레드 상태 업데이트 (동기식)
             self.db.thread_status.update_one(
