@@ -33,7 +33,7 @@ class Scheduler:
         except Exception as e:
             self.logger.error(f"Error scheduling daily report: {e}")
 
-    async def schedule_task(self, task_name: str, task_func, interval: int = None, cron: str = None):
+    async def schedule_task(self, task_name: str, task_func, interval: int = None, cron: str = None, immediate: bool = False):
         """태스크 스케줄링
         
         Args:
@@ -41,6 +41,7 @@ class Scheduler:
             task_func: 실행할 함수
             interval: 실행 간격 (초)
             cron: Cron 표현식 (예: "0 */1 * * *")
+            immediate: 즉시 실행 여부 (기본값: False)
         """
         try:
             scheduler = AsyncIOScheduler()
@@ -51,7 +52,8 @@ class Scheduler:
                     task_func,
                     'cron',
                     id=task_name,
-                    next_run_time=datetime.now(),
+                    # immediate가 False면 next_run_time을 설정하지 않음
+                    next_run_time=datetime.now() if immediate else None,
                     **self._parse_cron(cron)
                 )
             else:
@@ -61,7 +63,8 @@ class Scheduler:
                     'interval',
                     seconds=interval or 3600,
                     id=task_name,
-                    next_run_time=datetime.now()
+                    # immediate가 False면 next_run_time을 설정하지 않음
+                    next_run_time=datetime.now() if immediate else None
                 )
             
             scheduler.start()

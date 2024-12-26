@@ -4,6 +4,7 @@ from database.mongodb_manager import MongoDBManager
 from messenger.Messenger import Messenger
 from datetime import datetime
 import pandas as pd
+import yaml
 
 class TradingManager:
     """
@@ -13,8 +14,18 @@ class TradingManager:
     """
     def __init__(self):
         self.db = MongoDBManager()
-        self.messenger = Messenger({})
+        self.config = self._load_config()
+        self.messenger = Messenger(self.config)
         self.logger = logging.getLogger(__name__)
+
+    def _load_config(self) -> Dict:
+        """설정 파일 로드"""
+        try:
+            with open("resource/application.yml", 'r', encoding='utf-8') as file:
+                return yaml.safe_load(file)
+        except Exception as e:
+            self.logger.error(f"설정 파일 로드 실패: {str(e)}")
+            return {}
 
     async def process_buy_signal(self, coin: str, thread_id: int, signal_strength: float, 
                                price: float, strategy_data: Dict):
@@ -158,14 +169,16 @@ class TradingManager:
             
             try:
                 # 이메일 전송
-                await self.messenger.send_email(
-                    subject="일일 투자 현황 리포트",
-                    body="일일 투자 현황 리포트가 첨부되어 있습니다.",
-                    attachment=filename
+                await self.messenger.send_message(
+                    message=f"{datetime.now().strftime('%Y-%m-%d')} 일일 리포트입니다.",
+                    messenger_type="email",
+                    subject=f"{datetime.now().strftime('%Y-%m-%d')} 투자 리포트",
+                    attachment_path=filename  # Excel 파일 경로
                 )
+                self.logger.info("일일 리포트 생성 및 전송 완료")
                 
                 # 메신저 알림
-                await self.messenger.send_message(f"{filename} 파일이 전달되었습니다.")
+                await self.messenger.send_message(message=f"{filename} 파일이 전달되었습니다.", messenger_type="slack")
             finally:
                 # 파일 정리
                 import os
@@ -173,8 +186,7 @@ class TradingManager:
                     os.remove(filename)
                     
         except Exception as e:
-            self.logger.error(f"일일 리포트 생성 중 오류 발생: {e}")
-            raise
+            self.logger.error(f"일일 리포트 생성 중 오류 발생: {str(e)}")
 
     def create_buy_message(self, trade_data: Dict) -> str:
         """매수 메시지 생성

@@ -66,15 +66,17 @@ class CryptoTradingBot:
             await self.scheduler.schedule_task(
                 'daily_report',
                 self.trading_manager.generate_daily_report,
-                cron='0 20 * * *'  # 매일 저녁 8시에 실행
+                cron='0 20 * * *',  # 매일 저녁 8시에 실행
+                immediate=False  # 정시 실행
             )
             
             # 시간별 리포트 스케줄러 설정 (매 시간 정각에 실행)
             await self.scheduler.schedule_task(
                 'hourly_report',
                 self.trading_manager.generate_hourly_report,
-                cron='0 * * * *'  # 매 시간 0분에 실행
-            )
+                cron='0 * * * *',  # 매 시간 0분에 실행
+                immediate=False  # 정시 실행
+            )   
             
             # 메인 루프
             while True:
