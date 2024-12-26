@@ -110,6 +110,15 @@ class StrategyManager:
         """
         self.strategies.append(strategy)
         
+    def get_all_strategies(self) -> List[str]:
+        """
+        모든 전략 목록 가져오기
+        
+        Returns:
+            List[str]: 모든 전략 목록 리스트
+        """
+        return [strategy.__class__.__name__ for strategy in self.strategies]
+        
     def get_decision(self, market_data: Dict[str, Any]) -> str:
         """
         모든 전략의 분석 결과를 취합하여 최종 투자 결정을 생성

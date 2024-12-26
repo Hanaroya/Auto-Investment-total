@@ -75,7 +75,7 @@ class CryptoTradingBot:
             await self.messenger.send_message(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
             
             # 스레드 매니저 시작
-            await self.thread_manager.start(markets)
+            await self.thread_manager.start_threads(markets)
             
             # 스케줄러 시작
             asyncio.create_task(self.scheduler.start())
@@ -140,5 +140,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        bot.cleanup()
+        # cleanup을 동기적으로 실행
+        bot.loop.run_until_complete(bot.cleanup())
         bot.loop.close() 

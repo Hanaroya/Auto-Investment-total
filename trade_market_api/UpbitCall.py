@@ -215,12 +215,12 @@ class UpbitCall:
             List[Dict]: 캔들 데이터 리스트. 각 캔들은 다음 정보를 포함:
                 - timestamp: 타임스탬프
                 - datetime: 캔들 시각 (KST)
-                - opening_price: 시가
-                - high_price: 고가
-                - low_price: 저가
-                - trade_price: 종가
-                - candle_acc_trade_volume: 누적 거래량
-                - candle_acc_trade_price: 누적 거래대금
+                - open: 시가
+                - high: 고가
+                - low: 저가
+                - close: 종가
+                - volume: 누적 거래량
+                - value: 누적 거래대금
                 - market: 마켓 코드
         """
         try:
@@ -269,16 +269,16 @@ class UpbitCall:
             if not self._has_sufficient_data(candles, market):
                 return []
              
-            # 데이터 처리
+            # 데이터 변환
             processed_candles = [{
                 'timestamp': candle['timestamp'],
                 'datetime': candle['candleDateTimeKst'],
-                'opening_price': candle['openingPrice'],
-                'high_price': candle['highPrice'],
-                'low_price': candle['lowPrice'],
-                'trade_price': candle['tradePrice'],
-                'candle_acc_trade_volume': candle['candleAccTradeVolume'],
-                'candle_acc_trade_price': candle['candleAccTradePrice'],
+                'open': candle['openingPrice'],
+                'high': candle['highPrice'],
+                'low': candle['lowPrice'],
+                'close': candle['tradePrice'],
+                'volume': candle['candleAccTradeVolume'],
+                'value': candle['candleAccTradePrice'],
                 'market': market
             } for candle in candles]
 

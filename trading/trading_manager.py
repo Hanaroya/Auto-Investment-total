@@ -2,10 +2,10 @@ from typing import Dict, List
 import logging
 from database.mongodb_manager import MongoDBManager
 from messenger.Messenger import Messenger
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import pandas as pd
 import yaml
-
+from strategy.StrategyBase import StrategyManager
 class TradingManager:
     """
     거래 관리자
@@ -403,88 +403,62 @@ class TradingManager:
             self.logger.error(f"시간별 리포트 생성 중 오류 발생: {e}")
             raise
 
-    async def update_strategy_data(self, coin: str, price: float, strategy_results: Dict):
-        """전략 분석 결과 업데이트
-
-        Args:
-            coin: 코인 심볼
-            price: 현재 가격
-            strategy_results: 전략 분석 결과
-        """
+    def update_strategy_data(self, coin: str, price: float, strategy_results: Dict):
+        """전략 분석 결과 업데이트"""
         try:
-            # 기본 시장 데이터 준비
+            # 입력값 로깅
+            self.logger.debug(f"{coin} - 입력된 전략 결과: {strategy_results}")
+            
+            # 전략 결과 검증
+            if not isinstance(strategy_results, dict):
+                self.logger.error(f"{coin} - 유효하지 않은 전략 결과 형식: {type(strategy_results)}")
+                return
+            
+            if 'strategy_data' not in strategy_results:
+                self.logger.error(f"{coin} - strategy_data 없음: {strategy_results}")
+                return
+             # 기본 시장 데이터 준비
             market_data = {
                 'volume': strategy_results.get('volume', 0),
                 'market_condition': strategy_results.get('market_condition', ''),
                 'transaction_fee': self.config.get('transaction_fee', 0.0005)
             }
-
             # 전략 데이터 구성
             strategy_data = {
-                'current_price': price,
-                'timestamp': datetime.utcnow(),
-                'coin': coin,
+                'current_price': strategy_results.get('price', price),
+                'timestamp': datetime.now(timezone(timedelta(hours=9))),  # KST 시간
+                'coin': coin['market'],
                 'market_data': market_data,
-                'strategies': {
-                    'rsi': {
-                        'value': strategy_results.get('rsi', 0),
-                        'signal': strategy_results.get('rsi_signal', 0),
-                        'buy_threshold': strategy_results.get('rsi_buy_threshold', 30),
-                        'sell_threshold': strategy_results.get('rsi_sell_threshold', 70)
-                    },
-                    'stochastic': {
-                        'k': strategy_results.get('stochastic_k', 0),
-                        'd': strategy_results.get('stochastic_d', 0),
-                        'signal': strategy_results.get('stochastic_signal', 0),
-                        'buy_threshold': strategy_results.get('stochastic_buy_threshold', 20),
-                        'sell_threshold': strategy_results.get('stochastic_sell_threshold', 80)
-                    },
-                    'macd': {
-                        'macd': strategy_results.get('macd', 0),
-                        'signal': strategy_results.get('macd_signal', 0),
-                        'histogram': strategy_results.get('macd_hist', 0),
-                        'buy_threshold': strategy_results.get('macd_buy_threshold', 0),
-                        'sell_threshold': strategy_results.get('macd_sell_threshold', 0)
-                    },
-                    'bollinger': {
-                        'upper': strategy_results.get('bb_upper', 0),
-                        'middle': strategy_results.get('bb_middle', 0),
-                        'lower': strategy_results.get('bb_lower', 0),
-                        'buy_threshold': strategy_results.get('bb_buy_threshold', 0),
-                        'sell_threshold': strategy_results.get('bb_sell_threshold', 0)
-                    }
-                },
+                'strategies': strategy_results['strategy_data'],
                 'signals': {
-                    'buy_strength': strategy_results.get('buy_signal', 0),
-                    'sell_strength': strategy_results.get('sell_signal', 0),
-                    'overall_signal': strategy_results.get('overall_signal', 0),
-                    'combined_threshold': {
-                        'buy': strategy_results.get('combined_buy_threshold', 0.7),
-                        'sell': strategy_results.get('combined_sell_threshold', 0.3)
-                    }
-                },
-                'market_metrics': {
-                    'volume': strategy_results.get('volume', 0),
-                    'market_cap': strategy_results.get('market_cap', 0),
-                    'rank': strategy_results.get('coin_rank', 0),
-                    'price_change_24h': strategy_results.get('price_change_24h', 0),
-                    'volume_change_24h': strategy_results.get('volume_change_24h', 0)
-                },
-                'thresholds': {
-                    'price_change': strategy_results.get('price_change_threshold', 0.02),
-                    'volume_change': strategy_results.get('volume_change_threshold', 0.5),
-                    'trend_strength': strategy_results.get('trend_strength_threshold', 0.6)
+                    'strength': strategy_results.get('strength', 0),
+                    'action': strategy_results.get('action', 'hold')
                 }
             }
-            
-            # MongoDB에 전략 데이터 저장
-            success = await self.db.save_strategy_data(coin, strategy_data)
-            
-            if not success:
-                self.logger.warning(f"{coin} 전략 데이터 저장 실패")
+
+            # 전략 데이터 검증 및 로깅
+            if not strategy_data['strategies']:
+                self.logger.error(f"{coin} - 전략 데이터 비어있음")
+                return
+
+            # MongoDB에 전략 데이터 저장 (upsert 사용)
+            try:
+                result = self.db.strategy_data.update_one(
+                    {'coin': coin['market']}, # 코인 이름으로 조회
+                    {'$set': strategy_data}, # 전략 데이터 업데이트
+                    upsert=True # 데이터가 없으면 생성
+                )
+                
+                if result.modified_count > 0 or result.upserted_id:
+                    self.logger.debug(f"{coin} 전략 데이터 저장/업데이트 성공")
+                else:
+                    self.logger.warning(f"{coin} 전략 데이터 변경 없음")
+                
+            except Exception as db_error:
+                self.logger.error(f"MongoDB 저장 중 오류 발생: {str(db_error)}")
                 
         except Exception as e:
-            self.logger.error(f"전략 데이터 업데이트 중 오류 발생: {str(e)}")
+            self.logger.error(f"전략 데이터 업데이트 중 오류 발생: {str(e)}", exc_info=True)
 
     def get_active_trades(self) -> List[Dict]:
         """

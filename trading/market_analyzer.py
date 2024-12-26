@@ -159,7 +159,7 @@ class MarketAnalyzer:
             return {'signal': 'hold', 'strength': float(result)}
         return result
 
-    async def analyze_market(self, market: str, candles: List[Dict]) -> Dict:
+    def analyze_market(self, market: str, candles: List[Dict]) -> Dict:
         """
         주어진 시장에 대해 모든 전략을 실행하여 종합적인 분석을 수행합니다.
         
@@ -182,8 +182,8 @@ class MarketAnalyzer:
                 self.logger.warning(f"{market} - 분석할 캔들 데이터 없음")
                 return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
 
-            # 필수 컬럼 확인
-            required_columns = ['trade_price', 'candle_acc_trade_volume']
+            # 컬럼 이름 수정
+            required_columns = ['close', 'volume']
             df = pd.DataFrame(candles)
             
             missing_columns = [col for col in required_columns if col not in df.columns]
@@ -198,8 +198,8 @@ class MarketAnalyzer:
             # 데이터 전처리
             market_data = {
                 'df': df,
-                'current_price': float(df['trade_price'].iloc[-1]),
-                'volume': float(df['candle_acc_trade_volume'].iloc[-1])
+                'current_price': float(df['close'].iloc[-1]),
+                'volume': float(df['volume'].iloc[-1])
             }
             
             # 각 전략 실행 및 결과 수집
@@ -211,28 +211,29 @@ class MarketAnalyzer:
                     execution_time = time.time() - start_time
                     
                     # 전략 실행 시간 모니터링
-                    if execution_time > 1.0:  # 1초 이상 소요되는 전략 감지
+                    if execution_time > 1.0:
                         self.logger.warning(f"{market} - {name} 전략 실행 시간 과다: {execution_time:.2f}초")
                     
+                    # float 값을 딕셔너리로 변환
                     if isinstance(result, (int, float)):
-                        strategy_results[name] = {'signal': 'hold', 'strength': float(result)}
-                    else:
+                        strategy_results[name] = {
+                            'signal': 'buy' if result >= 0.65 else 'hold',
+                            'strength': float(result),
+                            'value': float(result)
+                        }
+                    elif isinstance(result, dict):
+                        if 'strength' not in result:
+                            result['strength'] = result.get('value', 0.5)
                         strategy_results[name] = result
+                    else:
+                        self.logger.error(f"{market} - {name} 전략이 잘못된 형식의 결과를 반환: {result}")
+                        strategy_results[name] = {'signal': 'hold', 'strength': 0.5, 'value': 0.5}
                         
                 except Exception as e:
                     self.logger.error(f"{market} - {name} 전략 분석 실패: {str(e)}", exc_info=True)
-                    strategy_results[name] = {'signal': 'hold', 'strength': 0}
+                    strategy_results[name] = {'signal': 'hold', 'strength': 0.5, 'value': 0.5}
 
-            # 전략 결과 상세 로깅
-            self.logger.info(f"\n[{market}] 전략 분석 결과:")
-            for strategy, result in strategy_results.items():
-                self.logger.info(f"{strategy}: {result}")
-
-            # 종합 강도 계산 및 검증
-            if not strategy_results:
-                self.logger.error(f"{market} - 유효한 전략 결과 없음")
-                return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
-
+            # 종합 강도 계산
             total_strength = sum(r['strength'] for r in strategy_results.values()) / len(strategy_results)
             self.logger.info(f"{market} - 종합 강도: {round(total_strength, 2)}")
 
