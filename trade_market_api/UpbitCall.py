@@ -16,6 +16,8 @@ import asyncio
 import aiohttp
 import threading
 
+from trade_market_api.MarketDataConverter import MarketDataConverter
+
 class ThreadLock:
     """싱글톤 패턴으로 구현된 스레드 락 관리자
     
@@ -199,7 +201,7 @@ class UpbitCall:
             return False
         return True
 
-    def get_candle(self, market: str, interval: str = '1', count: int = 200) -> List[Dict]:
+    def get_candle(self, market: str, interval: str = '1', count: int = 300) -> List[Dict]:
         """
         캔들 데이터를 가져옵니다.
         
@@ -281,9 +283,11 @@ class UpbitCall:
                 'value': candle['candleAccTradePrice'],
                 'market': market
             } for candle in candles]
+            converter = MarketDataConverter()
+            converted_candles = converter.convert_upbit_candle(processed_candles)
 
             self.logger.debug(f"Thread {threading.current_thread().name} - {market} 캔들 데이터 수신: {len(candles)}개")
-            return processed_candles
+            return converted_candles
             
         except Exception as e:
             self.logger.error(f"Thread {threading.current_thread().name} - 캔들 데이터 조회 중 오류: {str(e)}")

@@ -182,61 +182,69 @@ class MarketAnalyzer:
                 self.logger.warning(f"{market} - 분석할 캔들 데이터 없음")
                 return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
 
-            # 입력 캔들 데이터 구조 확인
-            self.logger.debug(f"{market} - 입력 캔들 데이터 첫번째 항목:")
-            self.logger.debug(f"{candles[0]}")
-
-            # 캔들 데이터에서 필요한 정보 추출
+            # 현재 캔들 데이터
             current_candle = candles[-1]
-            self.logger.debug(f"{market} - 현재 캔들 데이터:")
-            self.logger.debug(f"{current_candle}")
             
-            # 변환된 데이터 확인
+            # 시장 데이터 구성
             market_data = {
                 'current_price': float(current_candle['close']),
-                'price_history': [float(c['close']) for c in candles],
+                'price_history': [float(c['close']) for c in candles[-5:]],  # 최근 5개
                 'volume': float(current_candle['volume']),
-                'volume_history': [float(c['volume']) for c in candles],
+                'volume_history': [float(c['volume']) for c in candles[-5:]],
                 'high': float(current_candle['high']),
                 'low': float(current_candle['low']),
                 
-                # 기술적 지표들
+                # RSI 관련
                 'rsi': float(current_candle.get('rsi', 50)),
+                'rsi_history': [float(c.get('rsi', 50)) for c in candles[-5:]],
+                
+                # MACD 관련
                 'macd': float(current_candle.get('macd', 0)),
                 'signal': float(current_candle.get('signal', 0)),
+                'macd_history': [float(c.get('macd', 0)) for c in candles[-5:]],
+                
+                # 볼린저 밴드
                 'upper_band': float(current_candle.get('upper_band', 0)),
                 'lower_band': float(current_candle.get('lower_band', 0)),
                 'middle_band': float(current_candle.get('middle_band', 0)),
-                'stochastic_k': float(current_candle.get('stochastic_k', 50)),
-                'stochastic_d': float(current_candle.get('stochastic_d', 50)),
-                'momentum': float(current_candle.get('momentum', 0))
+                
+                # 스토캐스틱
+                'stoch_k': float(current_candle.get('stoch_k', 50)),
+                'stoch_d': float(current_candle.get('stoch_d', 50)),
+                'stoch_k_history': [float(c.get('stoch_k', 50)) for c in candles[-5:]],
+                
+                # 이동평균
+                'ma5': float(current_candle.get('sma5', 0)),
+                'ma20': float(current_candle.get('sma20', 0)),
+                
+                # 거래량 관련
+                'average_volume': float(current_candle.get('average_volume', 0)),
+                'current_volume': float(current_candle['volume']),
+                
+                # 추세/모멘텀 관련
+                'momentum': float(current_candle.get('momentum', 0)),
+                'trend_strength': float(current_candle.get('trend_strength', 0)),
+                'market_sentiment': float(current_candle.get('market_sentiment', 0)),
+                
+                # 일목균형표
+                'ichimoku_cloud_top': float(current_candle.get('ichimoku_cloud_top', 0)),
+                'ichimoku_cloud_bottom': float(current_candle.get('ichimoku_cloud_bottom', 0)),
+                
+                # 가격 변화율
+                'price_change_rate': float(current_candle.get('price_change_rate', 0))
             }
-
-            # 변환된 데이터 로깅
-            self.logger.debug(f"{market} - 전략에 전달되는 데이터:")
-            for key, value in market_data.items():
-                if key not in ['price_history', 'volume_history']:
-                    self.logger.debug(f"  {key}: {value}")
 
             # 각 전략 실행 및 결과 수집
             strategy_results = {}
             for name, strategy in self.strategies.items():
                 try:
-                    self.logger.debug(f"{market} - {name} 전략 실행 시작")
-                    self.logger.debug(f"{market} - {name} 전략에 전달되는 데이터 타입:")
-                    for key, value in market_data.items():
-                        if key not in ['price_history', 'volume_history']:
-                            self.logger.debug(f"  {key}: {type(value)}")
-                    
                     result = strategy.analyze(market_data)
-                    self.logger.debug(f"{market} - {name} 전략 결과: {result}")
-                    
                     strategy_results[name] = {
                         'signal': 'buy' if result >= 0.65 else 'sell' if result <= 0.35 else 'hold',
                         'strength': float(result),
-                        'value': float(result)
+                        'value': float(result),
+                        'market_data': market_data  # 전략에 사용된 데이터도 포함
                     }
-                        
                 except Exception as e:
                     self.logger.error(f"{market} - {name} 전략 분석 실패: {str(e)}", exc_info=True)
                     strategy_results[name] = {'signal': 'hold', 'strength': 0.5, 'value': 0.5}
@@ -245,7 +253,8 @@ class MarketAnalyzer:
                 'action': 'buy' if sum(r['strength'] for r in strategy_results.values()) / len(strategy_results) >= 0.65 else 'hold',
                 'strength': round(sum(r['strength'] for r in strategy_results.values()) / len(strategy_results), 2),
                 'price': market_data['current_price'],
-                'strategy_data': strategy_results
+                'strategy_data': strategy_results,
+                'market_data': market_data  # 전체 시장 데이터도 포함
             }
 
         except Exception as e:

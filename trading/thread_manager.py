@@ -98,6 +98,7 @@ class TradingThread(threading.Thread):
             try:
                 # 현재 스레드의 이벤트 루프 컨텍스트에서 실행
                 self.process_single_coin(coin)
+                time.sleep(0.08)
             except Exception as e:
                 self.logger.error(f"Error processing {coin}: {e}")
                 continue
@@ -108,7 +109,7 @@ class TradingThread(threading.Thread):
             # 캔들 데이터 조회 - 락으로 보호
             with self.shared_locks['candle_data']:
                 self.logger.debug(f"Thread {self.thread_id} acquired lock for {coin}")
-                candles = self.upbit.get_candle(market=coin, interval='1', count=200)
+                candles = self.upbit.get_candle(market=coin, interval='1', count=300)
                 self.logger.debug(f"Thread {self.thread_id} released lock for {coin}")
                 
             if not candles or len(candles) < 100:

@@ -473,7 +473,13 @@ class TradingManager:
             raise
 
     def update_strategy_data(self, coin: str, price: float, strategy_results: Dict):
-        """전략 분석 결과 업데이트"""
+        """전략 분석 결과 업데이트
+        
+        Args:
+            coin: 코인 정보
+            price: 현재 가격
+            strategy_results: 전략 분석 결과
+        """
         try:
             # 입력값 로깅
             self.logger.debug(f"{coin} - 입력된 전략 결과: {strategy_results}")
@@ -486,29 +492,25 @@ class TradingManager:
             if 'strategy_data' not in strategy_results:
                 self.logger.error(f"{coin} - strategy_data 없음: {strategy_results}")
                 return
-             # 기본 시장 데이터 준비
-            market_data = {
-                'volume': strategy_results.get('volume', 0),
-                'market_condition': strategy_results.get('market_condition', ''),
-                'transaction_fee': self.config.get('transaction_fee', 0.0005)
-            }
+            
             # 전략 데이터 구성
             strategy_data = {
                 'current_price': strategy_results.get('price', price),
                 'timestamp': datetime.now(timezone(timedelta(hours=9))),  # KST 시간
                 'coin': coin['market'],
-                'market_data': market_data,
-                'strategies': strategy_results['strategy_data'],
-                'signals': {
-                    'strength': strategy_results.get('strength', 0),
-                    'action': strategy_results.get('action', 'hold')
+                'price': strategy_results.get('price', price),
+                'action': strategy_results.get('action', 'hold'),
+                'strength': strategy_results.get('strength', 0),
+                'market_data': strategy_results.get('market_data', {}),  # 시장 데이터
+                'strategies': {
+                    name: {
+                        'signal': data.get('signal', 'hold'),
+                        'strength': data.get('strength', 0),
+                        'value': data.get('value', 0),
+                    }
+                    for name, data in strategy_results.get('strategy_data', {}).items()
                 }
             }
-
-            # 전략 데이터 검증 및 로깅
-            if not strategy_data['strategies']:
-                self.logger.error(f"{coin} - 전략 데이터 비어있음")
-                return
 
             # MongoDB에 전략 데이터 저장 (upsert 사용)
             try:
