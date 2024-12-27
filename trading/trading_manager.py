@@ -20,7 +20,11 @@ class TradingManager:
         self.config = self._load_config()
         self.messenger = Messenger(self.config)
         self.logger = logging.getLogger(__name__)
-        self.upbit_call = UpbitCall()
+        self.upbit = UpbitCall(
+            self.config['api_keys']['upbit']['access_key'],
+            self.config['api_keys']['upbit']['secret_key'],
+            is_test=True
+        )
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
         try:
