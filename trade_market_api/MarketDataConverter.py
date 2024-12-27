@@ -27,12 +27,28 @@ class MarketDataConverter:
             각 캔들의 기술적 지표가 포함된 딕셔너리 리스트
         """
         try:
-            if not candle_data or len(candle_data) < 100:
-                print(f"불충분한 캔들 데이터: {len(candle_data) if candle_data else 0}개")
+            if not candle_data:
+                print("빈 캔들 데이터")
+                return []
+
+            # 시간순으로 정렬 (오래된 데이터부터)
+            sorted_candles = sorted(candle_data, key=lambda x: x['timestamp'])
+            
+            if len(sorted_candles) < 100:
+                print(f"불충분한 캔들 데이터: {len(sorted_candles)}개")
                 return []
 
             # DataFrame 생성 (전체 캔들 데이터 사용)
-            df = pd.DataFrame(candle_data)
+            df = pd.DataFrame({
+                'date': [x['datetime'] for x in sorted_candles],
+                'open': [x['open'] for x in sorted_candles],
+                'high': [x['high'] for x in sorted_candles],
+                'low': [x['low'] for x in sorted_candles],
+                'close': [x['close'] for x in sorted_candles],
+                'volume': [x['volume'] for x in sorted_candles],
+                'value': [x['value'] for x in sorted_candles],
+                'market': [x['market'] for x in sorted_candles]
+            })
             
             # 기술적 지표 계산
             df = self._calculate_indicators(df)
@@ -54,6 +70,9 @@ class MarketDataConverter:
                 
                 # 추가 시장 데이터
                 row_data.update({
+                    'timestamp': sorted_candles[idx]['timestamp'],
+                    'datetime': sorted_candles[idx]['datetime'],
+                    'market': sorted_candles[idx]['market'],
                     'market_state': 'active'
                 })
                 
