@@ -7,6 +7,7 @@ import pandas as pd
 import yaml
 from strategy.StrategyBase import StrategyManager
 from trade_market_api.UpbitCall import UpbitCall
+import os
 
 class TradingManager:
     """
@@ -162,7 +163,7 @@ class TradingManager:
             self.db.update_trade(active_trade['_id'], update_data)
 
             # 메신저로 매도 알림
-            message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_sell_message(active_trade, price, signal_strength)
+            message = self.create_sell_message(active_trade, price, signal_strength)
             self.messenger.send_message(message)
 
             return True
@@ -538,3 +539,54 @@ class TradingManager:
         except Exception as e:
             self.logger.error(f"활성 거래 조회 중 오류: {str(e)}")
             return []
+
+    def check_investment_limit(self, thread_id: int) -> bool:
+        """
+        스레드별 투자 한도를 확인합니다.
+        TradingThread에서 이미 max_investment를 체크하므로,
+        여기서는 전체 투자 한도만 추가로 확인합니다.
+        
+        Args:
+            thread_id: 스레드 ID
+            
+        Returns:
+            bool: 투자 가능 여부 (True: 투자 가능, False: 한도 초과)
+        """
+        try:
+            # 환경 변수에서 설정값 가져오기
+            max_thread_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))  # 스레드당 8만원
+            total_max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000))   # 전체 80만원
+            min_trade_amount = float(os.getenv('MIN_TRADE_AMOUNT', 5000))            # 최소 거래금액
+            reserve_amount = float(os.getenv('RESERVE_AMOUNT', 200000))              # 예비금
+            
+            # 현재 스레드의 활성 거래들 조회
+            thread_trades = self.db.trades.find({
+                'thread_id': thread_id,
+                'status': 'active'
+            })
+            
+            # 스레드별 투자 총액 계산
+            thread_investment = sum(trade.get('investment_amount', 0) for trade in thread_trades)
+            
+            # 스레드별 한도 체크
+            if thread_investment >= max_thread_investment:
+                self.logger.warning(f"Thread {thread_id}의 투자 한도 초과: {thread_investment:,}원/{max_thread_investment:,}원")
+                return False
+            
+            # 전체 활성 거래들 조회
+            all_trades = self.db.trades.find({'status': 'active'})
+            total_investment = sum(trade.get('investment_amount', 0) for trade in all_trades)
+            
+            # 예비금을 제외한 실제 투자 가능 금액 계산
+            available_investment = total_max_investment - reserve_amount
+            
+            # 최소 거래금액 이상의 여유가 있고, 전체 투자한도 내인지 확인
+            if available_investment - total_investment >= min_trade_amount and total_investment < available_investment:
+                return True
+            
+            self.logger.warning(f"전체 투자 한도 초과: {total_investment:,}원/{available_investment:,}원")
+            return False
+
+        except Exception as e:
+            self.logger.error(f"투자 한도 확인 중 오류 발생: {str(e)}")
+            return False  # 오류 발생 시 안전을 위해 False 반환
