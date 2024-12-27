@@ -6,6 +6,8 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 import yaml
 from strategy.StrategyBase import StrategyManager
+from trade_market_api.UpbitCall import UpbitCall
+
 class TradingManager:
     """
     거래 관리자
@@ -17,7 +19,7 @@ class TradingManager:
         self.config = self._load_config()
         self.messenger = Messenger(self.config)
         self.logger = logging.getLogger(__name__)
-
+        self.upbit_call = UpbitCall()
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
         try:
@@ -27,37 +29,67 @@ class TradingManager:
             self.logger.error(f"설정 파일 로드 실패: {str(e)}")
             return {}
 
-    async def process_buy_signal(self, coin: str, thread_id: int, signal_strength: float, 
+    def process_buy_signal(self, coin: str, thread_id: int, signal_strength: float, 
                                price: float, strategy_data: Dict):
-        """매수 신호 처리
-        
-        주의사항:
-        - investment_amount가 strategy_data에 포함되어 있지 않으면 메시지에 0으로 표시됨
-        - 실제 매수 로직이 구현되어 있지 않음 (거래소 API 연동 필요)
-        """
+        """매수 신호 처리"""
         try:
-            # 투자 가능 금액 확인 (이 메서드는 구현되어 있지 않음)
-            if not await self.check_investment_limit(thread_id):
+            # 투자 가능 금액 확인
+            if not self.check_investment_limit(thread_id):
                 self.logger.warning(f"투자 한도 초과: thread_id={thread_id}")
                 return False
+
+            # KST 시간으로 통일
+            kst_now = datetime.now(timezone(timedelta(hours=9)))
+            
+            # 테스트 모드 확인 (config의 mode와 upbit test_mode 모두 확인)
+            is_test = (
+                self.config.get('mode') == 'test' or 
+                self.config.get('api_keys', {}).get('upbit', {}).get('test_mode', True)
+            )
+            
+            order_result = None
+            if not is_test:
+                # 실제 매수 주문 실행
+                order_result = self.upbit_call.place_order(
+                    market=coin,
+                    side='bid',
+                    price=price,
+                    volume=strategy_data.get('investment_amount', 0) / price
+                )
+
+                if not order_result:
+                    self.logger.error(f"매수 주문 실패: {coin}")
+                    return False
+            else:
+                # 테스트 모드 로그
+                self.logger.info(f"[TEST MODE] 가상 매수 신호 처리: {coin} @ {price:,}원")
+                order_result = {
+                    'uuid': f'test_buy_{kst_now.timestamp()}',
+                    'executed_volume': strategy_data.get('investment_amount', 0) / price,
+                    'price': price
+                }
 
             trade_data = {
                 'coin': coin,
                 'type': 'buy',
-                'timestamp': datetime.utcnow(),
+                'timestamp': kst_now,
                 'price': price,
                 'signal_strength': signal_strength,
                 'thread_id': thread_id,
                 'strategy_data': strategy_data,
                 'status': 'active',
-                'investment_amount': strategy_data.get('investment_amount', 0)  # 명시적으로 추가
+                'investment_amount': strategy_data.get('investment_amount', 0),
+                'order_id': order_result.get('uuid'),
+                'executed_volume': order_result.get('executed_volume', 0),
+                'test_mode': is_test
             }
 
-            trade_id = await self.db.insert_trade(trade_data)
+            # 거래 데이터 저장
+            trade_id = self.db.insert_trade(trade_data)
             
             # 메신저로 매수 알림
-            message = self.create_buy_message(trade_data)
-            await self.messenger.send_message(message)
+            message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(trade_data)
+            self.messenger.send_message(message)
             
             return True
 
@@ -65,7 +97,7 @@ class TradingManager:
             self.logger.error(f"Error in process_buy_signal: {e}")
             return False
 
-    async def process_sell_signal(self, coin: str, thread_id: int, signal_strength: float,
+    def process_sell_signal(self, coin: str, thread_id: int, signal_strength: float,
                                 price: float, strategy_data: Dict):
         """매도 신호 처리
         
@@ -75,31 +107,63 @@ class TradingManager:
         """
         try:
             # 활성 거래 조회
-            active_trade = await self.db.get_collection('trades').find_one({
-                'coin': coin,
-                'thread_id': thread_id,
-                'status': 'active'
-            })
+            active_trade = self.db.get_active_trade(coin, thread_id)
 
             if not active_trade:
                 return False
 
-            # 매도 시 전략 데이터 및 수익률 정보 추가
+            # KST 시간으로 통일
+            kst_now = datetime.now(timezone(timedelta(hours=9)))
+
+            # 테스트 모드 확인
+            is_test = (
+                self.config.get('mode') == 'test' or 
+                self.config.get('api_keys', {}).get('upbit', {}).get('test_mode', True)
+            )
+
+            order_result = None
+            if not is_test:
+                # 실제 매도 주문 실행
+                order_result = self.upbit_call.place_order(
+                    market=coin,
+                    side='ask',
+                    price=price,
+                    volume=active_trade.get('executed_volume', 0)
+                )
+
+                if not order_result:
+                    self.logger.error(f"매도 주문 실패: {coin}")
+                    return False
+            else:
+                # 테스트 모드 로그
+                self.logger.info(f"[TEST MODE] 가상 매도 신호 처리: {coin} @ {price:,}원")
+                order_result = {
+                    'uuid': f'test_sell_{kst_now.timestamp()}',
+                    'executed_volume': active_trade.get('executed_volume', 0),
+                    'price': price
+                }
+
+            # 수익률 계산
             profit_rate = ((price - active_trade['price']) / active_trade['price']) * 100
+            
             update_data = {
                 'status': 'closed',
                 'sell_price': price,
-                'sell_timestamp': datetime.utcnow(),
+                'sell_timestamp': kst_now,
                 'sell_signal_strength': signal_strength,
-                'current_strategy_data': strategy_data,  # 매도 시점의 전략 데이터
-                'profit_rate': profit_rate  # 수익률 추가
+                'current_strategy_data': strategy_data,
+                'profit_rate': profit_rate,
+                'sell_order_id': order_result.get('uuid'),
+                'final_executed_volume': order_result.get('executed_volume', 0),
+                'test_mode': is_test
             }
             
-            await self.db.update_trade(active_trade['_id'], update_data)
+            # 거래 데이터 업데이트
+            self.db.update_trade(active_trade['_id'], update_data)
 
             # 메신저로 매도 알림
-            message = self.create_sell_message(active_trade, price, signal_strength)
-            await self.messenger.send_message(message)
+            message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_sell_message(active_trade, price, signal_strength)
+            self.messenger.send_message(message)
 
             return True
 
@@ -115,7 +179,7 @@ class TradingManager:
         - 파일 처리 후 정리
         """
         try:
-            trades = await self.db.get_collection('trades').find({}).to_list(None)
+            trades = self.db.trades.find({}).to_list(None)
             
             if not trades:
                 self.logger.info("거래 데이터가 없습니다.")
@@ -356,7 +420,7 @@ class TradingManager:
                 hours = hold_time.total_seconds() / 3600
                 
                 # 현재 가격 조회 (이 부분은 거래소 API를 통해 구현 필요)
-                current_price = await self.get_current_price(trade['coin'])
+                current_price = self.upbit_call.get_current_price(trade['coin'])
                 investment_amount = trade.get('investment_amount', 0)
                 
                 # 수익률 계산

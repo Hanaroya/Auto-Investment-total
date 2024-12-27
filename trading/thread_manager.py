@@ -115,7 +115,7 @@ class TradingThread(threading.Thread):
                 self.logger.warning(f"Thread {self.thread_id}: {coin} - 불충분한 캔들 데이터 (수신: {len(candles)})")
                 return
 
-            # 현재 투자 상태 확인 (동기식으로 변경)
+            # 현재 투자 상태 확인
             active_trades = self.db.trades.find({
                 'thread_id': self.thread_id, 
                 'status': 'active'
@@ -130,56 +130,49 @@ class TradingThread(threading.Thread):
             # 마켓 분석 수행
             signals = self.market_analyzer.analyze_market(coin, candles)
             
-            # 전략 데이터 저장 추가
+            # 전략 데이터 저장
             current_price = candles[-1]['close']
             self.trading_manager.update_strategy_data(coin, current_price, signals)
 
             # 분석 결과 저장 및 거래 신호 처리
             with self.shared_locks['trade']:
-                # 현재 코인의 활성 거래 확인 (동기식)
+                # 현재 코인의 활성 거래 확인
                 active_trade = self.db.trades.find_one({
                     'coin': coin,
                     'thread_id': self.thread_id,
                     'status': 'active'
                 })
 
-                current_price = candles[-1]['close']
-
-                # 거래 신호에 따른 처리
                 if active_trade:
                     # 매도 신호 확인
                     if signals.get('overall_signal') == 'sell':
-                        self.db.trades.update_one(
-                            {'_id': active_trade['_id']},
-                            {
-                                '$set': {
-                                    'status': 'completed',
-                                    'sell_price': current_price,
-                                    'sell_time': datetime.now(timezone(timedelta(hours=9))),
-                                    'profit_rate': (current_price - active_trade['buy_price']) / active_trade['buy_price'] * 100
-                                }
-                            }
+                        self.trading_manager.process_sell_signal(
+                            coin=coin,
+                            thread_id=self.thread_id,
+                            signal_strength=signals.get('signal_strength', 0.0),
+                            price=current_price,
+                            strategy_data=signals
                         )
-                        self.logger.info(f"매도 신호: {coin} - 수익률: {((current_price - active_trade['buy_price']) / active_trade['buy_price'] * 100):.2f}%")
+                        self.logger.info(f"매도 신호 처리 완료: {coin}")
                 
                 else:
                     # 매수 신호 확인
                     if signals.get('overall_signal') == 'buy' and current_investment < self.max_investment:
                         investment_amount = min(10000, self.max_investment - current_investment)  # 최소 투자금
                         
-                        self.db.trades.insert_one({
-                            'thread_id': self.thread_id,
-                            'coin': coin,
-                            'buy_price': current_price,
-                            'buy_time': datetime.now(timezone(timedelta(hours=9))),
-                            'total_investment': investment_amount,
-                            'status': 'active',
-                            'signals_at_buy': signals
-                        })
-                        self.logger.info(f"매수 신호: {coin} - 투자금액: {investment_amount:,}원")
+                        # strategy_data에 investment_amount 추가
+                        signals['investment_amount'] = investment_amount
+                        
+                        self.trading_manager.process_buy_signal(
+                            coin=coin,
+                            thread_id=self.thread_id,
+                            signal_strength=signals.get('signal_strength', 0.0),
+                            price=current_price,
+                            strategy_data=signals
+                        )
+                        self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
 
-
-            # 스레드 상태 업데이트 (동기식)
+            # 스레드 상태 업데이트
             self.db.thread_status.update_one(
                 {'thread_id': self.thread_id},
                 {'$set': {
