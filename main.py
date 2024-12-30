@@ -61,19 +61,6 @@ class CryptoTradingBot:
         try:
             await self.initialize()
             
-            # 코인 시장 정보 수집
-            markets = self.investment_center.exchange.get_krw_markets()
-            if not markets:
-                await self.investment_center.messenger.send_message(
-                    "마켓 정보를 가져오는데 실패했습니다."
-                )
-                return
-            
-            self.logger.info(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
-            await self.investment_center.messenger.send_message(
-                f"총 {len(markets)}개의 마켓 분석을 시작합니다."
-            )
-            
             # 투자 센터 실행 (비동기로 실행)
             await self.investment_center.start()
             
