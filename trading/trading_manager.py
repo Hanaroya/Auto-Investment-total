@@ -55,7 +55,7 @@ class TradingManager:
             order_result = None
             if not is_test:
                 # 실제 매수 주문 실행
-                order_result = self.upbit_call.place_order(
+                order_result = self.upbit.place_order(
                     market=coin,
                     side='bid',
                     price=price,
@@ -129,7 +129,7 @@ class TradingManager:
             order_result = None
             if not is_test:
                 # 실제 매도 주문 실행
-                order_result = self.upbit_call.place_order(
+                order_result = self.upbit.place_order(
                     market=coin,
                     side='ask',
                     price=price,
@@ -425,7 +425,7 @@ class TradingManager:
                 hours = hold_time.total_seconds() / 3600
                 
                 # 현재 가격 조회 (이 부분은 거래소 API를 통해 구현 필요)
-                current_price = self.upbit_call.get_current_price(trade['coin'])
+                current_price = self.upbit.get_current_price(trade['coin'])
                 investment_amount = trade.get('investment_amount', 0)
                 
                 # 수익률 계산
