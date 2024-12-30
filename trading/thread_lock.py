@@ -23,7 +23,7 @@ class ThreadLock:
             cls._instance = super(ThreadLock, cls).__new__(cls)
             cls._instance.lock = Lock()  # 스레드 간 동기화를 위한 락 객체
             cls._instance.current_thread = None  # 현재 락을 보유한 스레드 ID
-            cls._instance.logger = logging.getLogger(__name__)  # 로깅을 위한 logger 객체
+            cls._instance.logger = logging.getLogger('investment_center')  # InvestmentCenter의 logger 사용
         return cls._instance
 
     def acquire_lock(self, thread_id: int, operation: str) -> bool:

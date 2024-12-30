@@ -30,7 +30,8 @@ class Messenger:
             config (Dict, optional): 메신저 설정 정보. Defaults to None.
         """
         self.config = config or {}
-        self.logger = self._setup_logger()
+        # InvestmentCenter의 logger 사용
+        self.logger = logging.getLogger('investment_center')
         
     async def send_message(self, message: str, messenger_type: str = "slack", **kwargs) -> bool:
         """

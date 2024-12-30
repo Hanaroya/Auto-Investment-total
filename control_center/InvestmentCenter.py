@@ -11,6 +11,11 @@ from messenger.Messenger import Messenger
 from strategy.StrategyBase import StrategyManager
 from strategy.Strategies import *
 from trade_market_api.MarketDataConverter import MarketDataConverter
+from utils.scheduler import Scheduler
+from trading.thread_manager import ThreadManager
+from trading.market_analyzer import MarketAnalyzer
+from trading.trading_manager import TradingManager
+import asyncio
 
 class MessengerInterface(ABC):
     """
@@ -55,19 +60,34 @@ class InvestmentCenter:
         Args:
             exchange_name (str): 사용할 거래소 이름 (예: "upbit")
         """
-        self.config = self._load_config()  # 설정 파일 로드
-        self.mode = self.config.get('mode', 'market')  # 동작 모드 설정
-        self.exchange = self._initialize_exchange(exchange_name)  # 거래소 초기화
-        self.messenger = self._initialize_messenger()  # 메신저 초기화
-        self.logger = self._setup_logger()  # 로거 설정
-        self.is_running = False  # 실행 상태 플래그
-        self.upbit = UpbitCall(
-            access_key=self.config['api_keys']['upbit']['access_key'],
-            secret_key=self.config['api_keys']['upbit']['secret_key']   
-        )
-        self.scheduled_tasks = []  # 예약된 작업 목록
-        self.strategy_manager = self._initialize_strategies()  # 전략 관리자 초기화
+        # 로거를 가장 먼저 설정
+        self.logger = self._setup_logger()
         
+        # 설정 파일 로드
+        self.config = self._load_config()
+        self.mode = self.config.get('mode', 'market')
+        
+        # 거래소 초기화
+        self.exchange = self._initialize_exchange(exchange_name)
+        
+        # 메신저 초기화
+        self.messenger = self._initialize_messenger()
+        
+        # 스케줄러 초기화
+        self.scheduler = Scheduler()
+        
+        # 마켓 분석기 초기화
+        self.market_analyzer = MarketAnalyzer(self.config)
+        
+        # 거래 매니저 초기화
+        self.trading_manager = TradingManager()
+        
+        # 스레드 매니저 초기화
+        self.thread_manager = ThreadManager(self.config)
+        
+        # 기타 속성 초기화
+        self.is_running = False
+
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
         config_path = Path("resource/application.yml")
@@ -88,19 +108,69 @@ class InvestmentCenter:
             - 시장 데이터 분석은 INFO 레벨로 처리
             - 디버그 모드에서는 모든 로그 저장
         """
-        logger = logging.getLogger('InvestmentCenter')
-        logger.setLevel(logging.DEBUG if self.mode == 'test' else logging.INFO)
-        
-        log_dir = Path(self.config.get('logging', {}).get('directory', 'log'))
-        log_dir.mkdir(exist_ok=True)
-        
-        today = datetime.now().strftime('%Y-%m-%d')
-        handler = logging.FileHandler(f'{log_dir}/{today}-investment.log')
-        
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        return logger
+        try:
+            # 설정 파일 로드
+            with open('resource/application.yml', 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            logger = logging.getLogger('InvestmentCenter')
+            
+            # 로그 레벨 설정
+            log_level = config.get('logging', {}).get('level', 'INFO')
+            logger.setLevel(getattr(logging, log_level.upper()))
+            
+            # 이미 핸들러가 있다면 제거
+            if logger.handlers:
+                for handler in logger.handlers[:]:
+                    logger.removeHandler(handler)
+            
+            # 로그 포맷 설정
+            log_format = config.get('logging', {}).get('format', 
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter(log_format)
+            
+            # 콘솔 핸들러 설정
+            if config.get('logging', {}).get('console', {}).get('enabled', True):
+                console_handler = logging.StreamHandler()
+                console_level = config.get('logging', {}).get('console', {}).get('level', 'INFO')
+                console_handler.setLevel(getattr(logging, console_level.upper()))
+                console_handler.setFormatter(formatter)
+                logger.addHandler(console_handler)
+            
+            # 파일 핸들러 설정
+            if config.get('logging', {}).get('file', {}).get('enabled', True):
+                log_dir = Path(config.get('logging', {}).get('file', {}).get('path', 'log'))
+                log_dir.mkdir(exist_ok=True)
+                
+                # 파일명 패턴 설정
+                filename_pattern = config.get('logging', {}).get('file', {}).get(
+                    'filename', '{date}-investment.log')
+                today = datetime.now().strftime('%Y-%m-%d')
+                filename = filename_pattern.format(date=today)
+                
+                file_handler = logging.FileHandler(
+                    log_dir / filename,
+                    encoding='utf-8'
+                )
+                file_level = config.get('logging', {}).get('file', {}).get('level', 'DEBUG')
+                file_handler.setLevel(getattr(logging, file_level.upper()))
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+            
+            return logger
+            
+        except Exception as e:
+            # 기본 로거 설정 (설정 파일 로드 실패 시)
+            print(f"로거 설정 파일 로드 실패: {str(e)}, 기본 설정 사용")
+            logger = logging.getLogger('InvestmentCenter')
+            logger.setLevel(logging.INFO)
+            
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            logger.addHandler(handler)
+            
+            return logger
 
     def _initialize_exchange(self, exchange_name: str) -> Any:
         """거래소 초기화"""
@@ -145,85 +215,12 @@ class InvestmentCenter:
             
         return manager
         
-    def buy(self, symbol: str, amount: float, price: Optional[float] = None) -> bool:
-        """
-        매수 주문 실행
-        Args:
-            symbol (str): 거래 심볼 (예: "KRW-BTC")
-            amount (float): 매수 수량
-            price (Optional[float]): 매수 가격 (지정가 주문시)
-        Returns:
-            bool: 주문 성공 여부
-        """
-        try:
-            # API 상태 확인
-            if not self._check_api_status():
-                return False
-                
-            if self.mode == 'test':
-                # 테스트 모드: 실제 주문 없이 로그만 기록
-                message = f"[테스트 모드] 매수 주문 시뮬레이션: {symbol}, 수량: {amount}"
-                self.logger.info(message)
-                self.messenger.send_message(message)
-                return True
-
-            # 실제 주문 실행
-            result = self.exchange.place_order(
-                symbol=symbol,
-                side="bid",  # bid는 매수
-                volume=amount,
-                price=price
-            )
-            
-            # 주문 결과 처리
-            if result and 'uuid' in result:
-                message = f"매수 주문 성공: {symbol}, 수량: {amount}"
-                self.messenger.send_message(message)
-                self.logger.info(message)
-                return True
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"매수 실패: {str(e)}")
-            self.messenger.send_message(f"매수 실패: {symbol}, 오류: {str(e)}")
-            return False
-
-    def sell(self, symbol: str, amount: float, price: Optional[float] = None) -> bool:
-        """매도 실행"""
-        try:
-            if not self._check_api_status():
-                return False
-                
-            if self.mode == 'test':
-                # 테스트 모드에서는 로그만 남기고 성공으로 처리
-                message = f"[테스트 모드] 매도 주문 시뮬레이션: {symbol}, 수량: {amount}"
-                self.logger.info(message)
-                self.messenger.send_message(message)
-                return True
-
-            result = self.exchange.place_order(
-                symbol=symbol,
-                side="ask",
-                volume=amount,
-                price=price
-            )
-            
-            if result and 'uuid' in result:
-                message = f"매도 주문 성공: {symbol}, 수량: {amount}"
-                self.messenger.send_message(message)
-                self.logger.info(message)
-                return True
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"매도 실패: {str(e)}")
-            self.messenger.send_message(f"매도 실패: {symbol}, 오류: {str(e)}")
-            return False
+    
 
     def _check_api_status(self) -> bool:
         """API 상태 확인"""
         try:
-            markets = self.upbit.get_krw_markets() # 원화 마켓 목록 조회 (거래량 순)
+            markets = self.exchange.get_krw_markets() # 원화 마켓 목록 조회 (거래량 순)
             return bool(markets)
         except Exception:
             return False
@@ -240,60 +237,122 @@ class InvestmentCenter:
         self.logger.info("API 재연결 성공")
         self.messenger.send_message("✅ API 재연결 성공. 시스템 재개.")
 
-    def analyze_market(self, symbol: str) -> str:
+    async def start(self):
         """
-        시장 분석 및 투자 결정 수행
-        Args:
-            symbol (str): 분석할 코인 심볼 (예: "KRW-BTC")
-        Returns:
-            str: 투자 결정 ("buy", "sell", "hold")
-        Notes:
-            - 여러 기술적 지표를 종합적으로 분석
-            - 리스크 관리를 위한 임계값 적용
-            - 이상 징후 발견 시 안전 장치 작동
+        투자 센터 시작
         """
         try:
-            # 시장 데이터 수집
-            market_data = self._collect_market_data(symbol)
-            # 전략 매니저를 통한 투자 결정
-            decision = self.strategy_manager.get_decision(market_data)
+            self.is_running = True
+            self.logger.info("투자 센터 시작")
             
-            # 중요 투자 결정은 경고 레벨로 로깅
-            if decision in ["buy", "sell"]:
-                self.logger.warning(f"투자 결정 - {symbol}: {decision}")
-            else:
-                self.logger.info(f"투자 결정 - {symbol}: {decision}")
+            # 시스템 상태 초기화
+            self._initialize_system_state()
             
-            return decision
+            # 코인 시장 정보 수집 및 정렬
+            markets = await self.market_analyzer.get_sorted_markets()
+            if not markets:
+                await self.messenger.send_message("마켓 정보를 가져오는데 실패했습니다.")
+                return
             
+            self.logger.info(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
+            await self.messenger.send_message(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
+            
+            # 스레드 매니저 시작
+            await self.thread_manager.start_threads(markets)
+            
+            # 스케줄러 시작
+            asyncio.create_task(self.scheduler.start())
+            
+            # 일일/시간별 리포트 스케줄러 설정
+            await self.scheduler.schedule_task(
+                'daily_report',
+                self.trading_manager.generate_daily_report,
+                cron='0 20 * * *',
+                immediate=False
+            )
+            
+            await self.scheduler.schedule_task(
+                'hourly_report',
+                self.trading_manager.generate_hourly_report,
+                cron='0 * * * *',
+                immediate=False
+            )
+            
+            # 메인 루프
+            while self.is_running:
+                try:
+                    # 스레드 상태 체크
+                    thread_health = await self.thread_manager.check_thread_health()
+                    if not thread_health:
+                        self.logger.warning("마켓 데이터 업데이트 지연 감지")
+                        await self.messenger.send_message("마켓 데이터 업데이트가 지연되고 있습니다.")
+                    
+                    # 활성 거래 상태 체크
+                    active_trades = self.trading_manager.get_active_trades()
+                    self.logger.info(f"현재 활성 거래: {len(active_trades)}건")
+                    
+                    await asyncio.sleep(60)
+                    
+                except Exception as e:
+                    self.logger.error(f"메인 루프 실행 중 오류: {str(e)}")
+                    await asyncio.sleep(5)
+                    
         except Exception as e:
-            self.logger.error(f"시장 분석 실패: {str(e)}")
-            return "hold"  # 오류 발생시 안전하게 홀딩
-            
-    def _collect_market_data(self, symbol: str) -> Dict[str, Any]:
-        """시장 데이터 수집
-        
-        Args:
-            symbol (str): 분석할 코인 심볼 (예: "KRW-BTC")
-        Returns:
-            Dict[str, Any]: 수집된 시장 데이터
-        Notes:
-            - 캔들 데이터를 조회하여 시장 데이터 수집
-            - 데이터 변환 후 반환
+            self.logger.error(f"투자 센터 시작 실패: {str(e)}")
+            self.is_running = False
+            raise
+
+    def stop(self):
+        """
+        투자 센터 종료
         """
         try:
-            # 캔들 데이터 조회  
-            candle_data = self.exchange.get_candles(symbol, interval="1m", count=200)
+            self.is_running = False
+            self.logger.info("투자 센터 종료")
             
-            # 데이터 변환
-            converter = MarketDataConverter()
-            market_data = converter.convert_upbit_candle(candle_data)
+            # 스레드 매니저 종료
+            self.thread_manager.stop_all_threads()
             
-            return market_data
+            # 스케줄러 정리
+            asyncio.create_task(self.scheduler.stop())
+            
+            # 진행 중인 작업 정리
+            self._cleanup()
             
         except Exception as e:
-            self.logger.error(f"시장 데이터 수집 실패: {str(e)}")
-            return {}
+            self.logger.error(f"투자 센터 종료 중 오류: {str(e)}")
+
+    def _initialize_system_state(self):
+        """
+        시스템 상태 초기화
+        """
+        try:
+            # API 상태 확인
+            if not self._check_api_status():
+                raise Exception("API 연결 실패")
+            
+            # 시장 정보 초기화
+            markets = self.exchange.get_krw_markets()
+            if not markets:
+                raise Exception("마켓 정보 조회 실패")
+            
+            self.logger.info(f"총 {len(markets)}개의 마켓 감시 시작")
+            
+        except Exception as e:
+            self.logger.error(f"시스템 상태 초기화 실패: {str(e)}")
+            raise
+
+    def _cleanup(self):
+        """
+        정리 작업 수행
+        """
+        try:
+            # 진행 중인 주문 취소
+            # 리소스 정리
+            # 연결 종료 등
+            pass
+        except Exception as e:
+            self.logger.error(f"정리 작업 중 오류: {str(e)}")
 
 if __name__ == "__main__":
     # 사용 예시

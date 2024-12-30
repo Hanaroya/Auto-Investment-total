@@ -29,7 +29,8 @@ class MongoDBManager:
         if getattr(self, '_initialized', False):
             return
             
-        self.logger = logging.getLogger(__name__)
+        # InvestmentCenter의 logger 사용
+        self.logger = logging.getLogger('investment_center')
         
         try:
             # Docker 컨테이너 상태 확인 및 실행
