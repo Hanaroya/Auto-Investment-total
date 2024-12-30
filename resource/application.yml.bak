@@ -2,8 +2,16 @@ mode: "test"  # 가능한 값: "test", "market"
 debug: true
 
 logging:
-  level: "debug"  # 가능한 값: "debug", "info", "warning", "error"
-  directory: "log"  # 로그 저장 디렉토리
+  level: INFO  # 로깅 레벨 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s' # 로깅 포맷  
+  console:  # 콘솔 로깅 설정
+    enabled: true
+    level: INFO
+  file: # 파일 로깅 설정
+    enabled: true
+    path: log 
+    filename: '{date}-investment.log'
+    level: DEBUG
 
 api_keys:
   upbit:
