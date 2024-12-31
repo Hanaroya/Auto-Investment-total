@@ -84,12 +84,14 @@ class TestTradingBot:
             # 매수 신호 확인
             if analysis['action'] == 'buy' and analysis['strength'] >= 0.65:
                 logger.info(f"매수 신호 감지: {market}")
+                message = f"테스트 매수 신호\n"
+                message += f"코인: {market}\n"
+                message += f"강도: {analysis['strength']}\n"
+                message += f"가격: {analysis['price']}\n"
+                message += f"전략 데이터: {analysis['strategy_data']}"
                 await self.messenger.send_message(
-                    f"테스트 매수 신호\n"
-                    f"코인: {market}\n"
-                    f"강도: {analysis['strength']}\n"
-                    f"가격: {analysis['price']}\n"
-                    f"전략 데이터: {analysis['strategy_data']}"
+                    message=message,
+                    messenger_type="slack"
                 )
 
             # 테스트 결과 저장
@@ -143,7 +145,7 @@ class TestTradingBot:
         except Exception as e:
             logger.error(f"테스트 실행 중 오류: {str(e)}", exc_info=True)
         finally:
-            await self.messenger.send_message("테스트 완료")
+            await self.messenger.send_message(message="테스트 완료", messenger_type="slack")
             if hasattr(self, 'db'):
                 self.db.close()
 

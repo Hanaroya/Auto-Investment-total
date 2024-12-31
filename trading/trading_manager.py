@@ -94,7 +94,7 @@ class TradingManager:
             
             # 메신저로 매수 알림
             message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(trade_data)
-            self.messenger.send_message(message)
+            self.messenger.send_message(message=message, messenger_type="slack")
             
             return True
 
@@ -168,7 +168,7 @@ class TradingManager:
 
             # 메신저로 매도 알림
             message = self.create_sell_message(active_trade, price, signal_strength)
-            self.messenger.send_message(message)
+            self.messenger.send_message(message=message, messenger_type="slack")
 
             return True
 
@@ -188,6 +188,7 @@ class TradingManager:
             
             if not trades:
                 self.logger.info("거래 데이터가 없습니다.")
+                self.messenger.send_message(message="거래 데이터가 없습니다.", messenger_type="slack")
                 return
             
             # 전체 거래 기록용 DataFrame
@@ -404,8 +405,8 @@ class TradingManager:
             active_trades = await collection.find({'status': 'active'}).to_list(None)
             
             if not active_trades:
-                message = "현재 보유 중인 코인이 없습니다."
-                await self.messenger.send_message(message)
+                self.logger.info("현재 보유 중인 코인이 없습니다.")
+                await self.messenger.send_message(message="현재 보유 중인 코인이 없습니다.", messenger_type="slack")
                 return
             
             # 총 투자금액과 현재 가치 계산을 위한 변수
@@ -464,7 +465,7 @@ class TradingManager:
             message = portfolio_summary + "\n" + message + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # Slack으로 메시지 전송
-            await self.messenger.send_message(message)
+            await self.messenger.send_message(message=message, messenger_type="slack")
             
             self.logger.info(f"시간별 리포트 생성 완료: {current_time}")
             

@@ -17,15 +17,6 @@ from trading.market_analyzer import MarketAnalyzer
 from trading.trading_manager import TradingManager
 import asyncio
 
-class MessengerInterface(ABC):
-    """
-    메시지 전송을 위한 인터페이스
-    모든 메신저 구현체는 이 인터페이스를 따라야 함
-    """
-    @abstractmethod
-    def send_message(self, message: str) -> bool:
-        pass
-
 class ExchangeFactory:
     """
     거래소 객체 생성을 담당하는 팩토리 클래스
@@ -228,14 +219,14 @@ class InvestmentCenter:
     def _handle_emergency(self) -> None:
         """비상 상황 처리"""
         self.logger.warning("비상 상황 발생: API 연결 실패")
-        self.messenger.send_message("⚠️ 거래소 API 연결 실패. 시스템 일시 중지.")
+        self.messenger.send_message(message="⚠️ 거래소 API 연결 실패. 시스템 일시 중지.", messenger_type="slack")
         
         while not self._check_api_status():
             self.logger.info("API 재연결 시도 중...")
             time.sleep(60)  # 1분마다 재시도
             
         self.logger.info("API 재연결 성공")
-        self.messenger.send_message("✅ API 재연결 성공. 시스템 재개.")
+        self.messenger.send_message(message="✅ API 재연결 성공. 시스템 재개.", messenger_type="slack")
 
     async def start(self):
         """
@@ -251,11 +242,11 @@ class InvestmentCenter:
             # 코인 시장 정보 수집 및 정렬
             markets = await self.market_analyzer.get_sorted_markets()
             if not markets:
-                await self.messenger.send_message("마켓 정보를 가져오는데 실패했습니다.")
+                await self.messenger.send_message(message="마켓 정보를 가져오는데 실패했습니다.", messenger_type="slack")
                 return
             
             self.logger.info(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
-            await self.messenger.send_message(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
+            await self.messenger.send_message(message=f"총 {len(markets)}개의 마켓 분석을 시작합니다.", messenger_type="slack")
             
             # 스레드 매니저 시작
             await self.thread_manager.start_threads(markets)
@@ -285,7 +276,7 @@ class InvestmentCenter:
                     thread_health = await self.thread_manager.check_thread_health()
                     if not thread_health:
                         self.logger.warning("마켓 데이터 업데이트 지연 감지")
-                        await self.messenger.send_message("마켓 데이터 업데이트가 지연되고 있습니다.")
+                        await self.messenger.send_message(message="마켓 데이터 업데이트가 지연되고 있습니다.", messenger_type="slack")
                     
                     # 활성 거래 상태 체크
                     active_trades = self.trading_manager.get_active_trades()
@@ -358,7 +349,7 @@ class InvestmentCenter:
             db.cleanup_strategy_data()
             
             # 메신저로 종료 메시지 전송
-            asyncio.create_task(self.messenger.send_message("시스템이 안전하게 종료되었습니다."))
+            asyncio.create_task(self.messenger.send_message(message="시스템이 안전하게 종료되었습니다.", messenger_type="slack"))
             
             self.logger.info("정리 작업 완료")
         except Exception as e:

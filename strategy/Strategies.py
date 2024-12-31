@@ -59,7 +59,7 @@ class MACDStrategy(StrategyBase):
     """
     MACD(Moving Average Convergence Divergence) 기반 투자 전략
     
-    변동성: 높음 (return 범위: 0.0~1.2)
+    변동성: 높음 (return 범위: -1.0~2.5)
     리스크: 높음
     특징:
         - 추세 전환점 포착에 효과적
@@ -94,11 +94,11 @@ class MACDStrategy(StrategyBase):
         
         # 하락세 종료 감지: MACD가 시그널선 상향돌파
         if macd > signal and len(macd_history) >= 2 and macd_history[-2] < signal:
-            return min(1.2, 1.0 + (macd - signal) * 2)  # 높은 변동성 범위
+            return min(2.5, 2.0 + (macd - signal) * 2)  # 높은 변동성 범위
             
         # 상승세 종료 감지: MACD가 시그널선 하향돌파
         if macd < signal and len(macd_history) >= 2 and macd_history[-2] > signal:
-            return max(0.0, 0.2 - (signal - macd) * 2)  # 높은 변동성 범위
+            return max(-1.0, -0.5 - (signal - macd) * 2)  # 높은 변동성 범위
             
         return 0.5
 
@@ -106,7 +106,7 @@ class BollingerBandStrategy(StrategyBase):
     """
     볼린저 밴드 기반 투자 전략
     
-    변동성: 높음
+    변동성: 높음 (return 범위: -1.0~2.5)
     리스크: 높음
     특징:
         - 가격 변동성 기반 매매
@@ -143,11 +143,11 @@ class BollingerBandStrategy(StrategyBase):
         
         # 하락세 종료 감지: 하단밴드 터치 후 반등
         if price <= lower and len(price_history) >= 2 and price > price_history[-2]:
-            return min(0.95, 0.85 + (lower - price) / lower * 10)
+            return min(2.5, 1.8 + (lower - price) / lower * 10)
             
         # 상승세 종료 감지: 상단밴드 터치 후 하락
         if price >= upper and len(price_history) >= 2 and price < price_history[-2]:
-            return max(0.05, 0.15 - (price - upper) / upper * 10)
+            return max(-1.0, -0.5 - (price - upper) / upper * 10)
             
         return 0.5
 
@@ -207,7 +207,7 @@ class PriceChangeStrategy(StrategyBase):
     """
     가격 변화율 기반 투자 전략
     
-    변동성: 매우 높음 (return 범위: 0.0~1.5)
+    변동성: 매우 높음 (return 범위: -1.0~2.5)
     리스크: 매우 높음
     특징:
         - 급격한 가격 변동 감지
@@ -247,12 +247,12 @@ class PriceChangeStrategy(StrategyBase):
         # 하락세 종료 감지: 급격한 하락 후 반등
         if (short_term_change > 0 and long_term_change < -5 and 
             volume_history[-1] > volume_history[-2] and rsi < 40):
-            return min(1.5, 1.3 + abs(long_term_change) / 50)  # 매우 높은 변동성 범위
+            return min(2.5, 2.0 + abs(long_term_change) / 25)  # 매우 높은 변동성 범위
             
         # 상승세 종료 감지: 급격한 상승 후 하락
         if (short_term_change < 0 and long_term_change > 5 and 
             volume_history[-1] > volume_history[-2] and rsi > 60):
-            return max(0.0, 0.2 - short_term_change / 50)  # 매우 높은 변동성 범위
+            return max(-1.0, -0.5 - short_term_change / 25)  # 매우 높은 변동성 범위
             
         return 0.5
 
@@ -311,7 +311,7 @@ class MomentumStrategy(StrategyBase):
     """
     모멘텀 기반 투자 전략
     
-    변동성: 높음 (return 범위: 0.0~1.2)
+    변동성: 높음 (return 범위: -1.0~2.5)
     리스크: 높음
     특징:
         - 가격 변화의 가속도 분석
@@ -346,11 +346,11 @@ class MomentumStrategy(StrategyBase):
 
         # 하락세 종료 감지: 모멘텀 반등 + 거래량 증가
         if momentum > -0.3 and momentum < 0 and volume_surge > 1.2 and rsi < 40:
-            return min(1.2, 1.0 + abs(momentum) * 2)  # 높은 변동성 범위
+            return min(2.5, 1.8 + abs(momentum) * 2)  # 높은 변동성 범위
             
         # 상승세 종료 감지: 모멘텀 약화 + 거래량 감소
         if momentum < 0.3 and momentum > 0 and volume_surge < 0.8 and rsi > 60:
-            return max(0.0, 0.2 - momentum * 2)  # 높은 변동성 범위
+            return max(-1.0, -0.5 - momentum * 2)  # 높은 변동성 범위
             
         return 0.5
 
@@ -393,11 +393,11 @@ class StochasticStrategy(StrategyBase):
         
         # 하락세 종료 감지: 과매도 구간에서 골든크로스
         if k < 20 and d < 20 and k > d and len(k_history) >= 2 and k > k_history[-2]:
-            return min(1.5, 1.3 + (20 - k) / 100)  # 매우 높은 변동성 범위
+            return min(2.5, 2.0 + (20 - k) / 10)  # 매우 높은 변동성 범위
             
         # 상승세 종료 감지: 과매수 구간에서 데드크로스
         if k > 80 and d > 80 and k < d and len(k_history) >= 2 and k < k_history[-2]:
-            return max(0.0, 0.2 - (k - 80) / 100)  # 매우 높은 변동성 범위
+            return max(-1.0, -0.5 - (k - 80) / 10)  # 매우 높은 변동성 범위
             
         return 0.5
 
@@ -542,19 +542,19 @@ class DowntrendEndStrategy(StrategyBase):
             
             # 하락 추세 종료 + 반등 신호 (매우 강한 매수)
             if (trend_strength > -0.3 and trend_strength < 0) and rsi < 30 and volume_surge > 1.5:
-                return min(1.5, 1.3 + (volume_surge - 1.5) * 0.4)  # 매우 높은 변동성 범위
+                return min(2.5, 2.0 + volume_surge * 0.5)  # 매우 높은 변동성 범위
                 
             # 하락세 약화 + 거래량 증가 (강한 매수)
             if trend_strength > -0.5 and volume_surge > 1.2 and rsi < 40:
-                return min(1.3, 1.1 + (volume_surge - 1.2) * 0.4)  # 매우 높은 변동성 범위
+                return min(1.8, 1.5 + (volume_surge - 1.2) * 0.4)  # 매우 높은 변동성 범위
                 
             # 기술적 반등 조건 (중간 강도 매수)
             if rsi < 35 and volume_surge > 1.1 and price_change > -1:
-                return min(0.85, 0.75 + (35 - rsi) / 50)  # 매우 높은 변동성 범위
+                return min(1.35, 1.25 + (35 - rsi) / 50)  # 매우 높은 변동성 범위
                 
             # 하락 지속 (매우 강한 매도)
             if trend_strength < -0.7 or (rsi < 30 and volume_surge < 0.8):
-                return max(0.0, 0.2 + trend_strength)  # 매우 높은 변동성 범위
+                return max(-1.0, -0.5 + trend_strength)  # 매우 높은 변동성 범위
                 
             return 0.5
             
@@ -609,11 +609,11 @@ class UptrendEndStrategy(StrategyBase):
             
             # 상승 추세 종료 + 하락 확인
             if momentum < 0.3 and rsi > 70 and volume_ratio < 0.8 and volatility > 0.2:
-                return max(0.0, 0.2 - momentum * volatility)  # 매우 높은 변동성 범위
+                return max(-1.0, -0.5 - momentum * volatility)  # 매우 높은 변동성 범위
                 
             # 상승 지속
             if momentum > 0.7 and volume_ratio > 1.2:
-                return min(1.5, 1.3 + momentum * 0.4)  # 매우 높은 변동성 범위
+                return min(2.5, 2.0 + momentum * 0.5)  # 매우 높은 변동성 범위
                 
             return 0.5
             
@@ -626,6 +626,8 @@ class DivergenceStrategy(StrategyBase):
     다이버전스 감지 전략
     
     가격과 지표 간의 불일치를 통해 추세 전환 시점을 포착합니다.
+    변동성: 매우 높음 (return 범위: -1.0~2.5)
+    리스크: 매우 높음
     
     Notes:
         - 가격과 RSI 다이버전스
@@ -655,6 +657,7 @@ class DivergenceStrategy(StrategyBase):
         rsi_history = market_data.get('rsi_history', [])
         volume_history = market_data.get('volume_history', [])
         
+        # 데이터가 충분하지 않은 경우 중립 신호 반환
         if len(price_history) < 3 or len(rsi_history) < 3:
             return 0.5
             
@@ -663,14 +666,14 @@ class DivergenceStrategy(StrategyBase):
         if (price_history[-1] < price_history[-2] and 
             rsi_history[-1] > rsi_history[-2] and 
             volume_history[-1] > volume_history[-2]):
-            return min(1.0, 0.95 + (rsi_history[-1] - rsi_history[-2]) / 100)
+            return min(2.4, 1.8 + (rsi_history[-1] - rsi_history[-2]) / 100)
             
         # 상승세 종료 감지: 부정적 다이버전스
         # 가격은 상승하는데 RSI는 하락
         if (price_history[-1] > price_history[-2] and 
             rsi_history[-1] < rsi_history[-2] and 
             volume_history[-1] < volume_history[-2]):
-            return max(0.0, 0.05 - (rsi_history[-2] - rsi_history[-1]) / 100)
+            return max(-1.0, -0.5 - (rsi_history[-2] - rsi_history[-1]) / 100)
             
         return 0.5
 

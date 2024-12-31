@@ -48,6 +48,10 @@ class Messenger:
         Raises:
             ValueError: 지원하지 않는 메신저 타입일 경우
         """
+        if not messenger_type:
+            self.logger.warning("messenger_type이 지정되지 않음. 기본값 'slack' 사용")
+            messenger_type = "slack"
+        
         messenger_type = messenger_type.lower()
         messenger_handlers = {
             "slack": self._send_slack,
@@ -56,14 +60,24 @@ class Messenger:
         
         try:
             if messenger_type not in messenger_handlers:
-                raise ValueError(f"지원하지 않는 메신저 타입: {messenger_type}")
+                self.logger.error(f"지원하지 않는 메신저 타입: {messenger_type}")
+                return False
             
-            return await messenger_handlers[messenger_type](message, **kwargs)
+            self.logger.debug(f"메시지 전송 시도: type={messenger_type}, message={message[:100]}...")
+            result = await messenger_handlers[messenger_type](message, **kwargs)
+            
+            if result:
+                self.logger.info(f"{messenger_type} 메시지 전송 성공")
+            else:
+                self.logger.error(f"{messenger_type} 메시지 전송 실패")
+            
+            return result
+            
         except Exception as e:
-            self.logger.error(f"메시지 전송 실패: {str(e)}")
+            self.logger.error(f"메시지 전송 중 오류 발생: {str(e)}")
             return False
 
-    async def _send_slack(self, message: str) -> bool:
+    async def _send_slack(self, message: str, channel: str = None) -> bool:
         """
         Slack으로 메시지를 비동기 전송
         
@@ -81,7 +95,7 @@ class Messenger:
                         "Authorization": f"Bearer {self.config.get('messenger', {}).get('slack', {}).get('bot_token')}"
                     },
                     json={
-                        "channel": self.config.get('messenger', {}).get('slack', {}).get('channel'),
+                        "channel": channel or self.config.get('messenger', {}).get('slack', {}).get('channel'),
                         "text": message
                     }
                 ) as response:

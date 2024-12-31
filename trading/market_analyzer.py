@@ -231,11 +231,38 @@ class MarketAnalyzer:
                 'ichimoku_cloud_bottom': float(current_candle.get('ichimoku_cloud_bottom', 0)),
                 
                 # 가격 변화율
-                'price_change_rate': float(current_candle.get('price_change_rate', 0))
+                'price_change_rate': float(current_candle.get('price_change_rate', 0)),
+                
+                # Divergence 관련 추가
+                'price_divergence': float(current_candle.get('price_divergence', 0)),
+                'volume_divergence': float(current_candle.get('volume_divergence', 0)),
+                'rsi_divergence': float(current_candle.get('rsi_divergence', 0)),
+                
+                # Bollinger Band 추가 지표
+                'bb_width': float(current_candle.get('bb_width', 0)),
+                'bb_percent_b': float(current_candle.get('percent_b', 0)),
+                
+                # Ichimoku 추가 지표
+                'tenkan_sen': float(current_candle.get('tenkan_sen', 0)),
+                'kijun_sen': float(current_candle.get('kijun_sen', 0)),
+                'senkou_span_a': float(current_candle.get('senkou_span_a', 0)),
+                'senkou_span_b': float(current_candle.get('senkou_span_b', 0)),
+                'chikou_span': float(current_candle.get('chikou_span', 0)),
+                
+                # Market Sentiment 추가 지표
+                'sentiment_score': float(current_candle.get('sentiment_score', 0)),
+                'fear_greed_index': float(current_candle.get('fear_greed_index', 50)),
+                
+                # 추가 이동평균선
+                'ma10': float(current_candle.get('sma10', 0)),
+                'ma50': float(current_candle.get('sma50', 0)),
+                'ma200': float(current_candle.get('sma200', 0))
             }
 
-            # 각 전략 실행 및 결과 수집
+            # 전략별 결과 수집 및 총합 계산
             strategy_results = {}
+            total_strength = 0
+            
             for name, strategy in self.strategies.items():
                 try:
                     result = strategy.analyze(market_data)
@@ -245,16 +272,32 @@ class MarketAnalyzer:
                         'value': float(result),
                         'market_data': market_data  # 전략에 사용된 데이터도 포함
                     }
+                    total_strength += float(result)
                 except Exception as e:
                     self.logger.error(f"{market} - {name} 전략 분석 실패: {str(e)}", exc_info=True)
                     strategy_results[name] = {'signal': 'hold', 'strength': 0.5, 'value': 0.5}
+                    total_strength += 0.5
+
+            # 각 전략의 기여도(percentage) 계산
+            strategy_percentages = {}
+            for name, result in strategy_results.items():
+                percentage = (result['strength'] / total_strength) * 100
+                strategy_percentages[f"{name}_percentage"] = round(percentage, 2)
+                strategy_results[name]['percentage'] = round(percentage, 2)
+
+            # market_data에 전략별 기여도 추가
+            market_data.update(strategy_percentages)
+
+            # 평균 강도 계산
+            average_strength = total_strength / len(strategy_results)
 
             return {
-                'action': 'buy' if sum(r['strength'] for r in strategy_results.values()) / len(strategy_results) >= 0.65 else 'hold',
-                'strength': round(sum(r['strength'] for r in strategy_results.values()) / len(strategy_results), 2),
+                'action': 'buy' if average_strength >= 0.65 else 'hold',
+                'strength': round(average_strength, 2),
                 'price': market_data['current_price'],
                 'strategy_data': strategy_results,
-                'market_data': market_data  # 전체 시장 데이터도 포함
+                'market_data': market_data,  # 전략별 기여도가 포함된 시장 데이터
+                'strategy_percentages': strategy_percentages  # 전략별 기여도 별도 제공
             }
 
         except Exception as e:
