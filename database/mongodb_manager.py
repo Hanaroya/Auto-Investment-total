@@ -575,3 +575,18 @@ class MongoDBManager:
         except Exception as e:
             self.logger.error(f"마켓 데이터 조회 중 오류: {str(e)}")
             return []
+
+    def cleanup_strategy_data(self):
+        """strategy_data 컬렉션 정리"""
+        try:
+            self.db.drop_collection('strategy_data')
+            self.logger.info("strategy_data 컬렉션 삭제 완료")
+            
+            # 컬렉션 재생성 및 인덱스 설정
+            self.strategy_data = self.db['strategy_data']
+            self.strategy_data.create_index([("coin", 1), ("timestamp", -1)])
+            self.strategy_data.create_index([("timestamp", -1)])
+            
+            self.logger.info("strategy_data 컬렉션 재설정 완료")
+        except Exception as e:
+            self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")

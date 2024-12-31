@@ -227,10 +227,9 @@ class ThreadManager:
     def stop_all_threads(self):
         """모든 스레드 강제 종료"""
         try:
-            self.logger.info("강제 종료 시작")
-            self.stop_flag.set()
-            self.running = False
-            
+            self.logger.info("모든 스레드 종료 시작...")
+        
+            # 각 스레드 종료 대기
             for thread in self.threads:
                 if thread.is_alive():
                     thread.stop_flag.set()
@@ -247,9 +246,17 @@ class ThreadManager:
             self.threads.clear()
             self.logger.info("모든 스레드 종료 완료")
             
-            # 프로그램 종료
-            sys.exit(0)
-            
+            # strategy_data 컬렉션 정리
+            try:
+                from database.mongodb_manager import MongoDBManager
+                db = MongoDBManager()
+                db.cleanup_strategy_data()
+                self.logger.info("strategy_data 컬렉션 정리 완료")
+            except Exception as e:
+                self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
+            finally:
+                sys.exit(0)
+                
         except Exception as e:
             self.logger.error(f"스레드 종료 중 오류: {str(e)}")
             sys.exit(1)

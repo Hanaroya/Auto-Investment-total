@@ -347,10 +347,20 @@ class InvestmentCenter:
         정리 작업 수행
         """
         try:
-            # 진행 중인 주문 취소
-            # 리소스 정리
-            # 연결 종료 등
-            pass
+            self.logger.info("정리 작업 시작...")
+            
+            # 진행 중인 주문 취소 및 리소스 정리
+            self.thread_manager.stop_all_threads()
+            
+            # strategy_data 컬렉션 정리
+            from database.mongodb_manager import MongoDBManager
+            db = MongoDBManager()
+            db.cleanup_strategy_data()
+            
+            # 메신저로 종료 메시지 전송
+            asyncio.create_task(self.messenger.send_message("시스템이 안전하게 종료되었습니다."))
+            
+            self.logger.info("정리 작업 완료")
         except Exception as e:
             self.logger.error(f"정리 작업 중 오류: {str(e)}")
 

@@ -5,8 +5,8 @@ from control_center.InvestmentCenter import InvestmentCenter
 from database.mongodb_manager import MongoDBManager
 from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger('investment-center')
 
 # .env 파일 로드
 load_dotenv()
