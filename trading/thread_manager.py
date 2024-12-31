@@ -2,14 +2,12 @@ import threading
 import asyncio
 import logging
 from typing import List, Dict
-from queue import Queue
 from database.mongodb_manager import MongoDBManager
 from trading.market_analyzer import MarketAnalyzer
 from trading.trading_manager import TradingManager
 from datetime import datetime, timedelta, timezone
 import time
 import signal
-from control_center.InvestmentCenter import InvestmentCenter
 from trade_market_api.UpbitCall import UpbitCall
 import sys
 
@@ -207,7 +205,7 @@ class ThreadManager:
         self.threads = []
         self.running = False
         self.db = MongoDBManager()
-        self.logger = logging.getLogger('InvestmentCenter.ThreadManager')
+        self.logger = logging.getLogger('investment_center')
         self.stop_flag = threading.Event()
         # 공유 락 초기화
         self.shared_locks = {

@@ -36,7 +36,7 @@ class ThreadLock:
             cls._instance = super(ThreadLock, cls).__new__(cls)
             cls._instance.lock = Lock()
             cls._instance.current_thread = None
-            cls._instance.logger = logging.getLogger(__name__)
+            cls._instance.logger = logging.getLogger('investment_center')
         return cls._instance
 
     def acquire_lock(self, thread_id: int, operation: str) -> bool:
@@ -123,7 +123,7 @@ class UpbitCall:
             - API 호출 결과는 INFO 레벨로 기록
             - 주문 관련 작업은 WARNING 레벨로 처리
         """
-        logger = logging.getLogger('UpbitCall')
+        logger = logging.getLogger('investment_center') # 로거 이름 설정
         logger.setLevel(logging.DEBUG if self.is_test else logging.INFO)
         
         log_dir = Path('log')
