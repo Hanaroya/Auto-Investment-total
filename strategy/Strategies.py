@@ -14,7 +14,7 @@ class RSIStrategy(StrategyBase):
     """
     RSI(Relative Strength Index) 기반 투자 전략
     
-    변동성: 중간
+    변동성: 중간 (return 범위: 0.2~0.8)
     리스크: 중간
     특징:
         - 과매수/과매도 구간 판단
@@ -43,26 +43,32 @@ class RSIStrategy(StrategyBase):
                 - 0.45~0.55: 중립 구간
         """
         rsi = market_data.get('rsi', 50)
-        if rsi < 30:
-            return 0.7 + (30 - rsi) / 100  # 최대 0.8
-        elif rsi > 70:
-            return 0.3 - (rsi - 70) / 100  # 최소 0.2
+        rsi_history = market_data.get('rsi_history', [])
+        
+        # 하락세 종료 감지: RSI가 과매도 구간에서 반등
+        if rsi < 30 and len(rsi_history) >= 2 and rsi > rsi_history[-2]:
+            return min(0.8, 0.7 + (30 - rsi) / 100)  # 중간 변동성 범위
+            
+        # 상승세 종료 감지: RSI가 과매수 구간에서 하락
+        if rsi > 70 and len(rsi_history) >= 2 and rsi < rsi_history[-2]:
+            return max(0.2, 0.3 - (rsi - 70) / 100)  # 중간 변동성 범위
+            
         return 0.5
 
 class MACDStrategy(StrategyBase):
     """
     MACD(Moving Average Convergence Divergence) 기반 투자 전략
     
-    변동성: 높음
+    변동성: 높음 (return 범위: 0.1~0.9)
     리스크: 높음
     특징:
         - 추세 전환점 포착에 효과적
         - 빠른 진입/퇴출 신호 생성
         - 변동성이 큰 시장에서 강한 신호 생성
     신호 강도:
-        - 0.8~0.9: 매우 강한 매수 신호 (골든크로스)
-        - 0.1~0.2: 매우 강한 매도 신호 (데드크로스)
-        - 0.4~0.6: 중립 구간
+        - 0.8~0.9: 강한 매수 신호 (MACD 상향돌파)
+        - 0.1~0.2: 강한 매도 신호 (MACD 하향돌파)
+        - 0.45~0.55: 중립 구간
     """
     
     def analyze(self, market_data: Dict[str, Any]) -> float:
@@ -78,18 +84,22 @@ class MACDStrategy(StrategyBase):
         
         Returns:
             float: 0~1 사이의 매수 신호 강도
-                - 0.8~0.9: 매우 강한 매수 신호 (골든크로스)
+                - 0.8~0.9: 강한 매수 신호 (골든크로스)
                 - 0.1~0.2: 매우 강한 매도 신호 (데드크로스)
                 - 0.4~0.6: 중립 구간
         """
         macd = market_data.get('macd', 0)
         signal = market_data.get('signal', 0)
-        diff = macd - signal
+        macd_history = market_data.get('macd_history', [])
         
-        if diff > 0:
-            return min(0.9, 0.6 + abs(diff) / 10)  # 최대 0.9
-        elif diff < 0:
-            return max(0.1, 0.4 - abs(diff) / 10)  # 최소 0.1
+        # 하락세 종료 감지: MACD가 시그널선 상향돌파
+        if macd > signal and len(macd_history) >= 2 and macd_history[-2] < signal:
+            return min(0.9, 0.8 + (macd - signal) * 2)  # 높은 변동성 범위
+            
+        # 상승세 종료 감지: MACD가 시그널선 하향돌파
+        if macd < signal and len(macd_history) >= 2 and macd_history[-2] > signal:
+            return max(0.1, 0.2 - (signal - macd) * 2)  # 높은 변동성 범위
+            
         return 0.5
 
 class BollingerBandStrategy(StrategyBase):
@@ -127,40 +137,36 @@ class BollingerBandStrategy(StrategyBase):
                 - 0.3: 매도 신호
         """
         price = market_data.get('current_price', 0)
-        upper = market_data.get('upper_band', price * 1.02)
         lower = market_data.get('lower_band', price * 0.98)
+        upper = market_data.get('upper_band', price * 1.02)
+        price_history = market_data.get('price_history', [])
         
-        # 밴드 폭 계산
-        band_width = (upper - lower) / price
-        
-        if price < lower or band_width < 0.01: 
-            # 하단 돌파 강도에 따른 매수 신호
-            deviation = (lower - price) / price
-            return min(0.95, 0.85 + deviation * 10)
-        elif price > upper or band_width > 0.01:
-            # 상단 돌파 강도에 따른 매도 신호
-            deviation = (price - upper) / price
-            return max(0.05, 0.15 - deviation * 10)
+        # 하락세 종료 감지: 하단밴드 터치 후 반등
+        if price <= lower and len(price_history) >= 2 and price > price_history[-2]:
+            return min(0.95, 0.85 + (lower - price) / lower * 10)
+            
+        # 상승세 종료 감지: 상단밴드 터치 후 하락
+        if price >= upper and len(price_history) >= 2 and price < price_history[-2]:
+            return max(0.05, 0.15 - (price - upper) / upper * 10)
+            
         return 0.5
 
 class VolumeStrategy(StrategyBase):
     """
     거래량 기반 투자 전략
     
-    변동성: 중간
+    변동성: 중간 (return 범위: 0.2~0.8)
     리스크: 중간
     특징:
         - 거래량 급증/급감 감지
-        - 평균 거래량 대비 분석
-        - 가격 변동과 거래량 연계 분석
+        - 가격 변동과의 상관관계 분석
+        - 중간 수준의 신호 강도
     신호 강도:
-        - 0.65~0.75: 강한 매수 신호 (거래량 급증)
-        - 0.25~0.35: 강한 매도 신호 (거래량 급감)
+        - 0.7~0.8: 강한 매수 신호 (거래량 급증 + 가격 상승)
+        - 0.2~0.3: 강한 매도 신호 (거래량 급감 + 가격 하락)
         - 0.45~0.55: 중립 구간
     """
     def analyze(self, market_data: Dict[str, Any]) -> float:
-        current_volume = market_data.get('current_volume', 0)
-        average_volume = market_data.get('average_volume', current_volume)
         """
         Args:
             market_data (Dict[str, Any]): 시장 데이터
@@ -168,36 +174,48 @@ class VolumeStrategy(StrategyBase):
                 - average_volume: 평균 거래량
                 - current_volume: 현재 거래량
                 - price_change_rate: 가격 변화율(%)
-        
         Returns:
             float: 0~1 사이의 매수 신호 강도
                 - 0.9: 강한 매수 신호 (거래량 급증 + 가격 반등)
                 - 0.8: 상승세 감지 (거래량 증가 + 상승추세)
                 - 0.4: 중립적 신호
         """
-        if average_volume == 0:
+        current_volume = market_data.get('current_volume', 0)
+        average_volume = market_data.get('average_volume', current_volume)
+        price_history = market_data.get('price_history', [])
+        volume_history = market_data.get('volume_history', [])
+        
+        if len(price_history) < 2 or len(volume_history) < 2:
             return 0.5
             
-        volume_ratio = current_volume / average_volume
-        if volume_ratio > 1:
-            return min(0.75, 0.65 + (volume_ratio - 1) * 0.1)
-        elif volume_ratio < 1:
-            return max(0.25, 0.35 - (1 - volume_ratio) * 0.1)
+        volume_ratio = current_volume / average_volume if average_volume > 0 else 1
+        price_change = (price_history[-1] / price_history[-2] - 1) * 100
+        
+        # 하락세 종료 감지: 거래량 급증 + 가격 반등
+        if (volume_ratio > 1.5 and price_change > 0 and 
+            volume_history[-1] > volume_history[-2] * 1.3):
+            return min(0.75, 0.65 + (volume_ratio - 1.5) * 0.1)
+            
+        # 상승세 종료 감지: 거래량 급감 + 가격 하락
+        if (volume_ratio < 0.7 and price_change < 0 and 
+            volume_history[-1] < volume_history[-2] * 0.7):
+            return max(0.25, 0.35 - (0.7 - volume_ratio) * 0.1)
+            
         return 0.5
 
 class PriceChangeStrategy(StrategyBase):
     """
-    가격 변동 기반 투자 전략
+    가격 변화율 기반 투자 전략
     
-    변동성: 매우 높음
+    변동성: 매우 높음 (return 범위: 0.0~1.0)
     리스크: 매우 높음
     특징:
-        - 급격한 가격 변화 감지
-        - 모멘텀 반전 포착
-        - 극단적 가격 변동 대응
+        - 급격한 가격 변동 감지
+        - 단기/장기 변화율 비교
+        - 매우 강한 신호 생성
     신호 강도:
-        - 0.9~1.0: 매우 강한 매수 신호 (급격한 상승)
-        - 0.0~0.1: 매우 강한 매도 신호 (급격한 하락)
+        - 0.9~1.0: 매우 강한 매수 신호 (급격한 하락 후 반등)
+        - 0.0~0.1: 매우 강한 매도 신호 (급격한 상승 후 하락)
         - 0.45~0.55: 중립 구간
     """
     def analyze(self, market_data: Dict[str, Any]) -> float:
@@ -215,26 +233,42 @@ class PriceChangeStrategy(StrategyBase):
                 - 0.0~0.1: 매우 강한 매도 신호 (급격한 하락)
                 - 0.45~0.55: 중립 구간
         """
-        price_change = market_data.get('price_change_rate', 0)
-        if price_change > 0:
-            return min(1.0, 0.9 + price_change * 0.1)
-        elif price_change < 0:
-            return max(0.0, 0.1 + price_change * 0.1)
+        price_history = market_data.get('price_history', [])
+        volume_history = market_data.get('volume_history', [])
+        rsi = market_data.get('rsi', 50)
+        
+        if len(price_history) < 3 or len(volume_history) < 3:
+            return 0.5
+            
+        # 최근 가격 변화율 계산
+        short_term_change = (price_history[-1] / price_history[-2] - 1) * 100
+        long_term_change = (price_history[-1] / price_history[-3] - 1) * 100
+        
+        # 하락세 종료 감지: 급격한 하락 후 반등
+        if (short_term_change > 0 and long_term_change < -5 and 
+            volume_history[-1] > volume_history[-2] and rsi < 40):
+            return min(1.0, 0.9 + abs(long_term_change) / 100)
+            
+        # 상승세 종료 감지: 급격한 상승 후 하락
+        if (short_term_change < 0 and long_term_change > 5 and 
+            volume_history[-1] > volume_history[-2] and rsi > 60):
+            return max(0.0, 0.1 - short_term_change / 100)
+            
         return 0.5
 
 class MovingAverageStrategy(StrategyBase):
     """
     이동평균선 기반 투자 전략
     
-    변동성: 낮음
+    변동성: 낮음 (return 범위: 0.3~0.7)
     리스크: 낮음
     특징:
         - 장기 추세 분석
         - 안정적인 신호 생성
         - 완만한 진입/퇴출
     신호 강도:
-        - 0.6~0.7: 매수 신호 (골든크로스)
-        - 0.3~0.4: 매도 신호 (데드크로스)
+        - 0.6~0.7: 매수 신호 (단기선 상향 돌파)
+        - 0.3~0.4: 매도 신호 (단기선 하향 돌파)
         - 0.45~0.55: 중립 구간
     """
     def analyze(self, market_data: Dict[str, Any]) -> float:
@@ -254,23 +288,30 @@ class MovingAverageStrategy(StrategyBase):
         """
         ma5 = market_data.get('ma5', 0)
         ma20 = market_data.get('ma20', 0)
+        price = market_data.get('current_price', 0)
+        price_history = market_data.get('price_history', [])
         
-        if ma5 == 0 or ma20 == 0:
+        if not all([ma5, ma20, price]) or len(price_history) < 2:
             return 0.5
             
-        diff_ratio = (ma5 - ma20) / ma20
+        ma_diff_ratio = (ma5 - ma20) / ma20 * 100
+        price_change = (price / price_history[-2] - 1) * 100
         
-        if diff_ratio > 0:
-            return min(0.7, 0.6 + diff_ratio)
-        elif diff_ratio < 0:
-            return max(0.3, 0.4 + diff_ratio)
+        # 하락세 종료 감지: 단기선이 장기선 접근 + 가격 반등
+        if ma5 < ma20 and ma_diff_ratio > -2 and price_change > 0:
+            return min(0.7, 0.6 + abs(ma_diff_ratio) / 10)  # 낮은 변동성 범위
+            
+        # 상승세 종료 감지: 단기선이 장기선 이탈 + 가격 하락
+        if ma5 > ma20 and ma_diff_ratio < 2 and price_change < 0:
+            return max(0.3, 0.4 - abs(ma_diff_ratio) / 10)  # 낮은 변동성 범위
+            
         return 0.5
 
 class MomentumStrategy(StrategyBase):
     """
     모멘텀 기반 투자 전략
     
-    변동성: 높음
+    변동성: 높음 (return 범위: 0.1~0.9)
     리스크: 높음
     특징:
         - 가격 변화의 가속도 분석
@@ -296,25 +337,38 @@ class MomentumStrategy(StrategyBase):
                 - 0.4: 매도 신호 (음의 모멘텀)
         """
         momentum = market_data.get('momentum', 0)
+        volume_surge = market_data.get('volume_surge', 1)
+        rsi = market_data.get('rsi', 50)
+        price_history = market_data.get('price_history', [])
         
-        if momentum > 0:
-            return min(0.9, 0.8 + momentum * 0.1)
-        elif momentum < 0:
-            return max(0.1, 0.2 + momentum * 0.1)
+        if len(price_history) < 2:
+            return 0.5
+
+        # 하락세 종료 감지: 모멘텀 반등 + 거래량 증가
+        if momentum > -0.3 and momentum < 0 and volume_surge > 1.2 and rsi < 40:
+            return min(0.9, 0.8 + abs(momentum))  # 높은 변동성 범위
+            
+        # 상승세 종료 감지: 모멘텀 약화 + 거래량 감소
+        if momentum < 0.3 and momentum > 0 and volume_surge < 0.8 and rsi > 60:
+            return max(0.1, 0.2 - momentum)  # 높은 변동성 범위
+            
         return 0.5
 
 class StochasticStrategy(StrategyBase):
     """
     스토캐스틱 기반 투자 전략
     
-    가격의 상대적 위치를 통해 과매수/과매도 구간을 판단합니다.
-    
-    Notes:
+    변동성: 매우 높음 (return 범위: 0.0~1.0)
+    리스크: 매우 높음
+    특징:
+        - 가격의 상대적 위치를 통해 과매수/과매도 구간을 판단
         - K선과 D선의 교차 활용
-        - 과매수/과매도 구간 판단
-        - 신호선 교차 시점 포착
+        - 매우 강한 신호 생성
+    신호 강도:
+        - 0.9~1.0: 매우 강한 매수 신호 (과매도 반등)
+        - 0.0~0.1: 매우 강한 매도 신호 (과매수 하락)
+        - 0.45~0.55: 중립 구간
     """
-    
     def analyze(self, market_data: Dict[str, Any]) -> float:
         """
         스토캐스틱 분석을 통한 매수/매도 신호 생성
@@ -335,21 +389,15 @@ class StochasticStrategy(StrategyBase):
         """
         k = market_data.get('stoch_k', 50)
         d = market_data.get('stoch_d', 50)
+        k_history = market_data.get('stoch_k_history', [])
         
-        # 과매도 상태에서 반등
-        if k < 20 and d < 20:
-            if k > d:  # 골든 크로스
-                return 0.9
-        
-        # 상승세 감지
-        elif 20 <= k <= 80:
-            recent_k = market_data.get('stoch_k_history', [])[-5:]
-            if recent_k and all(x < y for x, y in zip(recent_k[:-1], recent_k[1:])):
-                return 0.8
-        
-        # 과매수 상태
-        elif k > 80 and d > 80:
-            return 0.1
+        # 하락세 종료 감지: 과매도 구간에서 골든크로스
+        if k < 20 and d < 20 and k > d and len(k_history) >= 2 and k > k_history[-2]:
+            return min(1.0, 0.9 + (20 - k) / 100)  # 매우 높은 변동성 범위
+            
+        # 상승세 종료 감지: 과매수 구간에서 데드크로스
+        if k > 80 and d > 80 and k < d and len(k_history) >= 2 and k < k_history[-2]:
+            return max(0.0, 0.1 - (k - 80) / 100)  # 매우 높은 변동성 범위
             
         return 0.5
 
@@ -388,18 +436,23 @@ class IchimokuStrategy(StrategyBase):
         price = market_data.get('current_price', 0)
         cloud_top = market_data.get('ichimoku_cloud_top', price)
         cloud_bottom = market_data.get('ichimoku_cloud_bottom', price)
+        price_history = market_data.get('price_history', [])
         
-        if price > cloud_top:
-            return min(0.8, 0.7 + (price - cloud_top) / cloud_top * 0.1)
-        elif price < cloud_bottom:
-            return max(0.2, 0.3 - (cloud_bottom - price) / cloud_bottom * 0.1)
+        # 하락세 종료 감지: 구름대 하단 지지 후 반등
+        if price <= cloud_bottom and len(price_history) >= 2 and price > price_history[-2]:
+            return min(0.8, 0.7 + (cloud_bottom - price) / cloud_bottom * 0.1)
+            
+        # 상승세 종료 감지: 구름대 상단 저항 후 하락
+        if price >= cloud_top and len(price_history) >= 2 and price < price_history[-2]:
+            return max(0.2, 0.3 - (price - cloud_top) / cloud_top * 0.1)
+            
         return 0.5
 
 class MarketSentimentStrategy(StrategyBase):
     """
     시장 심리 기반 투자 전략
     
-    변동성: 낮음
+    변동성: 낮음 (return 범위: 0.3~0.7)
     리스크: 낮음
     특징:
         - 전반적 시장 분위기 분석
@@ -413,41 +466,41 @@ class MarketSentimentStrategy(StrategyBase):
     def analyze(self, market_data: Dict[str, Any]) -> float:
         """
         시장 심리 분석을 통한 매수/매도 신호 생성
-        
         Args:
             market_data (Dict[str, Any]): 시장 데이터
                 필수 키:
                 - market_sentiment: 시장 심리 지수 (-1 ~ 1)
-        
-        Returns:
-            float: 0~1 사이의 매수 신호 강도
-                (시장 심리 지수를 0~1 범위로 정규화)
         """
-        sentiment = market_data.get('market_sentiment', 0)  # -1 to 1
-        normalized = (sentiment + 1) / 2  # 0 to 1
+        sentiment = market_data.get('market_sentiment', 0)
+        volume_change = market_data.get('volume_surge', 1)
+        price_change = market_data.get('price_change_rate', 0)
         
-        if normalized > 0.5:
-            return min(0.7, 0.6 + (normalized - 0.5))
-        elif normalized < 0.5:
-            return max(0.3, 0.4 - (0.5 - normalized))
+        normalized = (sentiment + 1) / 2
+        
+        # 하락세 종료 감지: 시장 심리 개선 + 거래량 증가
+        if normalized < 0.4 and volume_change > 1.2 and price_change > 0:
+            return min(0.7, 0.6 + (volume_change - 1.2) * 0.5)  # 낮은 변동성 범위
+            
+        # 상승세 종료 감지: 시장 심리 악화 + 거래량 감소
+        if normalized > 0.6 and volume_change < 0.8 and price_change < 0:
+            return max(0.3, 0.4 - (0.8 - volume_change) * 0.5)  # 낮은 변동성 범위
+            
         return 0.5
 
 class DowntrendEndStrategy(StrategyBase):
     """
     하락장 종료 감지 전략
     
-    변동성: 매우 높음
-    리스크: 높음
+    변동성: 매우 높음 (return 범위: 0.0~1.0)
+    리스크: 매우 높음
     특징:
         - 하락 추세 전환점 포착
         - 반등 시점 예측
         - 급격한 매수 기회 포착
-        - RSI, 거래량, 가격 변동 복합 분석
     신호 강도:
         - 0.85~0.95: 매우 강한 매수 신호 (하락 추세 종료 + 반등 확인)
         - 0.75~0.85: 강한 매수 신호 (하락세 약화 + 거래량 증가)
-        - 0.65~0.75: 매수 신호 (기술적 반등 조건)
-        - 0.15~0.25: 약한 매수 신호 (하락 지속)
+        - 0.0~0.15: 매우 강한 매도 신호 (하락 지속)
         - 0.45~0.55: 중립 구간
     """
     def analyze(self, market_data: Dict[str, Any]) -> float:
@@ -463,10 +516,10 @@ class DowntrendEndStrategy(StrategyBase):
         
         Returns:
             float: 0~1 사이의 매수 신호 강도
-                - 0.9: 강한 반등 신호
-                - 0.7: 하락세 약화 감지
+                - 0.95~1.0: 매우 강한 반등 신호
+                - 0.85~0.95: 하락세 약화 감지
                 - 0.5: 중립
-                - 0.3: 하락 지속
+                - 0.0~0.15: 하락 지속
         """
         try:
             # 기본 지표 데이터 추출
@@ -487,22 +540,21 @@ class DowntrendEndStrategy(StrategyBase):
             recent_prices = price_history[-5:] if len(price_history) >= 5 else price_history
             price_change = ((recent_prices[-1] / recent_prices[0]) - 1) * 100 if len(recent_prices) > 1 else 0
             
-            # 하락 추세 종료 + 반등 신호
+            # 하락 추세 종료 + 반등 신호 (매우 강한 매수)
             if (trend_strength > -0.3 and trend_strength < 0) and rsi < 30 and volume_surge > 1.5:
-                # 강한 반등 신호
-                return min(0.95, 0.85 + (volume_surge - 1.5) * 0.1)
+                return min(1.0, 0.95 + (volume_surge - 1.5) * 0.1)  # 매우 높은 변동성 범위
                 
-            # 하락세 약화 + 거래량 증가
+            # 하락세 약화 + 거래량 증가 (강한 매수)
             if trend_strength > -0.5 and volume_surge > 1.2 and rsi < 40:
-                return min(0.85, 0.75 + (volume_surge - 1.2) * 0.1)
+                return min(0.95, 0.85 + (volume_surge - 1.2) * 0.2)  # 매우 높은 변동성 범위
                 
-            # 기술적 반등 조건
+            # 기술적 반등 조건 (중간 강도 매수)
             if rsi < 35 and volume_surge > 1.1 and price_change > -1:
-                return min(0.75, 0.65 + (35 - rsi) / 100)
+                return min(0.85, 0.75 + (35 - rsi) / 50)  # 매우 높은 변동성 범위
                 
-            # 하락 지속
+            # 하락 지속 (매우 강한 매도)
             if trend_strength < -0.7 or (rsi < 30 and volume_surge < 0.8):
-                return max(0.15, 0.25 + trend_strength)
+                return max(0.0, 0.15 + trend_strength)  # 매우 높은 변동성 범위
                 
             return 0.5
             
@@ -514,18 +566,16 @@ class UptrendEndStrategy(StrategyBase):
     """
     상승장 종료 감지 전략
     
-    변동성: 매우 높음
-    리스크: 높음
+    변동성: 매우 높음 (return 범위: 0.0~1.0)
+    리스크: 매우 높음
     특징:
         - 상승 추세 전환점 포착
         - 하락 시점 예측
         - 급격한 매도 기회 포착
-        - RSI, 거래량, 모멘텀 복합 분석
     신호 강도:
-        - 0.05~0.15: 매우 강한 매도 신호 (상승 추세 종료 + 하락 확인)
-        - 0.15~0.25: 강한 매도 신호 (상승세 약화 + 거래량 감소)
-        - 0.25~0.35: 매도 신호 (기술적 하락 조건)
-        - 0.75~0.85: 약한 매도 신호 (상승 지속)
+        - 0.0~0.1: 매우 강한 매도 신호 (상승 추세 종료 + 하락 확인)
+        - 0.1~0.2: 강한 매도 신호 (상승세 약화 + 거래량 감소)
+        - 0.85~0.95: 매우 강한 매수 신호 (상승 지속)
         - 0.45~0.55: 중립 구간
     """
     def analyze(self, market_data: Dict[str, Any]) -> float:
@@ -559,19 +609,11 @@ class UptrendEndStrategy(StrategyBase):
             
             # 상승 추세 종료 + 하락 확인
             if momentum < 0.3 and rsi > 70 and volume_ratio < 0.8 and volatility > 0.2:
-                return max(0.05, 0.15 - momentum * volatility)
-                
-            # 상승세 약화 + 거래량 감소
-            if momentum < 0.5 and rsi > 65 and volume_ratio < 0.9:
-                return max(0.15, 0.25 - (1 - volume_ratio))
-                
-            # 기술적 하락 조건
-            if rsi > 65 and volume_ratio < 1 and momentum < 0.7:
-                return max(0.25, 0.35 - (rsi - 65) / 100)
+                return max(0.0, 0.1 - momentum * volatility)  # 매우 높은 변동성 범위
                 
             # 상승 지속
             if momentum > 0.7 and volume_ratio > 1.2:
-                return min(0.85, 0.75 + momentum * 0.1)
+                return min(0.95, 0.85 + momentum * 0.1)  # 매우 높은 변동성 범위
                 
             return 0.5
             
@@ -611,21 +653,25 @@ class DivergenceStrategy(StrategyBase):
         """
         price_history = market_data.get('price_history', [])
         rsi_history = market_data.get('rsi_history', [])
-        macd_history = market_data.get('macd_history', [])
+        volume_history = market_data.get('volume_history', [])
         
-        if len(price_history) < 2 or len(rsi_history) < 2:
+        if len(price_history) < 3 or len(rsi_history) < 3:
             return 0.5
             
-        # 긍정적 다이버전스 (가격 하락, 지표 상승)
-        if price_history[-1] < price_history[-2] and rsi_history[-1] > rsi_history[-2]:
-            if macd_history and macd_history[-1] > macd_history[-2]:
-                return 0.9
-                
-        # 부정적 다이버전스 (가격 상승, 지표 하락)
-        if price_history[-1] > price_history[-2] and rsi_history[-1] < rsi_history[-2]:
-            if macd_history and macd_history[-1] < macd_history[-2]:
-                return 0.2
-                
+        # 하락세 종료 감지: 긍정적 다이버전스
+        # 가격은 하락하는데 RSI는 상승
+        if (price_history[-1] < price_history[-2] and 
+            rsi_history[-1] > rsi_history[-2] and 
+            volume_history[-1] > volume_history[-2]):
+            return min(1.0, 0.95 + (rsi_history[-1] - rsi_history[-2]) / 100)
+            
+        # 상승세 종료 감지: 부정적 다이버전스
+        # 가격은 상승하는데 RSI는 하락
+        if (price_history[-1] > price_history[-2] and 
+            rsi_history[-1] < rsi_history[-2] and 
+            volume_history[-1] < volume_history[-2]):
+            return max(0.0, 0.05 - (rsi_history[-2] - rsi_history[-1]) / 100)
+            
         return 0.5
 
 __all__ = [
