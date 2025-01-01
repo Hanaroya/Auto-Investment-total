@@ -498,7 +498,7 @@ class TradingManager:
             strategy_data = {
                 'current_price': strategy_results.get('price', price),
                 'timestamp': datetime.now(timezone(timedelta(hours=9))),  # KST 시간
-                'coin': coin['market'],
+                'coin': coin,
                 'price': strategy_results.get('price', price),
                 'action': strategy_results.get('action', 'hold'),
                 'signal_strength': strategy_results.get('overall_signal', 0),
@@ -516,7 +516,7 @@ class TradingManager:
             # MongoDB에 전략 데이터 저장 (upsert 사용)
             try:
                 result = self.db.strategy_data.update_one(
-                    {'coin': coin['market']}, # 코인 이름으로 조회
+                    {'coin': coin}, # 코인 이름으로 조회
                     {'$set': strategy_data}, # 전략 데이터 업데이트
                     upsert=True # 데이터가 없으면 생성
                 )

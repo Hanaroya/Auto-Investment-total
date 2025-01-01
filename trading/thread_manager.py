@@ -65,9 +65,9 @@ class TradingThread(threading.Thread):
                         break
                         
                     try:
-                        self.process_single_coin(coin)
+                        self.process_single_coin(coin['market'])
                     except Exception as e:
-                        self.logger.error(f"Error processing {coin}: {str(e)}")
+                        self.logger.error(f"Error processing {coin['market']}: {str(e)}")
                         continue
                 
                 # 사이클 완료 시간 계산
@@ -84,22 +84,6 @@ class TradingThread(threading.Thread):
             self.logger.error(f"Thread {self.thread_id} error: {str(e)}")
         finally:
             self.logger.info(f"Thread {self.thread_id} 정리 작업 완료")
-
-    async def process_coins(self):
-        """코인 목록 처리"""
-        self.logger.info(f"Thread {self.thread_id}: 마켓 분석 시작 - {len(self.coins)} 개의 코인")
-        
-        for coin in self.coins:
-            if self.stop_flag.is_set():
-                break
-                
-            try:
-                # 현재 스레드의 이벤트 루프 컨텍스트에서 실행
-                self.process_single_coin(coin)
-                time.sleep(0.08)
-            except Exception as e:
-                self.logger.error(f"Error processing {coin}: {e}")
-                continue
 
     def process_single_coin(self, coin: str):
         """단일 코인 처리"""
@@ -135,41 +119,67 @@ class TradingThread(threading.Thread):
 
             # 분석 결과 저장 및 거래 신호 처리
             with self.shared_locks['trade']:
-                # 현재 코인의 활성 거래 확인
-                active_trade = self.db.trades.find_one({
-                    'coin': coin,
-                    'thread_id': self.thread_id,
-                    'status': 'active'
-                })
+                try:
+                    # 현재 코인의 활성 거래 확인 및 로깅
+                    active_trade = self.db.trades.find_one({
+                        'coin': coin,
+                        'thread_id': self.thread_id,
+                        'status': 'active'
+                    })
+                    
+                    self.logger.info(f"Thread {self.thread_id}: {coin} - Active trade check result: {active_trade is not None}")
+                    self.logger.debug(f"Signals: {signals}")
+                    self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.max_investment}")
 
-                if active_trade:
-                    # 매도 신호 확인
-                    if signals.get('overall_signal') == 'sell':
-                        self.trading_manager.process_sell_signal(
-                            coin=coin,
-                            thread_id=self.thread_id,
-                            signal_strength=signals.get('overall_signal', 0.0),
-                            price=current_price,
-                            strategy_data=signals
-                        )
-                        self.logger.info(f"매도 신호 처리 완료: {coin}")
-                
-                else:
-                    # 매수 신호 확인
-                    if signals.get('overall_signal') == 'buy' and current_investment < self.max_investment:
-                        investment_amount = min(10000, self.max_investment - current_investment)  # 최소 투자금
+                    if active_trade:
+                        # 매도 신호 확인
+                        if signals.get('overall_signal') <= 0.45:  # 수치 기반 매도 신호 확인
+                            self.logger.info(f"매도 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
+                            self.trading_manager.process_sell_signal(
+                                coin=coin,
+                                thread_id=self.thread_id,
+                                signal_strength=signals.get('overall_signal', 0.0),
+                                price=current_price,
+                                strategy_data=signals
+                            )
+                            self.logger.info(f"매도 신호 처리 완료: {coin}")
                         
-                        # strategy_data에 investment_amount 추가
-                        signals['investment_amount'] = investment_amount
-                        
-                        self.trading_manager.process_buy_signal(
-                            coin=coin,
-                            thread_id=self.thread_id,
-                            signal_strength=signals.get('overall_signal', 0.0),
-                            price=current_price,
-                            strategy_data=signals
+                        # 현재 가격 업데이트
+                        self.db.trades.update_one(
+                            {'_id': active_trade['_id']},
+                            {
+                                '$set': {
+                                    'current_price': current_price,
+                                    'current_value': current_price * active_trade.get('executed_volume', 0),
+                                    'profit_rate': ((current_price / active_trade.get('price', current_price)) - 1) * 100,
+                                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                                }
+                            }
                         )
-                        self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
+                        self.logger.debug(f"가격 정보 업데이트 완료: {coin} - 현재가: {current_price:,}원")
+                    
+                    else:
+                        # 매수 신호 확인
+                        if signals.get('overall_signal', 0.0) >= 0.65 and current_investment < self.max_investment:
+                            self.logger.info(f"매수 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
+                            investment_amount = min(10000, self.max_investment - current_investment)
+                            
+                            # strategy_data에 investment_amount 추가
+                            signals['investment_amount'] = investment_amount
+                            
+                            self.trading_manager.process_buy_signal(
+                                coin=coin,
+                                thread_id=self.thread_id,
+                                signal_strength=signals.get('overall_signal', 0.0),
+                                price=current_price,
+                                strategy_data=signals
+                            )
+                            self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
+                        else:
+                            self.logger.debug(f"매수 조건 미충족: {coin} - Signal: {signals.get('overall_signal')}, Investment: {current_investment}/{self.max_investment}")
+
+                except Exception as e:
+                    self.logger.error(f"거래 신호 처리 중 오류 발생: {str(e)}", exc_info=True)
 
             # 스레드 상태 업데이트
             self.db.thread_status.update_one(
@@ -251,7 +261,9 @@ class ThreadManager:
                 from database.mongodb_manager import MongoDBManager
                 db = MongoDBManager()
                 db.cleanup_strategy_data()
+                db.cleanup_trades()
                 self.logger.info("strategy_data 컬렉션 정리 완료")
+                self.logger.info("trades 컬렉션 정리 완료")
             except Exception as e:
                 self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
             finally:

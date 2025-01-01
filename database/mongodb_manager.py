@@ -590,3 +590,18 @@ class MongoDBManager:
             self.logger.info("strategy_data 컬렉션 재설정 완료")
         except Exception as e:
             self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
+            
+    def cleanup_trades(self):
+        """trades 컬렉션 정리"""
+        try:
+            self.db.drop_collection('trades')
+            self.logger.info("trades 컬렉션 삭제 완료")
+            
+            # 컬렉션 재생성 및 인덱스 설정
+            self.trades = self.db['trades']
+            self.trades.create_index([("coin", 1), ("thread_id", 1), ("status", 1)])
+            self.trades.create_index([("thread_id", 1)])
+            
+            self.logger.info("trades 컬렉션 재설정 완료")
+        except Exception as e:
+            self.logger.error(f"trades 컬렉션 정리 실패: {str(e)}")

@@ -50,7 +50,7 @@ class CryptoTradingBot:
                 raise Exception("MongoDB 초기화 실패")
             
             # 메신저로 시작 메시지 전송
-            await self.investment_center.messenger.send_message(message="자동 거래를 시작합니다.", messenger_type="slack", channel="general")
+            self.investment_center.messenger.send_message(message="자동 거래를 시작합니다.", messenger_type="slack")
             
         except Exception as e:
             self.logger.error(f"초기화 중 오류 발생: {str(e)}")

@@ -246,7 +246,7 @@ class InvestmentCenter:
                 return
             
             self.logger.info(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
-            await self.messenger.send_message(message=f"총 {len(markets)}개의 마켓 분석을 시작합니다.", messenger_type="slack")
+            self.messenger.send_message(message=f"총 {len(markets)}개의 마켓 분석을 시작합니다.", messenger_type="slack")
             
             # 스레드 매니저 시작
             await self.thread_manager.start_threads(markets)
@@ -343,10 +343,11 @@ class InvestmentCenter:
             # 진행 중인 주문 취소 및 리소스 정리
             self.thread_manager.stop_all_threads()
             
-            # strategy_data 컬렉션 정리
+            # strategy_data 컬렉션, trades 컬렉션 정리
             from database.mongodb_manager import MongoDBManager
             db = MongoDBManager()
             db.cleanup_strategy_data()
+            db.cleanup_trades()
             
             # 메신저로 종료 메시지 전송
             asyncio.create_task(self.messenger.send_message(message="시스템이 안전하게 종료되었습니다.", messenger_type="slack"))

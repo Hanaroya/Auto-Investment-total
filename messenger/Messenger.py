@@ -33,7 +33,7 @@ class Messenger:
         # InvestmentCenter의 logger 사용
         self.logger = logging.getLogger('investment_center')
         
-    async def send_message(self, message: str, messenger_type: str = "slack", **kwargs) -> bool:
+    def send_message(self, message: str, messenger_type: str = "slack", **kwargs) -> bool:
         """
         지정된 메신저로 메시지를 비동기 전송
         
@@ -64,7 +64,7 @@ class Messenger:
                 return False
             
             self.logger.debug(f"메시지 전송 시도: type={messenger_type}, message={message[:100]}...")
-            result = await messenger_handlers[messenger_type](message, **kwargs)
+            result = messenger_handlers[messenger_type](message, **kwargs)
             
             if result:
                 self.logger.info(f"{messenger_type} 메시지 전송 성공")
@@ -77,9 +77,9 @@ class Messenger:
             self.logger.error(f"메시지 전송 중 오류 발생: {str(e)}")
             return False
 
-    async def _send_slack(self, message: str, channel: str = None) -> bool:
+    def _send_slack(self, message: str, channel: str = None) -> bool:
         """
-        Slack으로 메시지를 비동기 전송
+        Slack으로 메시지를 동기식 전송
         
         Args:
             message (str): 전송할 메시지 내용
@@ -88,31 +88,33 @@ class Messenger:
             bool: Slack 전송 성공 여부
         """
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "https://slack.com/api/chat.postMessage",
-                    headers={
-                        "Authorization": f"Bearer {self.config.get('messenger', {}).get('slack', {}).get('bot_token')}"
-                    },
-                    json={
-                        "channel": channel or self.config.get('messenger', {}).get('slack', {}).get('channel'),
-                        "text": message
-                    }
-                ) as response:
-                    if response.status == 200:
-                        self.logger.info("Slack 메시지 전송 성공")
-                        return True
-                    else:
-                        self.logger.error(f"Slack API 오류: {await response.text()}")
-                        return False
+            import requests
+            
+            response = requests.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={
+                    "Authorization": f"Bearer {self.config.get('messenger', {}).get('slack', {}).get('bot_token')}"
+                },
+                json={
+                    "channel": channel or self.config.get('messenger', {}).get('slack', {}).get('channel'),
+                    "text": message
+                }
+            )
+            
+            if response.status_code == 200:
+                self.logger.info("Slack 메시지 전송 성공")
+                return True
+            else:
+                self.logger.error(f"Slack API 오류: {response.text}")
+                return False
                 
         except Exception as e:
             self.logger.error(f"Slack 메시지 전송 실패: {str(e)}")
             return False
 
-    async def _send_email(self, message: str, subject: str = "Auto Investment 알림", attachment_path: str = None) -> bool:
+    def _send_email(self, message: str, subject: str = "Auto Investment 알림", attachment_path: str = None) -> bool:
         """
-        이메일로 메시지를 비동기 전송
+        이메일로 메시지를 동기식 전송
         
         Args:
             message (str): 전송할 메시지 내용
@@ -123,7 +125,8 @@ class Messenger:
             bool: 이메일 전송 성공 여부
         """
         try:
-            # 설정값 확인을 위한 디버깅 로그 추가
+            import smtplib
+            
             email_config = self.config.get('messenger', {}).get('gmail', {})
             sender = email_config.get('sender')
             address = email_config.get('address')
@@ -139,6 +142,7 @@ class Messenger:
             msg['Date'] = formatdate(localtime=True)
             msg['Subject'] = subject
 
+            message = message.replace("'", "")
             # 메시지가 None인 경우 처리
             if message is None:
                 message = "내용 없음"
@@ -152,11 +156,9 @@ class Messenger:
                 msg.attach(part)
 
             # SMTP 연결 및 전송
-            smtp = aiosmtplib.SMTP(hostname='smtp.gmail.com', port=465, use_tls=True)
-            await smtp.connect()
-            await smtp.login(address, api_key)
-            await smtp.send_message(msg)
-            await smtp.quit()
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+                smtp.login(address, api_key)
+                smtp.send_message(msg)
             
             self.logger.info("이메일 전송 성공")
             return True
@@ -166,7 +168,7 @@ class Messenger:
             self.logger.error(f"Config 상태: {self.config.get('messenger', {}).get('gmail', {})}")
             return False
 
-    async def send_alert(self, message: str, is_emergency: bool = False) -> None:
+    def send_alert(self, message: str, is_emergency: bool = False) -> None:
         """
         중요도에 따른 알림 메시지 전송
         
@@ -180,11 +182,11 @@ class Messenger:
         """
         if is_emergency:
             # 긴급 메시지는 모든 채널로 전송
-            await self._send_slack(f"🚨 긴급: {message}")
-            await self._send_email(message, subject="[긴급] Auto Investment 알림")
+            self._send_slack(f"🚨 긴급: {message}")
+            self._send_email(message, subject="[긴급] Auto Investment 알림")
         else:
             # 일반 메시지는 Slack으로만 전송
-            await self._send_slack(message)
+            self._send_slack(message)
 
     def _setup_logger(self) -> logging.Logger:
         """
