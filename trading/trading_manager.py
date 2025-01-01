@@ -166,6 +166,30 @@ class TradingManager:
             # 거래 데이터 업데이트
             self.db.update_trade(active_trade['_id'], update_data)
 
+            # 거래 내역을 trading_history 컬렉션에 저장
+            trade_history = {
+                'coin': coin,
+                'thread_id': thread_id,
+                'buy_timestamp': active_trade['timestamp'],
+                'sell_timestamp': kst_now,
+                'buy_price': active_trade['price'],
+                'sell_price': price,
+                'quantity': active_trade.get('executed_volume', 0),
+                'investment_amount': active_trade.get('investment_amount', 0),
+                'profit_amount': (price - active_trade['price']) * active_trade.get('executed_volume', 0),
+                'profit_rate': profit_rate,
+                'buy_signal': active_trade.get('signal_strength', 0),
+                'sell_signal': signal_strength,
+                'strategy_data': {
+                    'buy': active_trade.get('strategy_data', {}),
+                    'sell': strategy_data
+                },
+                'test_mode': is_test
+            }
+            
+            self.db.trading_history.insert_one(trade_history)
+            self.logger.info(f"거래 내역 기록 완료: {coin}")
+
             # 메신저로 매도 알림
             message = self.create_sell_message(active_trade, price, signal_strength)
             self.messenger.send_message(message=message, messenger_type="slack")
@@ -184,79 +208,176 @@ class TradingManager:
         - 파일 처리 후 정리
         """
         try:
-            trades = self.db.trades.find({}).to_list(None)
+            # 오늘 날짜 기준으로 거래 내역 조회
+            kst_today = datetime.now(timezone(timedelta(hours=9))).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            kst_tomorrow = kst_today + timedelta(days=1)
+
+            # 거래 내역 조회
+            trading_history = list(self.db.trading_history.find({
+                'sell_timestamp': {
+                    '$gte': kst_today,
+                    '$lt': kst_tomorrow
+                }
+            }))
             
-            if not trades:
-                self.logger.info("거래 데이터가 없습니다.")
-                self.messenger.send_message(message="거래 데이터가 없습니다.", messenger_type="slack")
-                return
+            # 현재 활성 거래 조회
+            active_trades = list(self.db.trades.find({"status": "active"}))
             
-            # 전체 거래 기록용 DataFrame
-            trades_df = pd.DataFrame(trades)
-            
-            # 현재 보유 현황 계산
-            holdings_df = pd.DataFrame([
-                trade for trade in trades 
-                if trade['status'] == 'active'
-            ])
-            
-            if not holdings_df.empty:
-                holdings_df = holdings_df[['coin', 'investment_amount', 'status', 'price', 'timestamp']]
-                total_investment = holdings_df['investment_amount'].sum()
-                
-                # 투자 비중 계산
-                holdings_df['investment_ratio'] = holdings_df['investment_amount'] / total_investment * 100
-            
-            # Excel 파일 생성
-            filename = f"투자현황-{datetime.now().strftime('%Y%m%d')}.xlsx"
+            filename = f"투자현황-{kst_today.strftime('%Y%m%d')}.xlsx"
             with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
-                # 거래 기록 시트
-                trades_df.to_excel(writer, sheet_name='거래기록', index=False)
-                
-                # 보유 현황 시트
-                if not holdings_df.empty:
-                    holdings_df.to_excel(writer, sheet_name='거래현황', index=False)
+                # 1. 거래 내역 시트
+                if trading_history:
+                    history_df = pd.DataFrame(trading_history)
+                    history_df['거래일자'] = history_df['sell_timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+                    history_df['매수가'] = history_df['buy_price'].map('{:,.0f}'.format)
+                    history_df['매도가'] = history_df['sell_price'].map('{:,.0f}'.format)
+                    history_df['수익률'] = history_df['profit_rate'].map('{:+.2f}%'.format)
+                    history_df['투자금액'] = history_df['investment_amount'].map('{:,.0f}'.format)
+                    history_df['수익금액'] = history_df['profit_amount'].map('{:+,.0f}'.format)
                     
-                    # 원형 그래프 생성
-                    workbook = writer.book
-                    worksheet = writer.sheets['거래현황']
+                    # 필요한 컬럼만 선택하여 저장
+                    display_columns = [
+                        'coin', '거래일자', '매수가', '매도가', '수익률', 
+                        '투자금액', '수익금액', 'test_mode'
+                    ]
+                    history_df[display_columns].to_excel(
+                        writer, 
+                        sheet_name='거래내역',
+                        index=False
+                    )
                     
-                    chart = workbook.add_chart({'type': 'pie'})
+                    # 거래 통계 계산
+                    total_trades = len(trading_history)
+                    profitable_trades = sum(1 for trade in trading_history if trade['profit_rate'] > 0)
+                    total_profit = sum(trade['profit_amount'] for trade in trading_history)
                     
-                    # 데이터 범위 설정
-                    last_row = len(holdings_df) + 1
-                    chart.add_series({
-                        'name': '투자 비중',
-                        'categories': f'=거래현황!$A$2:$A${last_row}',  # 코인명
-                        'values': f'=거래현황!$B$2:$B${last_row}',      # 투자금액
+                    # 통계 시트 추가
+                    stats_data = {
+                        '항목': ['총 거래 수', '수익 거래 수', '승률', '총 수익금'],
+                        '값': [
+                            total_trades,
+                            profitable_trades,
+                            f"{(profitable_trades/total_trades*100):.1f}%" if total_trades > 0 else "0%",
+                            f"₩{total_profit:,.0f}"
+                        ]
+                    }
+                    pd.DataFrame(stats_data).to_excel(
+                        writer,
+                        sheet_name='거래통계',
+                        index=False
+                    )
+
+                # 3. 보유 현황 시트
+                if active_trades:
+                    holdings_df = pd.DataFrame(active_trades)
+                    
+                    # 보유 현황 데이터 가공
+                    holdings_display = pd.DataFrame({
+                        '코인': holdings_df['coin'],
+                        '매수시간': holdings_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M'),
+                        '매수가': holdings_df['price'].map('{:,.0f}'.format),
+                        '현재가': holdings_df['current_price'].map('{:,.0f}'.format),
+                        '수익률': holdings_df['profit_rate'].map('{:+.2f}%'.format),
+                        '투자금액': holdings_df['investment_amount'].map('{:,.0f}'.format)
                     })
                     
-                    chart.set_title({'name': '코인별 투자 비중'})
-                    chart.set_style(10)
+                    # 보유 현황 시트에 데이터 저장
+                    holdings_display.to_excel(
+                        writer,
+                        sheet_name='보유현황',
+                        startrow=1,  # 그래프를 위한 공간 확보
+                        startcol=0,
+                        index=False
+                    )
+
+                    # 원형 그래프 생성
+                    workbook = writer.book
+                    worksheet = writer.sheets['보유현황']
                     
-                    # 차트 삽입
-                    worksheet.insert_chart('G2', chart)
+                    # 차트 데이터 준비
+                    chart_data = {
+                        'coin': holdings_df['coin'].tolist(),
+                        'amount': holdings_df['investment_amount'].tolist()
+                    }
+                    
+                    # 차트 데이터를 시트에 쓰기 (숨겨진 영역에)
+                    chart_row_offset = len(holdings_df) + 5
+                    worksheet.write_column(chart_row_offset, 0, chart_data['coin'])
+                    worksheet.write_column(chart_row_offset, 1, chart_data['amount'])
+                    
+                    # 원형 차트 생성
+                    pie_chart = workbook.add_chart({'type': 'pie'})
+                    pie_chart.add_series({
+                        'name': '투자 비중',
+                        'categories': f'=보유현황!$A${chart_row_offset+1}:$A${chart_row_offset+len(chart_data["coin"])}',
+                        'values': f'=보유현황!$B${chart_row_offset+1}:$B${chart_row_offset+len(chart_data["amount"])}',
+                        'data_labels': {'percentage': True, 'category': True},
+                    })
+                    
+                    # 차트 제목 및 스타일 설정
+                    pie_chart.set_title({'name': '코인별 투자 비중'})
+                    pie_chart.set_style(10)
+                    pie_chart.set_size({'width': 500, 'height': 300})
+                    
+                    # 차트를 시트에 삽입
+                    worksheet.insert_chart('H2', pie_chart)
+                    
+                    # 열 너비 자동 조정
+                    for idx, col in enumerate(holdings_display.columns):
+                        max_length = max(
+                            holdings_display[col].astype(str).apply(len).max(),
+                            len(col)
+                        )
+                        worksheet.set_column(idx, idx, max_length + 2)
+
+                # 워크북 서식 설정
+                for sheet in writer.sheets.values():
+                    sheet.set_column('A:Z', 15)  # 기본 열 너비 설정
+                    
+                # 숨겨진 차트 데이터 영역 숨기기
+                if active_trades:
+                    worksheet.set_default_row(hide_unused_rows=True)
+
+            # 이메일 전송
+            self.messenger.send_message(
+                message=f"{kst_today.strftime('%Y-%m-%d')} 일일 리포트입니다.",
+                messenger_type="email",
+                subject=f"{kst_today.strftime('%Y-%m-%d')} 투자 리포트",
+                attachment_path=filename
+            )
             
-            try:
-                # 이메일 전송
-                await self.messenger.send_message(
-                    message=f"{datetime.now().strftime('%Y-%m-%d')} 일일 리포트입니다.",
-                    messenger_type="email",
-                    subject=f"{datetime.now().strftime('%Y-%m-%d')} 투자 리포트",
-                    attachment_path=filename  # Excel 파일 경로
-                )
-                self.logger.info("일일 리포트 생성 및 전송 완료")
-                
-                # 메신저 알림
-                await self.messenger.send_message(message=f"{filename} 파일이 전달되었습니다.", messenger_type="slack")
-            finally:
-                # 파일 정리
-                import os
-                if os.path.exists(filename):
-                    os.remove(filename)
-                    
+            # 메신저 알림
+            stats_message = (
+                f"📊 {kst_today.strftime('%Y-%m-%d')} 거래 실적\n"
+                f"총 거래: {total_trades}건\n"
+                f"수익 거래: {profitable_trades}건\n"
+                f"승률: {(profitable_trades/total_trades*100):.1f}%\n"
+                f"총 수익금: ₩{total_profit:,.0f}"
+            ) if trading_history else "오늘의 거래 내역이 없습니다."
+            
+            self.messenger.send_message(
+                message=stats_message,
+                messenger_type="slack"
+            )
+            
+            self.messenger.send_message(
+                message=stats_message,
+                messenger_type="email",
+                subject=f"{kst_today.strftime('%Y-%m-%d')} 투자 리포트",
+                attachment_path=filename
+            )
+            
+            self.logger.info("일일 리포트 생성 및 전송 완료")
+            
         except Exception as e:
             self.logger.error(f"일일 리포트 생성 중 오류 발생: {str(e)}")
+            raise
+        finally:
+            # 파일 정리
+            if os.path.exists(filename):
+                os.remove(filename)
 
     def create_buy_message(self, trade_data: Dict) -> str:
         """매수 메시지 생성
