@@ -197,7 +197,7 @@ class Messenger:
             - 로그 레벨은 config에서 지정된 값 또는 기본값(INFO) 사용
             - 로그 포맷에는 시간, 로거 이름, 로그 레벨, 메시지 포함
         """
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger('investment-center')
         if not logger.handlers:
             handler = logging.StreamHandler()
             formatter = logging.Formatter(

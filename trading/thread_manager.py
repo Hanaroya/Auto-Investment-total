@@ -148,7 +148,7 @@ class TradingThread(threading.Thread):
                         self.trading_manager.process_sell_signal(
                             coin=coin,
                             thread_id=self.thread_id,
-                            signal_strength=signals.get('signal_strength', 0.0),
+                            signal_strength=signals.get('overall_signal', 0.0),
                             price=current_price,
                             strategy_data=signals
                         )
@@ -165,7 +165,7 @@ class TradingThread(threading.Thread):
                         self.trading_manager.process_buy_signal(
                             coin=coin,
                             thread_id=self.thread_id,
-                            signal_strength=signals.get('signal_strength', 0.0),
+                            signal_strength=signals.get('overall_signal', 0.0),
                             price=current_price,
                             strategy_data=signals
                         )

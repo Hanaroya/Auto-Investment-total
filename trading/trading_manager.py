@@ -19,7 +19,7 @@ class TradingManager:
         self.db = MongoDBManager()
         self.config = self._load_config()
         self.messenger = Messenger(self.config)
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger('investment-center')
         self.upbit = UpbitCall(
             self.config['api_keys']['upbit']['access_key'],
             self.config['api_keys']['upbit']['secret_key'],
@@ -501,12 +501,12 @@ class TradingManager:
                 'coin': coin['market'],
                 'price': strategy_results.get('price', price),
                 'action': strategy_results.get('action', 'hold'),
-                'strength': strategy_results.get('strength', 0),
+                'signal_strength': strategy_results.get('overall_signal', 0),
                 'market_data': strategy_results.get('market_data', {}),  # 시장 데이터
                 'strategies': {
                     name: {
                         'signal': data.get('signal', 'hold'),
-                        'strength': data.get('strength', 0),
+                        'signal_strength': data.get('overall_signal', 0),
                         'value': data.get('value', 0),
                     }
                     for name, data in strategy_results.get('strategy_data', {}).items()

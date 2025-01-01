@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 class Scheduler:
     def __init__(self):
         self.db = MongoDBManager()
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger('investment-center')
         self.running = False
         self.tasks = {}
 

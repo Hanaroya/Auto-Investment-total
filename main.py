@@ -14,7 +14,7 @@ load_dotenv()
 class CryptoTradingBot:
     def __init__(self):
         # 로거 설정
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger('investment-center')
         
         # config 로드
         with open('resource/application.yml', 'r', encoding='utf-8') as f:

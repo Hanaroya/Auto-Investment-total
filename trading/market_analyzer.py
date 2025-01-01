@@ -36,7 +36,7 @@ class MarketAnalyzer:
         """
         self.config = config
         self.db = MongoDBManager()
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger('investment-center')
         self.upbit = UpbitCall(
             self.config['api_keys']['upbit']['access_key'],
             self.config['api_keys']['upbit']['secret_key'],
@@ -293,7 +293,7 @@ class MarketAnalyzer:
 
             return {
                 'action': 'buy' if average_strength >= 0.65 else 'hold',
-                'strength': round(average_strength, 2),
+                'overall_signal': round(average_strength, 2),
                 'price': market_data['current_price'],
                 'strategy_data': strategy_results,
                 'market_data': market_data,  # 전략별 기여도가 포함된 시장 데이터
@@ -302,4 +302,9 @@ class MarketAnalyzer:
 
         except Exception as e:
             self.logger.error(f"시장 분석 중 오류 발생 ({market}): {str(e)}", exc_info=True)
-            return {'action': 'hold', 'strength': 0, 'price': 0, 'strategy_data': {}}
+            return {
+                'action': 'hold',
+                'overall_signal': 0,
+                'price': 0,
+                'strategy_data': {}
+            }
