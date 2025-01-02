@@ -91,8 +91,8 @@ class TradingManager:
                 'strategy_data': strategy_data,
                 'status': 'active',
                 'investment_amount': investment_amount,
-                'fee_amount': floor(fee_amount, 0),
-                'actual_investment': floor(actual_investment, 0),
+                'fee_amount': floor(fee_amount),
+                'actual_investment': floor(actual_investment),
                 'fee_rate': fee_rate,
                 'order_id': order_result.get('uuid'),
                 'executed_volume': order_result.get('executed_volume', 0),
@@ -201,10 +201,10 @@ class TradingManager:
                 'sell_order_id': order_result.get('uuid'),
                 'final_executed_volume': order_result.get('executed_volume', 0),
                 'test_mode': is_test,
-                'sell_fee_amount': floor(fee_amount, 0),
-                'actual_sell_amount': floor(actual_sell_amount, 0),
-                'total_fees': floor(total_fees, 0),
-                'profit_amount': floor(profit_amount, 0),
+                'sell_fee_amount': floor(fee_amount),
+                'actual_sell_amount': floor(actual_sell_amount),
+                'total_fees': floor(total_fees),
+                'profit_amount': floor(profit_amount),
                 'profit_rate': ceil(profit_rate, 2),
             }
             
@@ -222,9 +222,9 @@ class TradingManager:
                 'quantity': active_trade.get('executed_volume', 0),
                 'investment_amount': active_trade.get('investment_amount', 0),
                 'fee_amount': fee_amount,
-                'actual_sell_amount': floor(actual_sell_amount, 0),
-                'total_fees': floor(total_fees, 0),
-                'profit_amount': floor(profit_amount, 0),
+                'actual_sell_amount': floor(actual_sell_amount),
+                'total_fees': floor(total_fees),
+                'profit_amount': floor(profit_amount),
                 'profit_rate': ceil(profit_rate, 2),
                 'buy_signal': active_trade.get('signal_strength', 0),
                 'sell_signal': signal_strength,
@@ -245,14 +245,14 @@ class TradingManager:
             if order_result:
                 # 포트폴리오 업데이트
                 portfolio = self.db.get_portfolio()
-                sell_amount = floor((active_trade.get('executed_volume', 0) * price), 0)
+                sell_amount = floor((active_trade.get('executed_volume', 0) * price))
                 
                 if coin in portfolio.get('coin_list', {}):
                     del portfolio['coin_list'][coin]
                 
                 portfolio['available_investment'] += sell_amount
                 portfolio['current_amount'] = floor(
-                    (portfolio.get('current_amount', 0) - active_trade.get('investment_amount', 0) + sell_amount), 0
+                    (portfolio.get('current_amount', 0) - active_trade.get('investment_amount', 0) + sell_amount)
                 )
                 
                 self.db.update_portfolio(portfolio)
@@ -568,7 +568,7 @@ class TradingManager:
         Returns:
             매도 메시지
         """
-        profit_amount = floor(((sell_price - trade_data['price']) * trade_data.get('executed_volume', 0)), 0)
+        profit_amount = floor((sell_price - trade_data['price']) * trade_data.get('executed_volume', 0))
         total_investment = trade_data.get('investment_amount', 0) + profit_amount
         
         message = (
