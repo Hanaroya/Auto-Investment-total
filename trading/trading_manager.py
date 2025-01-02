@@ -540,7 +540,7 @@ class TradingManager:
             f" 구매 시간: {trade_data['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}\n"
             f" 구매 가격: {trade_data['price']:,}\n"
             f" 구매 신호: {trade_data['signal_strength']:.2f}\n"
-            f" Coin-rank: {strategy_data.get('thread_id', 'N/A')}\n"
+            f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
             f" 투자 금액: W{trade_data.get('investment_amount', 0):,}\n"
         )
 
