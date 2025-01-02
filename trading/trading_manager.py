@@ -481,6 +481,7 @@ class TradingManager:
                 {
                     '$set': {
                         'total_max_investment': new_total_investment,
+                        'reserve_amount': new_total_investment * 0.2,
                         'last_updated': datetime.now(timezone(timedelta(hours=9)))
                     }
                 }
@@ -504,6 +505,7 @@ class TradingManager:
                         '$set': {
                             'profit_earned': accumulated_profit,
                             'total_investment': new_total_investment,
+                            'reserve_amount': new_total_investment * 0.2,
                             'last_updated': datetime.now(timezone(timedelta(hours=9)))
                         }
                     }
