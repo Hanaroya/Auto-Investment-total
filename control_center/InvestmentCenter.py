@@ -17,6 +17,7 @@ from trading.thread_manager import ThreadManager
 from trading.market_analyzer import MarketAnalyzer
 from trading.trading_manager import TradingManager
 import asyncio
+import os
 
 class ExchangeFactory:
     """
@@ -329,24 +330,34 @@ class InvestmentCenter:
                     self.logger.error(f"거래 청산 중 오류: {str(e)}")
             
             # system_config 업데이트
-            current_config = self.db.system_config.find_one({})
-            new_total_investment = current_config['total_max_investment'] + total_profit
+            current_config = self.db.system_config.find_one({'_id': 'config'})
+            if not current_config:
+                self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
+                current_config = {
+                    'total_max_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000))
+                }
+            
+            new_total_investment = current_config.get('total_max_investment', 0) + total_profit
             
             self.db.system_config.update_one(
-                {},
+                {'_id': 'config'},
                 {
                     '$set': {
                         'total_max_investment': new_total_investment,
-                        'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                        'last_updated': datetime.now(timezone(timedelta(hours=9))),
+                        'reserve_amount': new_total_investment * 0.2
                     }
-                })
+                },
+                upsert=True  # 문서가 없으면 생성
+            )
             
             # daily_profit 기록
             self.db.daily_profit.insert_one({
                 'timestamp': datetime.now(timezone(timedelta(hours=9))),
                 'profit_earned': total_profit,
                 'total_max_investment': new_total_investment,
-                'reserve_amount': current_config['reserve_amount'],
+                'reserve_amount': current_config.get('reserve_amount', 200000),
                 'type': 'system_shutdown'
             })
             
@@ -394,7 +405,6 @@ class InvestmentCenter:
             from database.mongodb_manager import MongoDBManager
             db = MongoDBManager()
             db.cleanup_strategy_data()
-            db.cleanup_trades()
             
             # 메신저로 종료 메시지 전송
             asyncio.create_task(self.messenger.send_message(message="시스템이 안전하게 종료되었습니다.", messenger_type="slack"))

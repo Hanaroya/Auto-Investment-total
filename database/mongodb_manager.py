@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from typing import Dict, Any, List
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import sys
 from config.mongodb_config import MONGODB_CONFIG, INITIAL_SYSTEM_CONFIG
 import os
@@ -58,6 +58,9 @@ class MongoDBManager:
             # 데이터베이스와 컬렉션 설정
             self.db = self.client[config['db_name']]
             self._setup_collections()
+            
+            # 시스템 설정 초기화 (추가)
+            self._initialize_system_config()
             
             self._initialized = True
             
@@ -239,50 +242,25 @@ class MongoDBManager:
     def _setup_collections(self):
         """컬렉션 설정 및 인덱스 생성"""
         try:
-            # 기존 컬렉션 참조 설정
+            # 컬렉션 초기화
             self.trades = self.db['trades']
             self.market_data = self.db[MONGODB_CONFIG['collections']['market_data']]
             self.thread_status = self.db[MONGODB_CONFIG['collections']['thread_status']]
             self.system_config = self.db['system_config']
-            self.strategy_data = self.db['strategy_data'] # 전략 데이터 컬렉션 추가
-            self.trading_history = self.db['trading_history']# trading_history 컬렉션 추가
-            self.daily_profit = self.db['daily_profit'] # daily_profit 컬렉션 추가
-            
-            # 기존 인덱스 생성
-            self.trades.create_index([("market", 1), ("timestamp", -1)])
-            self.trades.create_index([("status", 1)])
-            self.strategy_data.create_index([("coin", 1), ("timestamp", -1)])
-            
-            # trading_history 컬렉션 인덱스 생성
-            self.trading_history.create_index([("coin", 1), ("timestamp", -1)])
-            self.trading_history.create_index([("buy_timestamp", -1)])
-            self.trading_history.create_index([("sell_timestamp", -1)])
-            self.trading_history.create_index([("thread_id", 1)])
-            
-            # portfolio 컬렉션 추가
+            self.strategy_data = self.db['strategy_data']
+            self.trading_history = self.db['trading_history']
+            self.daily_profit = self.db['daily_profit']
             self.portfolio = self.db['portfolio']
             
-            # portfolio 컬렉션 인덱스 생성
-            self.portfolio.create_index([("last_updated", -1)])
+            # 인덱스 생성
+            self.trades.create_index([("coin", 1), ("thread_id", 1), ("status", 1)])
+            self.trades.create_index([("thread_id", 1)])
+            self.strategy_data.create_index([("coin", 1), ("timestamp", -1)])
+            self.thread_status.create_index([("thread_id", 1)])
+            self.daily_profit.create_index([("timestamp", -1)])
+            self.portfolio.create_index([("_id", 1)])
             
-            # 초기 포트폴리오 설정 확인
-            self._initialize_portfolio()
-
-            # daily_profit 설정확인
-            self._initialize_daily_profit()
-
-            self.logger.info("MongoDB 컬렉션 설정 완료 - 컬렉션 목록:")
-            self.logger.info(f"- trades: {self.trades.name}")
-            self.logger.info(f"- market_data: {self.market_data.name}")
-            self.logger.info(f"- thread_status: {self.thread_status.name}")
-            self.logger.info(f"- system_config: {self.system_config.name}")
-            self.logger.info(f"- strategy_data: {self.strategy_data.name}")
-            self.logger.info(f"- trading_history: {self.trading_history.name}")
-            self.logger.info(f"- portfolio: {self.portfolio.name}")
-            self.logger.info(f"- daily_profit: {self.daily_profit.name}")
-            
-            # 시스템 설정 초기화 확인
-            self._initialize_system_config()
+            self.logger.info("컬렉션 및 인덱스 설정 완료")
             
         except Exception as e:
             self.logger.error(f"컬렉션 설정 실패: {str(e)}")
@@ -296,11 +274,23 @@ class MongoDBManager:
             if not self.system_config.find_one({'_id': 'config'}):
                 initial_config = {
                     '_id': 'config',
-                    **INITIAL_SYSTEM_CONFIG,
-                    'created_at': datetime.utcnow()
+                    'initial_investment': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
+                    'min_trade_amount': float(os.getenv('MIN_TRADE_AMOUNT', 5000)),
+                    'max_thread_investment': float(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
+                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
+                    'total_max_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'emergency_stop': False,
+                    'created_at': datetime.now(timezone(timedelta(hours=9)))
                 }
                 self.system_config.insert_one(initial_config)
                 self.logger.info("시스템 설정 초기화 완료")
+                
+                # 설정값 로깅
+                self.logger.info(f"초기 투자금: {initial_config['initial_investment']:,}원")
+                self.logger.info(f"최소 거래금액: {initial_config['min_trade_amount']:,}원")
+                self.logger.info(f"스레드당 최대 투자금: {initial_config['max_thread_investment']:,}원")
+                self.logger.info(f"예비금: {initial_config['reserve_amount']:,}원")
+                self.logger.info(f"총 최대 투자금: {initial_config['total_max_investment']:,}원")
         except Exception as e:
             self.logger.error(f"시스템 설정 초기화 실패: {str(e)}")
             raise
@@ -361,11 +351,33 @@ class MongoDBManager:
             return False
 
     def get_portfolio(self) -> Dict:
-        """현재 포트폴리오 조회"""
+        """현재 포트폴리오 조회 및 없으면 생성"""
         try:
-            return self.portfolio.find_one({'_id': 'main'}) or {}
+            # 포트폴리오 조회
+            portfolio = self.db.portfolio.find_one({'_id': 'main'})
+            
+            # 포트폴리오가 없으면 새로 생성
+            if not portfolio:
+                portfolio = {
+                    '_id': 'main',
+                    'coin_list': {},
+                    'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
+                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
+                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'profit_earned': 0,
+                    'created_at': datetime.now(timezone(timedelta(hours=9))),
+                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                }
+                
+                # 새 포트폴리오 저장
+                self.db.portfolio.insert_one(portfolio)
+                self.logger.info("새 포트폴리오 생성 완료")
+                
+            return portfolio
+            
         except Exception as e:
-            self.logger.error(f"포트폴리오 조회 실패: {str(e)}")
+            self.logger.error(f"포트폴리오 조회/생성 실패: {str(e)}")
             return {}
 
     def get_collection(self, name):
@@ -671,16 +683,34 @@ class MongoDBManager:
             self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
             
     def cleanup_trades(self):
-        """trades 컬렉션 정리"""
+        """trades와 trading_history 컬렉션 정리"""
         try:
+            # trades 컬렉션 정리
             self.db.drop_collection('trades')
             self.logger.info("trades 컬렉션 삭제 완료")
             
-            # 컬렉션 재생성 및 인덱스 설정
+            # trades 컬렉션 재생성 및 인덱스 설정
             self.trades = self.db['trades']
             self.trades.create_index([("coin", 1), ("thread_id", 1), ("status", 1)])
             self.trades.create_index([("thread_id", 1)])
             
             self.logger.info("trades 컬렉션 재설정 완료")
+            
+            # trading_history 컬렉션 정리
+            # 일일 리포트 생성 후에만 trading_history를 초기화
+            if self.daily_profit.find_one({"timestamp": {"$gte": datetime.now(timezone(timedelta(hours=9))).replace(hour=0, minute=0, second=0, microsecond=0)}}) is not None:
+                self.db.drop_collection('trading_history')
+                self.logger.info("trading_history 컬렉션 삭제 완료")
+                
+                # trading_history 컬렉션 재생성 및 인덱스 설정
+                self.trading_history = self.db['trading_history']
+                self.trading_history.create_index([("coin", 1), ("thread_id", 1)])
+                self.trading_history.create_index([("buy_timestamp", -1)])
+                self.trading_history.create_index([("sell_timestamp", -1)])
+                
+                self.logger.info("trading_history 컬렉션 재설정 완료")
+            else:
+                self.logger.info("오늘의 일일 리포트가 아직 생성되지 않아 trading_history 컬렉션 유지")
+                
         except Exception as e:
-            self.logger.error(f"trades 컬렉션 정리 실패: {str(e)}")
+            self.logger.error(f"trades/trading_history 컬렉션 정리 실패: {str(e)}")

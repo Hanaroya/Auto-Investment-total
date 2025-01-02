@@ -12,6 +12,7 @@ import time
 import signal
 from trade_market_api.UpbitCall import UpbitCall
 import sys
+import os
 
 class TradingThread(threading.Thread):
     """
@@ -48,8 +49,17 @@ class TradingThread(threading.Thread):
             self.config['api_keys']['upbit']['secret_key']
         )
         
-        # 설정에서 최대 투자금 가져오기 (기본값: 80,000원)
-        self.max_investment = config.get('trading_settings', {}).get('max_thread_investment', 80000)
+        # system_config에서 설정값 가져오기
+        system_config = self.db.system_config.find_one({'_id': 'system_config'})
+        if not system_config:
+            self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
+            self.max_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))
+            self.investment_each = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)) / 40
+        else:
+            self.max_investment = system_config.get('max_thread_investment', 80000)
+            self.investment_each = system_config.get('total_max_investment', 800000) / 40
+        
+        self.logger.info(f"Thread {thread_id} 초기화 완료 (최대 투자금: {self.max_investment:,}원)")
 
     def run(self):
         """스레드 실행"""
@@ -175,7 +185,7 @@ class TradingThread(threading.Thread):
                         # 매수 신호 확인
                         if signals.get('overall_signal', 0.0) >= 0.65 and current_investment < self.max_investment:
                             self.logger.info(f"매수 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
-                            investment_amount = min(floor((self.max_investment / 40)), self.max_investment - current_investment)
+                            investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
                             
                             # strategy_data에 investment_amount 추가
                             signals['investment_amount'] = investment_amount
@@ -251,40 +261,64 @@ class ThreadManager:
         """모든 스레드 강제 종료"""
         try:
             self.logger.info("모든 스레드 종료 시작...")
-        
+            
+            # 먼저 stop_flag 설정
+            self.stop_flag.set()
+            
             # 각 스레드 종료 대기
             for thread in self.threads:
-                if thread.is_alive():
-                    thread.stop_flag.set()
-                    thread.join(timeout=1)  # 1초만 대기
-                    
-                    # 여전히 살아있다면 더 강력한 종료 시도
+                try:
                     if thread.is_alive():
-                        self.logger.warning(f"Thread {thread.thread_id} 강제 종료 시도")
-                        try:
-                            thread._stop()
-                        except:
-                            pass
+                        thread.stop_flag.set()
+                        thread.join(timeout=2)  # 2초 대기
+                        
+                        # 여전히 살아있다면 더 강력한 종료 시도
+                        if thread.is_alive():
+                            self.logger.warning(f"Thread {thread.thread_id} 강제 종료 시도")
+                            try:
+                                thread._stop()
+                            except:
+                                pass
+                except Exception as e:
+                    self.logger.error(f"Thread {thread.thread_id} 종료 중 오류: {str(e)}")
+                    continue  # 한 스레드의 오류가 다른 스레드 종료에 영향을 주지 않도록 함
             
             self.threads.clear()
             self.logger.info("모든 스레드 종료 완료")
             
-            # strategy_data 컬렉션 정리
+            # 데이터베이스 정리 작업
             try:
                 from database.mongodb_manager import MongoDBManager
                 db = MongoDBManager()
-                db.cleanup_strategy_data()
-                db.cleanup_trades()
-                self.logger.info("strategy_data 컬렉션 정리 완료")
-                self.logger.info("trades 컬렉션 정리 완료")
+                
+                # 각 정리 작업을 개별적으로 try-except로 감싸서 처리
+                try:
+                    db.cleanup_strategy_data()
+                    self.logger.info("strategy_data 컬렉션 정리 완료")
+                except Exception as e:
+                    self.logger.error(f"strategy_data 정리 실패: {str(e)}")
+                
+                try:
+                    db.cleanup_trades()
+                    self.logger.info("trades 컬렉션 정리 완료")
+                except Exception as e:
+                    self.logger.error(f"trades 정리 실패: {str(e)}")
+                
             except Exception as e:
-                self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
-            finally:
+                self.logger.error(f"데이터베이스 정리 중 오류: {str(e)}")
+            
+            # 프로그램 종료
+            try:
+                os._exit(0)  # 더 강력한 종료 방법 사용
+            except:
                 sys.exit(0)
                 
         except Exception as e:
             self.logger.error(f"스레드 종료 중 오류: {str(e)}")
-            sys.exit(1)
+            try:
+                os._exit(1)
+            except:
+                sys.exit(1)
 
     def start_threads(self, markets: List[str], thread_count: int = 10):
         """스레드 시작"""

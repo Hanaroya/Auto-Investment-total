@@ -246,13 +246,21 @@ class TradingManager:
                 # 포트폴리오 업데이트
                 portfolio = self.db.get_portfolio()
                 sell_amount = floor((active_trade.get('executed_volume', 0) * price))
+                profit_amount = sell_amount - active_trade.get('investment_amount', 0)
                 
+                # coin_list에서 판매된 코인 제거
                 if coin in portfolio.get('coin_list', {}):
                     del portfolio['coin_list'][coin]
                 
+                # 가용 투자금액과 현재 금액 업데이트
                 portfolio['available_investment'] += sell_amount
                 portfolio['current_amount'] = floor(
                     (portfolio.get('current_amount', 0) - active_trade.get('investment_amount', 0) + sell_amount)
+                )
+                
+                # 누적 수익 업데이트
+                portfolio['profit_earned'] = floor(
+                    portfolio.get('profit_earned', 0) + profit_amount
                 )
                 
                 self.db.update_portfolio(portfolio)
