@@ -112,7 +112,11 @@ class TradingManager:
         """
         try:
             # 활성 거래 조회
-            active_trade = self.db.get_active_trade(coin, thread_id)
+            active_trades = self.get_active_trades()
+            
+            # 해당 코인의 활성 거래 찾기
+            active_trade = next((trade for trade in active_trades 
+                               if trade['coin'] == coin and trade['thread_id'] == thread_id), None)
 
             if not active_trade:
                 return False
