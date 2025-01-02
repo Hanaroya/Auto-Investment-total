@@ -8,7 +8,7 @@ import yaml
 from strategy.StrategyBase import StrategyManager
 from trade_market_api.UpbitCall import UpbitCall
 import os
-from math import ceil, floor
+from math import floor
 
 class TradingManager:
     """
@@ -205,7 +205,7 @@ class TradingManager:
                 'actual_sell_amount': floor(actual_sell_amount),
                 'total_fees': floor(total_fees),
                 'profit_amount': floor(profit_amount),
-                'profit_rate': ceil(profit_rate, 2),
+                'profit_rate': round(profit_rate, 2),
             }
             
             # 거래 데이터 업데이트
@@ -225,7 +225,7 @@ class TradingManager:
                 'actual_sell_amount': floor(actual_sell_amount),
                 'total_fees': floor(total_fees),
                 'profit_amount': floor(profit_amount),
-                'profit_rate': ceil(profit_rate, 2),
+                'profit_rate': round(profit_rate, 2),
                 'buy_signal': active_trade.get('signal_strength', 0),
                 'sell_signal': signal_strength,
                 'strategy_data': {

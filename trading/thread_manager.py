@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import List, Dict
 
-from math import ceil, floor
+from math import floor
 from database.mongodb_manager import MongoDBManager
 from trading.market_analyzer import MarketAnalyzer
 from trading.trading_manager import TradingManager
