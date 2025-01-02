@@ -266,7 +266,7 @@ class TradingManager:
                 self.db.update_portfolio(portfolio)
 
             # 메신저로 매도 알림
-            message = self.create_sell_message(
+            message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_sell_message(
                 active_trade, 
                 price, 
                 signal_strength,
