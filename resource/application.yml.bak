@@ -18,11 +18,12 @@ api_keys:
     access_key: "your_upbit_access_key"
     secret_key: "your_upbit_secret_key"
     test_mode: true  # test 모드일 때 API 검증 스킵
+    fee: 0.05  # 수수료 추가 (0.05%)
   binance:
     access_key: "your_binance_access_key"
     secret_key: "your_binance_secret_key"
     test_mode: true  # test 모드일 때 API 검증 스킵
-
+    fee: 0.05  # 수수료 추가 (0.05%)
 messenger:
   slack:
     bot_token: "your_slack_bot_token" # 슬랙 봇 토큰

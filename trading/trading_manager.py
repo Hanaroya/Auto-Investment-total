@@ -53,9 +53,15 @@ class TradingManager:
                 self.config.get('api_keys', {}).get('upbit', {}).get('test_mode', True)
             )
             
+            # 수수료 계산
+            fee_rate = self.config['api_keys']['upbit'].get('fee', 0.05) / 100  # 0.05% -> 0.0005
+            investment_amount = strategy_data.get('investment_amount', 0)
+            fee_amount = investment_amount * fee_rate
+            actual_investment = investment_amount - fee_amount  # 수수료를 제외한 실제 투자금액
+            
             order_result = None
             if not is_test:
-                # 실제 매수 주문 실행
+                # 실제 매수 주문 실행 (수수료를 제외한 금액으로 주문)
                 order_result = self.upbit.place_order(
                     market=coin,
                     side='bid',
@@ -68,10 +74,10 @@ class TradingManager:
                     return False
             else:
                 # 테스트 모드 로그
-                self.logger.info(f"[TEST MODE] 가상 매수 신호 처리: {coin} @ {price:,}원")
+                self.logger.info(f"[TEST MODE] 가상 매수 신호 처리: {coin} @ {price:,}원 (수수료: {fee_amount:,.0f}원)")
                 order_result = {
                     'uuid': f'test_buy_{kst_now.timestamp()}',
-                    'executed_volume': strategy_data.get('investment_amount', 0) / price,
+                    'executed_volume': actual_investment / price,  # 수수료를 제외한 수량
                     'price': price
                 }
 
@@ -84,14 +90,17 @@ class TradingManager:
                 'thread_id': thread_id,
                 'strategy_data': strategy_data,
                 'status': 'active',
-                'investment_amount': strategy_data.get('investment_amount', 0),
+                'investment_amount': investment_amount,
+                'fee_amount': ceil(fee_amount, 0),
+                'actual_investment': ceil(actual_investment, 0),
+                'fee_rate': fee_rate,
                 'order_id': order_result.get('uuid'),
                 'executed_volume': order_result.get('executed_volume', 0),
                 'test_mode': is_test
             }
 
             # 거래 데이터 저장
-            trade_id = self.db.insert_trade(trade_data)
+            self.db.insert_trade(trade_data)
             
             # 메신저로 매수 알림
             message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(trade_data)
@@ -170,6 +179,17 @@ class TradingManager:
 
             # 수익률 계산
             profit_rate = ((price - active_trade['price']) / active_trade['price']) * 100
+
+            # 수수료 계산
+            fee_rate = self.config['api_keys']['upbit'].get('fee', 0.05) / 100
+            sell_amount = active_trade.get('executed_volume', 0) * price
+            fee_amount = sell_amount * fee_rate
+            actual_sell_amount = sell_amount - fee_amount  # 수수료를 제외한 실제 판매금액
+            
+            # 수익률 계산 (수수료 포함)
+            total_fees = active_trade.get('fee_amount', 0) + fee_amount  # 매수/매도 수수료 합계
+            profit_amount = actual_sell_amount - active_trade.get('actual_investment', 0)
+            profit_rate = (profit_amount / active_trade.get('investment_amount', 0)) * 100
             
             update_data = {
                 'status': 'closed',
@@ -180,7 +200,12 @@ class TradingManager:
                 'profit_rate': profit_rate,
                 'sell_order_id': order_result.get('uuid'),
                 'final_executed_volume': order_result.get('executed_volume', 0),
-                'test_mode': is_test
+                'test_mode': is_test,
+                'sell_fee_amount': ceil(fee_amount, 0),
+                'actual_sell_amount': ceil(actual_sell_amount, 0),
+                'total_fees': ceil(total_fees, 0),
+                'profit_amount': ceil(profit_amount, 0),
+                'profit_rate': ceil(profit_rate, 2),
             }
             
             # 거래 데이터 업데이트
@@ -196,8 +221,11 @@ class TradingManager:
                 'sell_price': price,
                 'quantity': active_trade.get('executed_volume', 0),
                 'investment_amount': active_trade.get('investment_amount', 0),
-                'profit_amount': ceil((price - active_trade['price']) * active_trade.get('executed_volume', 0)),
-                'profit_rate': profit_rate,
+                'fee_amount': fee_amount,
+                'actual_sell_amount': ceil(actual_sell_amount, 0),
+                'total_fees': ceil(total_fees, 0),
+                'profit_amount': ceil(profit_amount, 0),
+                'profit_rate': ceil(profit_rate, 2),
                 'buy_signal': active_trade.get('signal_strength', 0),
                 'sell_signal': signal_strength,
                 'strategy_data': {
@@ -223,16 +251,20 @@ class TradingManager:
                     del portfolio['coin_list'][coin]
                 
                 portfolio['available_investment'] += sell_amount
-                portfolio['current_amount'] = (
-                    portfolio.get('current_amount', 0) - 
-                    active_trade.get('investment_amount', 0) + 
-                    sell_amount
+                portfolio['current_amount'] = ceil(
+                    portfolio.get('current_amount', 0) - active_trade.get('investment_amount', 0) + sell_amount, 0
                 )
                 
                 self.db.update_portfolio(portfolio)
 
             # 메신저로 매도 알림
-            message = self.create_sell_message(active_trade, price, signal_strength)
+            message = self.create_sell_message(
+                active_trade, 
+                price, 
+                signal_strength,
+                fee_amount=fee_amount,
+                total_fees=total_fees
+            )
             self.messenger.send_message(message=message, messenger_type="slack")
             
             return True
@@ -482,7 +514,8 @@ class TradingManager:
         return message
 
     def create_sell_message(self, trade_data: Dict, sell_price: float, 
-                           sell_signal: float) -> str:
+                           sell_signal: float, fee_amount: float = 0, 
+                           total_fees: float = 0) -> str:
         """매도 메시지 생성
         
         매도 시점의 전략 데이터를 기반으로 메시지를 생성합니다.
@@ -494,7 +527,6 @@ class TradingManager:
         Returns:
             매도 메시지
         """
-        strategy_data = trade_data['strategy_data']
         profit_amount = ceil((sell_price - trade_data['price']) * trade_data.get('executed_volume', 0))
         total_investment = trade_data.get('investment_amount', 0) + profit_amount
         
@@ -528,6 +560,12 @@ class TradingManager:
         # 수익률 정보 추가
         profit_rate = ((sell_price - trade_data['price']) / trade_data['price']) * 100
         message += f" 수익률: {profit_rate:.2f}%\n"
+
+        message += (
+            f"  └ 매도 수수료: ₩{fee_amount:,.0f}\n"
+            f"  └ 총 수수료: ₩{total_fees:,.0f}\n"
+            f"  └ 순수익: ₩{profit_amount:+,.0f} (수수료 차감 후)\n"
+        )
 
         message += "\n------------------------------------------------"
         return message

@@ -252,20 +252,21 @@ class InvestmentCenter:
             await self.thread_manager.start_threads(markets)
             
             # 스케줄러 시작
-            asyncio.create_task(self.scheduler.start())
+            await self.scheduler.start()
             
-            # 일일/시간별 리포트 스케줄러 설정
-            await self.scheduler.schedule_task(
-                'daily_report',
-                self.trading_manager.generate_daily_report,
-                cron='0 20 * * *',
-                immediate=False
-            )
-            
+            # 시간별 리포트 - 매시 정각에 실행 (0분 0초)
             await self.scheduler.schedule_task(
                 'hourly_report',
                 self.trading_manager.generate_hourly_report,
-                cron='0 * * * *',
+                cron='0 * * * *',  # 매시 0분에 실행
+                immediate=False
+            )
+            
+            # 일일 리포트 - 매일 20시에 실행
+            await self.scheduler.schedule_task(
+                'daily_report',
+                self.trading_manager.generate_daily_report,
+                cron='0 20 * * *',  # 매일 20시 0분에 실행
                 immediate=False
             )
             

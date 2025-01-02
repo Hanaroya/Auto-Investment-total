@@ -11,19 +11,20 @@ class Scheduler:
         self.db = MongoDBManager()
         self.logger = logging.getLogger('investment-center')
         self.running = False
+        self.scheduler = AsyncIOScheduler()
         self.tasks = {}
 
     async def start(self):
         """스케줄러 시작"""
         self.running = True
+        self.scheduler.start()
         while self.running:
-            await schedule.run_pending()
             await asyncio.sleep(1)
 
     async def stop(self):
         """스케줄러 중지"""
         self.running = False
-        schedule.clear()
+        self.scheduler.shutdown()
 
     def schedule_daily_report(self, report_func: Callable):
         """일일 리포트 스케줄링 (매일 오후 8시)"""
