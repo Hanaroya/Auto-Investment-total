@@ -173,7 +173,7 @@ class TradingThread(threading.Thread):
                         # 매수 신호 확인
                         if signals.get('overall_signal', 0.0) >= 0.65 and current_investment < self.max_investment:
                             self.logger.info(f"매수 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
-                            investment_amount = min(20000, self.max_investment - current_investment)
+                            investment_amount = min((self.max_investment / 40), self.max_investment - current_investment)
                             
                             # strategy_data에 investment_amount 추가
                             signals['investment_amount'] = investment_amount
