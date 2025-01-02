@@ -808,6 +808,32 @@ class TradingManager:
                 else:
                     self.logger.warning(f"{coin} 전략 데이터 변경 없음")
                 
+                # 활성 거래 조회 및 업데이트
+                active_trades = self.db.trades.find(
+                    {
+                        'coin': coin, 
+                        'thread_id': self.thread_id,
+                        'status': 'active'
+                    }
+                )
+                current_price = strategy_results.get('price', price)
+                
+                for active_trade in active_trades:
+                    # 현재 가격 업데이트
+                    self.db.trades.update_one(
+                        {'_id': active_trade['_id']},
+                        {
+                            '$set': {
+                                'current_price': current_price,
+                                'current_value': current_price * active_trade.get('executed_volume', 0),
+                                'profit_rate': ((current_price / active_trade.get('price', current_price)) - 1) * 100,
+                                'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                            }
+                        }
+                    )
+                    
+                    self.logger.debug(f"가격 정보 업데이트 완료: {coin} - 현재가: {current_price:,}원")
+                    
             except Exception as db_error:
                 self.logger.error(f"MongoDB 저장 중 오류 발생: {str(db_error)}")
                 

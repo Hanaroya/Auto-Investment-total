@@ -154,20 +154,6 @@ class TradingThread(threading.Thread):
                     self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.max_investment}")
 
                     if active_trade:
-                        # 현재 가격 업데이트
-                        self.db.trades.update_one(
-                            {'_id': active_trade['_id']},
-                            {
-                                '$set': {
-                                    'current_price': current_price,
-                                    'current_value': current_price * active_trade.get('executed_volume', 0),
-                                    'profit_rate': ((current_price / active_trade.get('price', current_price)) - 1) * 100,
-                                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
-                                }
-                            }
-                        )
-                        self.logger.debug(f"가격 정보 업데이트 완료: {coin} - 현재가: {current_price:,}원")
-
                         # 매도 신호 확인
                         if (signals.get('overall_signal') <= 0.45 and active_trade.get('profit_rate', 0) >= 0.05
                             ) or active_trade.get('profit_rate', 0) <= -3:  # 수치 기반 매도 신호 확인
