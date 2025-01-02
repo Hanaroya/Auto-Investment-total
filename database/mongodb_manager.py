@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from typing import Dict, Any, List
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import sys
 from config.mongodb_config import MONGODB_CONFIG, INITIAL_SYSTEM_CONFIG
 import os
@@ -312,7 +312,7 @@ class MongoDBManager:
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
                     'thread_limit': float(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
                     'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
-                    'last_updated': datetime.utcnow()
+                    'last_updated': datetime.utcnow() + timedelta(hours=9)
                 }
                 self.portfolio.insert_one(initial_portfolio)
                 self.logger.info("포트폴리오 초기화 완료")
