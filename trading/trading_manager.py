@@ -504,6 +504,7 @@ class TradingManager:
                     {},
                     {
                         '$set': {
+                            'available_investment': new_total_investment * 0.8,
                             'profit_earned': accumulated_profit,
                             'total_investment': new_total_investment,
                             'reserve_amount': new_total_investment * 0.2,
