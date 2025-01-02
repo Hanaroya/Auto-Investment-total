@@ -55,10 +55,18 @@ class TradingThread(threading.Thread):
             self.logger.info(f"Thread {self.thread_id}: 마켓 분석 시작 - {len(self.coins)} 개의 코인")
             
             while not self.stop_flag.is_set():
-                # 각 스레드의 시작 시간을 thread_id에 따라 조정 (2초 간격)
-                time.sleep(self.thread_id * 2)  # thread 0은 즉시, thread 1은 2초 후, thread 2는 4초 후...
-                
                 cycle_start_time = time.time()
+                
+                # 스레드 ID에 따라 다른 대기 시간 설정
+                if self.thread_id <= 3:
+                    wait_time = 10  # 0~3번 스레드는 10초마다
+                    initial_delay = self.thread_id * 1  # 1초 간격으로 시작 시간 분배
+                else:
+                    wait_time = 600  # 4~10번 스레드는 600초(10분)마다
+                    initial_delay = (self.thread_id - 4) * 1  # 1초 간격으로 시작 시간 분배
+                
+                # 초기 지연 적용
+                time.sleep(initial_delay)
                 
                 for coin in self.coins:
                     if self.stop_flag.is_set():
@@ -73,8 +81,8 @@ class TradingThread(threading.Thread):
                 # 사이클 완료 시간 계산
                 cycle_duration = time.time() - cycle_start_time
                 
-                # 20초에서 실제 소요 시간과 초기 대기 시간을 뺀 만큼 대기
-                remaining_time = 20 - cycle_duration - (self.thread_id * 2)
+                # 설정된 대기 시간에서 실제 소요 시간과 초기 지연 시간을 뺀 만큼 대기
+                remaining_time = wait_time - cycle_duration - initial_delay
                 if remaining_time > 0:
                     time.sleep(remaining_time)
                     
@@ -91,7 +99,9 @@ class TradingThread(threading.Thread):
             # 캔들 데이터 조회 - 락으로 보호
             with self.shared_locks['candle_data']:
                 self.logger.debug(f"Thread {self.thread_id} acquired lock for {coin}")
-                candles = self.upbit.get_candle(market=coin, interval='1', count=300)
+                # thread_id에 따라 다른 시간 간격 설정
+                interval = '1' if self.thread_id <= 3 else '240'
+                candles = self.upbit.get_candle(market=coin, interval=interval, count=300)
                 self.logger.debug(f"Thread {self.thread_id} released lock for {coin}")
                 
             if not candles or len(candles) < 100:
