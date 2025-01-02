@@ -96,6 +96,21 @@ class TradingManager:
             message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(trade_data)
             self.messenger.send_message(message=message, messenger_type="slack")
             
+            if order_result:
+                # 포트폴리오 업데이트
+                portfolio = self.db.get_portfolio()
+                investment_amount = strategy_data.get('investment_amount', 0)
+                
+                portfolio['coin_list'][coin] = {
+                    'amount': order_result.get('executed_volume', 0),
+                    'price': price,
+                    'timestamp': kst_now
+                }
+                portfolio['available_investment'] -= investment_amount
+                portfolio['current_amount'] = portfolio.get('current_amount', 0)
+                
+                self.db.update_portfolio(portfolio)
+            
             return True
 
         except Exception as e:
@@ -191,13 +206,34 @@ class TradingManager:
                 'test_mode': is_test
             }
             
+            # trading_history에 거래 내역 저장
             self.db.trading_history.insert_one(trade_history)
-            self.logger.info(f"거래 내역 기록 완료: {coin}")
+            
+            # trades 컬렉션에서 완료된 거래 삭제
+            self.db.trades.delete_one({'_id': active_trade['_id']})
+            self.logger.info(f"거래 내역 기록 완료 및 활성 거래 삭제: {coin}")
+
+            if order_result:
+                # 포트폴리오 업데이트
+                portfolio = self.db.get_portfolio()
+                sell_amount = active_trade.get('executed_volume', 0) * price
+                
+                if coin in portfolio.get('coin_list', {}):
+                    del portfolio['coin_list'][coin]
+                
+                portfolio['available_investment'] += sell_amount
+                portfolio['current_amount'] = (
+                    portfolio.get('current_amount', 0) - 
+                    active_trade.get('investment_amount', 0) + 
+                    sell_amount
+                )
+                
+                self.db.update_portfolio(portfolio)
 
             # 메신저로 매도 알림
             message = self.create_sell_message(active_trade, price, signal_strength)
             self.messenger.send_message(message=message, messenger_type="slack")
-
+            
             return True
 
         except Exception as e:
@@ -218,6 +254,8 @@ class TradingManager:
             )
             kst_tomorrow = kst_today + timedelta(days=1)
 
+            portfolio = self.db.get_portfolio()
+        
             # 거래 내역 조회
             trading_history = list(self.db.trading_history.find({
                 'sell_timestamp': {
@@ -272,7 +310,23 @@ class TradingManager:
                         sheet_name='거래통계',
                         index=False
                     )
-
+                # 2. portfolio 시트
+                # 포트폴리오 현황 시트 추가
+                if portfolio:
+                    portfolio_data = {
+                        '항목': ['총 투자금액', '사용 가능 금액', '현재 평가금액', '수익률'],
+                        '금액': [
+                            f"₩{portfolio.get('investment_amount', 0):,.0f}",
+                            f"₩{portfolio.get('available_investment', 0):,.0f}",
+                            f"₩{portfolio.get('current_amount', 0):,.0f}",
+                            f"{((portfolio.get('current_amount', 0) / portfolio.get('investment_amount', 1) - 1) * 100):+.2f}%"
+                        ]
+                    }
+                    pd.DataFrame(portfolio_data).to_excel(
+                        writer,
+                        sheet_name='포트폴리오현황',
+                        index=False
+                    )
                 # 3. 보유 현황 시트
                 if active_trades:
                     holdings_df = pd.DataFrame(active_trades)
@@ -588,6 +642,18 @@ class TradingManager:
             )
             
             message = portfolio_summary + "\n" + message + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # 포트폴리오 정보 추가
+            portfolio = self.db.get_portfolio()
+            
+            message += (
+                f"\n📊 포트폴리오 현황\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 총 투자금액: ₩{portfolio.get('investment_amount', 0):,.0f}\n"
+                f"💵 사용 가능 금액: ₩{portfolio.get('available_investment', 0):,.0f}\n"
+                f"📈 현재 평가금액: ₩{portfolio.get('current_amount', 0):,.0f}\n"
+                f"📊 수익률: {((portfolio.get('current_amount', 0) / portfolio.get('investment_amount', 1) - 1) * 100):+.2f}%\n"
+            )
             
             # Slack으로 메시지 전송
             await self.messenger.send_message(message=message, messenger_type="slack")

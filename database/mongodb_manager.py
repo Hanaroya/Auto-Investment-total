@@ -239,24 +239,33 @@ class MongoDBManager:
     def _setup_collections(self):
         """컬렉션 설정 및 인덱스 생성"""
         try:
-            # 컬렉션 참조 설정
+            # 기존 컬렉션 참조 설정
             self.trades = self.db['trades']
             self.market_data = self.db[MONGODB_CONFIG['collections']['market_data']]
             self.thread_status = self.db[MONGODB_CONFIG['collections']['thread_status']]
             self.system_config = self.db['system_config']
-            self.strategy_data = self.db['strategy_data']  # strategy_data 컬렉션 추가
+            self.strategy_data = self.db['strategy_data'] # 전략 데이터 컬렉션 추가
+            self.trading_history = self.db['trading_history']# trading_history 컬렉션 추가
             
-            # 인덱스 생성
+            # 기존 인덱스 생성
             self.trades.create_index([("market", 1), ("timestamp", -1)])
             self.trades.create_index([("status", 1)])
-            self.strategy_data.create_index([("coin", 1), ("timestamp", -1)])  # strategy_data 인덱스
+            self.strategy_data.create_index([("coin", 1), ("timestamp", -1)])
             
-            # 전략 데이터 컬렉션 인덱스 생성
-            self.strategy_data.create_index([
-                ("coin", 1),
-                ("timestamp", -1)
-            ])
-            self.strategy_data.create_index([("timestamp", -1)])
+            # trading_history 컬렉션 인덱스 생성
+            self.trading_history.create_index([("coin", 1), ("timestamp", -1)])
+            self.trading_history.create_index([("buy_timestamp", -1)])
+            self.trading_history.create_index([("sell_timestamp", -1)])
+            self.trading_history.create_index([("thread_id", 1)])
+            
+            # portfolio 컬렉션 추가
+            self.portfolio = self.db['portfolio']
+            
+            # portfolio 컬렉션 인덱스 생성
+            self.portfolio.create_index([("last_updated", -1)])
+            
+            # 초기 포트폴리오 설정 확인
+            self._initialize_portfolio()
             
             self.logger.info("MongoDB 컬렉션 설정 완료 - 컬렉션 목록:")
             self.logger.info(f"- trades: {self.trades.name}")
@@ -264,6 +273,8 @@ class MongoDBManager:
             self.logger.info(f"- thread_status: {self.thread_status.name}")
             self.logger.info(f"- system_config: {self.system_config.name}")
             self.logger.info(f"- strategy_data: {self.strategy_data.name}")
+            self.logger.info(f"- trading_history: {self.trading_history.name}")
+            self.logger.info(f"- portfolio: {self.portfolio.name}")
             
             # 시스템 설정 초기화 확인
             self._initialize_system_config()
@@ -284,10 +295,51 @@ class MongoDBManager:
                     'created_at': datetime.utcnow()
                 }
                 self.system_config.insert_one(initial_config)
-                logging.info("시스템 설정 초기화 완료")
+                self.logger.info("시스템 설정 초기화 완료")
         except Exception as e:
-            logging.error(f"시스템 설정 초기화 실패: {str(e)}")
+            self.logger.error(f"시스템 설정 초기화 실패: {str(e)}")
             raise
+
+    def _initialize_portfolio(self):
+        """포트폴리오 초기 설정"""
+        try:
+            if not self.portfolio.find_one({'_id': 'main'}):
+                initial_portfolio = {
+                    '_id': 'main',
+                    'coin_list': {},
+                    'investment_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'thread_limit': float(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
+                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'last_updated': datetime.utcnow()
+                }
+                self.portfolio.insert_one(initial_portfolio)
+                self.logger.info("포트폴리오 초기화 완료")
+        except Exception as e:
+            self.logger.error(f"포트폴리오 초기화 실패: {str(e)}")
+            raise
+
+    def update_portfolio(self, update_data: Dict[str, Any]) -> bool:
+        """포트폴리오 업데이트"""
+        try:
+            update_data['last_updated'] = datetime.utcnow()
+            result = self.portfolio.update_one(
+                {'_id': 'main'},
+                {'$set': update_data},
+                upsert=True
+            )
+            return bool(result.modified_count > 0 or result.upserted_id)
+        except Exception as e:
+            self.logger.error(f"포트폴리오 업데이트 실패: {str(e)}")
+            return False
+
+    def get_portfolio(self) -> Dict:
+        """현재 포트폴리오 조회"""
+        try:
+            return self.portfolio.find_one({'_id': 'main'}) or {}
+        except Exception as e:
+            self.logger.error(f"포트폴리오 조회 실패: {str(e)}")
+            return {}
 
     def get_collection(self, name):
         """비동기 컬렉션 반환"""
