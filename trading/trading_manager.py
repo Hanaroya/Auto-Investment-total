@@ -8,6 +8,7 @@ import yaml
 from strategy.StrategyBase import StrategyManager
 from trade_market_api.UpbitCall import UpbitCall
 import os
+from math import ceil
 
 class TradingManager:
     """
@@ -195,7 +196,7 @@ class TradingManager:
                 'sell_price': price,
                 'quantity': active_trade.get('executed_volume', 0),
                 'investment_amount': active_trade.get('investment_amount', 0),
-                'profit_amount': (price - active_trade['price']) * active_trade.get('executed_volume', 0),
+                'profit_amount': ceil((price - active_trade['price']) * active_trade.get('executed_volume', 0)),
                 'profit_rate': profit_rate,
                 'buy_signal': active_trade.get('signal_strength', 0),
                 'sell_signal': signal_strength,
@@ -216,7 +217,7 @@ class TradingManager:
             if order_result:
                 # 포트폴리오 업데이트
                 portfolio = self.db.get_portfolio()
-                sell_amount = active_trade.get('executed_volume', 0) * price
+                sell_amount = ceil(active_trade.get('executed_volume', 0) * price, 0)
                 
                 if coin in portfolio.get('coin_list', {}):
                     del portfolio['coin_list'][coin]
@@ -494,7 +495,8 @@ class TradingManager:
             매도 메시지
         """
         strategy_data = trade_data['strategy_data']
-        total_investment = trade_data.get('investment_amount', 0)
+        profit_amount = ceil((sell_price - trade_data['price']) * trade_data.get('executed_volume', 0))
+        total_investment = trade_data.get('investment_amount', 0) + profit_amount
         
         message = (
             f"------------------------------------------------\n"
@@ -502,7 +504,7 @@ class TradingManager:
             f" 판매 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
             f" 판매 가격: {sell_price:,}\n"
             f" 판매 신호: {sell_signal:.2f}\n"
-            f" Coin-rank: {strategy_data.get('thread_id', 'N/A')}\n"
+            f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
             f" 총 투자 금액: W{total_investment:,}\n"
         )
 

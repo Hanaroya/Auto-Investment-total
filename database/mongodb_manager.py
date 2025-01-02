@@ -307,8 +307,9 @@ class MongoDBManager:
                 initial_portfolio = {
                     '_id': 'main',
                     'coin_list': {},
-                    'investment_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
                     'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
                     'thread_limit': float(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
                     'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
                     'last_updated': datetime.utcnow()
