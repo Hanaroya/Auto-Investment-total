@@ -154,19 +154,6 @@ class TradingThread(threading.Thread):
                     self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.max_investment}")
 
                     if active_trade:
-                        # 매도 신호 확인
-                        if (signals.get('overall_signal') <= 0.45 and active_trade.get('profit_rate', 0) >= 0.05
-                            ) or active_trade.get('profit_rate', 0) <= -3:  # 수치 기반 매도 신호 확인
-                            self.logger.info(f"매도 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
-                            self.trading_manager.process_sell_signal(
-                                coin=coin,
-                                thread_id=self.thread_id,
-                                signal_strength=signals.get('overall_signal', 0.0),
-                                price=current_price,
-                                strategy_data=signals
-                            )
-                            self.logger.info(f"매도 신호 처리 완료: {coin}")
-                        
                         # 현재 가격 업데이트
                         self.db.trades.update_one(
                             {'_id': active_trade['_id']},
@@ -180,6 +167,19 @@ class TradingThread(threading.Thread):
                             }
                         )
                         self.logger.debug(f"가격 정보 업데이트 완료: {coin} - 현재가: {current_price:,}원")
+
+                        # 매도 신호 확인
+                        if (signals.get('overall_signal') <= 0.45 and active_trade.get('profit_rate', 0) >= 0.05
+                            ) or active_trade.get('profit_rate', 0) <= -3:  # 수치 기반 매도 신호 확인
+                            self.logger.info(f"매도 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
+                            self.trading_manager.process_sell_signal(
+                                coin=coin,
+                                thread_id=self.thread_id,
+                                signal_strength=signals.get('overall_signal', 0.0),
+                                price=current_price,
+                                strategy_data=signals
+                            )
+                            self.logger.info(f"매도 신호 처리 완료: {coin}")
                     
                     else:
                         # 매수 신호 확인
