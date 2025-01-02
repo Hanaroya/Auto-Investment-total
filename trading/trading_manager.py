@@ -205,7 +205,7 @@ class TradingManager:
                 'actual_sell_amount': floor(actual_sell_amount, 0),
                 'total_fees': floor(total_fees, 0),
                 'profit_amount': floor(profit_amount, 0),
-                'profit_rate': floor(profit_rate, 2),
+                'profit_rate': ceil(profit_rate, 2),
             }
             
             # 거래 데이터 업데이트
@@ -225,7 +225,7 @@ class TradingManager:
                 'actual_sell_amount': floor(actual_sell_amount, 0),
                 'total_fees': floor(total_fees, 0),
                 'profit_amount': floor(profit_amount, 0),
-                'profit_rate': floor(profit_rate, 2),
+                'profit_rate': ceil(profit_rate, 2),
                 'buy_signal': active_trade.get('signal_strength', 0),
                 'sell_signal': signal_strength,
                 'strategy_data': {
@@ -245,14 +245,14 @@ class TradingManager:
             if order_result:
                 # 포트폴리오 업데이트
                 portfolio = self.db.get_portfolio()
-                sell_amount = floor(active_trade.get('executed_volume', 0) * price, 0)
+                sell_amount = floor((active_trade.get('executed_volume', 0) * price), 0)
                 
                 if coin in portfolio.get('coin_list', {}):
                     del portfolio['coin_list'][coin]
                 
                 portfolio['available_investment'] += sell_amount
                 portfolio['current_amount'] = floor(
-                    portfolio.get('current_amount', 0) - active_trade.get('investment_amount', 0) + sell_amount, 0
+                    (portfolio.get('current_amount', 0) - active_trade.get('investment_amount', 0) + sell_amount), 0
                 )
                 
                 self.db.update_portfolio(portfolio)
@@ -527,7 +527,7 @@ class TradingManager:
         Returns:
             매도 메시지
         """
-        profit_amount = floor((sell_price - trade_data['price']) * trade_data.get('executed_volume', 0))
+        profit_amount = floor(((sell_price - trade_data['price']) * trade_data.get('executed_volume', 0)), 0)
         total_investment = trade_data.get('investment_amount', 0) + profit_amount
         
         message = (
