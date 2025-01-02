@@ -683,7 +683,7 @@ class MongoDBManager:
             self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
             
     def cleanup_trades(self):
-        """trades와 trading_history 컬렉션 정리"""
+        """trades, trading_history, portfolio 컬렉션 정리"""
         try:
             # trades 컬렉션 정리
             self.db.drop_collection('trades')
@@ -709,8 +709,30 @@ class MongoDBManager:
                 self.trading_history.create_index([("sell_timestamp", -1)])
                 
                 self.logger.info("trading_history 컬렉션 재설정 완료")
+                
+                # portfolio 컬렉션 초기화
+                self.db.drop_collection('portfolio')
+                self.logger.info("portfolio 컬렉션 삭제 완료")
+                
+                # portfolio 컬렉션 재생성 및 초기 데이터 설정
+                self.portfolio = self.db['portfolio']
+                initial_portfolio = {
+                    '_id': 'main',
+                    'coin_list': {},
+                    'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
+                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
+                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'profit_earned': 0,
+                    'created_at': datetime.now(timezone(timedelta(hours=9))),
+                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                }
+                self.portfolio.insert_one(initial_portfolio)
+                self.portfolio.create_index([("_id", 1)])
+                
+                self.logger.info("portfolio 컬렉션 재설정 완료")
             else:
-                self.logger.info("오늘의 일일 리포트가 아직 생성되지 않아 trading_history 컬렉션 유지")
+                self.logger.info("오늘의 일일 리포트가 아직 생성되지 않아 trading_history와 portfolio 컬렉션 유지")
                 
         except Exception as e:
-            self.logger.error(f"trades/trading_history 컬렉션 정리 실패: {str(e)}")
+            self.logger.error(f"trades/trading_history/portfolio 컬렉션 정리 실패: {str(e)}")
