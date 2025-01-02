@@ -2,10 +2,11 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 import time
 import schedule
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import yaml
 import logging
 from pathlib import Path
+from database.mongodb_manager import MongoDBManager
 from trade_market_api.UpbitCall import UpbitCall
 from messenger.Messenger import Messenger
 from strategy.StrategyBase import StrategyManager
@@ -75,6 +76,9 @@ class InvestmentCenter:
         
         # 스레드 매니저 초기화
         self.thread_manager = ThreadManager(self.config)
+
+        # 데이터베이스 초기화
+        self.db = MongoDBManager()
         
         # 기타 속성 초기화
         self.is_running = False
@@ -300,16 +304,58 @@ class InvestmentCenter:
         """
         try:
             self.is_running = False
-            self.logger.info("투자 센터 종료")
+            self.logger.info("투자 센터 종료 시작")
             
-            # 스레드 매니저 종료
+            # 활성 거래 조회
+            active_trades = self.trading_manager.get_active_trades()
+            total_profit = 0
+            
+            # 모든 활성 거래 청산
+            for trade in active_trades:
+                try:
+                    current_price = self.exchange.get_current_price(trade['coin'])
+                    profit = (current_price - trade['price']) * trade['executed_volume']
+                    total_profit += profit
+                    
+                    # 매도 처리
+                    self.trading_manager.process_sell_signal(
+                        coin=trade['coin'],
+                        thread_id=trade['thread_id'],
+                        signal_strength=0,
+                        price=current_price,
+                        strategy_data={'force_sell': True}
+                    )
+                except Exception as e:
+                    self.logger.error(f"거래 청산 중 오류: {str(e)}")
+            
+            # system_config 업데이트
+            current_config = self.db.system_config.find_one({})
+            new_total_investment = current_config['total_max_investment'] + total_profit
+            
+            self.db.system_config.update_one(
+                {},
+                {
+                    '$set': {
+                        'total_max_investment': new_total_investment,
+                        'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                    }
+                })
+            
+            # daily_profit 기록
+            self.db.daily_profit.insert_one({
+                'timestamp': datetime.now(timezone(timedelta(hours=9))),
+                'profit_earned': total_profit,
+                'total_max_investment': new_total_investment,
+                'reserve_amount': current_config['reserve_amount'],
+                'type': 'system_shutdown'
+            })
+            
+            # 나머지 정리 작업
             self.thread_manager.stop_all_threads()
-            
-            # 스케줄러 정리
-            asyncio.create_task(self.scheduler.stop())
-            
-            # 진행 중인 작업 정리
+            self.scheduler.stop()
             self._cleanup()
+            
+            self.logger.info(f"투자 센터 종료 완료 (최종 수익: {total_profit:,.0f}원)")
             
         except Exception as e:
             self.logger.error(f"투자 센터 종료 중 오류: {str(e)}")

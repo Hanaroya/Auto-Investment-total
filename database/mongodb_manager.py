@@ -246,6 +246,7 @@ class MongoDBManager:
             self.system_config = self.db['system_config']
             self.strategy_data = self.db['strategy_data'] # 전략 데이터 컬렉션 추가
             self.trading_history = self.db['trading_history']# trading_history 컬렉션 추가
+            self.daily_profit = self.db['daily_profit'] # daily_profit 컬렉션 추가
             
             # 기존 인덱스 생성
             self.trades.create_index([("market", 1), ("timestamp", -1)])
@@ -266,7 +267,10 @@ class MongoDBManager:
             
             # 초기 포트폴리오 설정 확인
             self._initialize_portfolio()
-            
+
+            # daily_profit 설정확인
+            self._initialize_daily_profit()
+
             self.logger.info("MongoDB 컬렉션 설정 완료 - 컬렉션 목록:")
             self.logger.info(f"- trades: {self.trades.name}")
             self.logger.info(f"- market_data: {self.market_data.name}")
@@ -275,6 +279,7 @@ class MongoDBManager:
             self.logger.info(f"- strategy_data: {self.strategy_data.name}")
             self.logger.info(f"- trading_history: {self.trading_history.name}")
             self.logger.info(f"- portfolio: {self.portfolio.name}")
+            self.logger.info(f"- daily_profit: {self.daily_profit.name}")
             
             # 시스템 설정 초기화 확인
             self._initialize_system_config()
@@ -319,6 +324,27 @@ class MongoDBManager:
         except Exception as e:
             self.logger.error(f"포트폴리오 초기화 실패: {str(e)}")
             raise
+
+    def _initialize_daily_profit(self):
+        """일일 수익 초기화"""
+        try:
+            if not self.daily_profit.find_one({'_id': 'daily_profit'}):
+                initial_profit = {'_id': 'daily_profit', 'profit_history': []}
+                self.daily_profit.insert_one(initial_profit)
+                self.logger.info("일일 수익 초기화 완료")
+        except Exception as e:
+            self.logger.error(f"일일 수익 초기화 실패: {str(e)}")
+            raise
+
+    def update_daily_profit(self, profit_data: Dict[str, Any]) -> bool:
+        """일일 수익 업데이트"""
+        try:
+            profit_data['timestamp'] = datetime.utcnow()
+            result = self.daily_profit.insert_one(profit_data)
+            return bool(result.inserted_id)
+        except Exception as e:
+            self.logger.error(f"일일 수익 업데이트 실패: {str(e)}")
+            return False
 
     def update_portfolio(self, update_data: Dict[str, Any]) -> bool:
         """포트폴리오 업데이트"""

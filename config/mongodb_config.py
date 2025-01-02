@@ -13,7 +13,9 @@ def get_mongodb_config() -> Dict[str, Any]:
             'trades': 'trades',           # 거래 데이터
             'market_data': 'market_data', # 시장 데이터
             'thread_status': 'thread_status', # 스레드 상태
-            'system_config': 'system_config'  # 시스템 설정
+            'system_config': 'system_config',  # 시스템 설정
+            'daily_profit': 'daily_profit',  # 추가
+            'strategy_data': 'strategy_data',  # 추가
         }
     }
 

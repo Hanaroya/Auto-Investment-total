@@ -460,6 +460,47 @@ class TradingManager:
                 attachment_path=filename
             )
             
+            # 일일 수익 계산
+            total_profit = sum(trade['profit_amount'] for trade in trading_history)
+            
+            # system_config 업데이트
+            current_config = await self.db.get_collection('system_config').find_one({})
+            new_total_investment = current_config['total_max_investment'] + total_profit
+            
+            # system_config 업데이트
+            await self.db.get_collection('system_config').update_one(
+                {},
+                {
+                    '$set': {
+                        'total_max_investment': new_total_investment,
+                        'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                    }
+                }
+            )
+            
+            # daily_profit 기록
+            self.db.daily_profit.insert_one({
+                'timestamp': datetime.now(timezone(timedelta(hours=9))),
+                'profit_earned': total_profit,
+                'total_max_investment': new_total_investment,
+                'reserve_amount': current_config['reserve_amount']
+            })
+            
+            # portfolio 업데이트
+            current_portfolio = self.db.portfolio.find_one({})
+            if current_portfolio:
+                accumulated_profit = current_portfolio.get('profit_earned', 0) + total_profit
+                await self.db.get_collection('portfolio').update_one(
+                    {},
+                    {
+                        '$set': {
+                            'profit_earned': accumulated_profit,
+                            'total_investment': new_total_investment,
+                            'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                        }
+                    }
+                )
+
             self.logger.info("일일 리포트 생성 및 전송 완료")
             
         except Exception as e:
