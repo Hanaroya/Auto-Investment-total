@@ -267,9 +267,10 @@ class TradingManager:
 
             # 메신저로 매도 알림
             message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_sell_message(
-                active_trade, 
-                price, 
-                signal_strength,
+                trade_data=active_trade, 
+                sell_price=price,
+                buy_price=active_trade['price'],
+                sell_signal=signal_strength,
                 fee_amount=fee_amount,
                 total_fees=total_fees
             )
@@ -564,7 +565,7 @@ class TradingManager:
         message += "\n------------------------------------------------"
         return message
 
-    def create_sell_message(self, trade_data: Dict, sell_price: float, 
+    def create_sell_message(self, trade_data: Dict, sell_price: float, buy_price: float,
                            sell_signal: float, fee_amount: float = 0, 
                            total_fees: float = 0) -> str:
         """매도 메시지 생성
@@ -585,6 +586,7 @@ class TradingManager:
             f"------------------------------------------------\n"
             f"Coin: {trade_data['coin']}, 판매\n"
             f" 판매 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f" 구매 가격: {buy_price:,}\n"
             f" 판매 가격: {sell_price:,}\n"
             f" 판매 신호: {sell_signal:.2f}\n"
             f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
@@ -755,7 +757,7 @@ class TradingManager:
             self.logger.error(f"시간별 리포트 생성 중 오류 발생: {e}")
             raise
 
-    def update_strategy_data(self, coin: str, price: float, strategy_results: Dict):
+    def update_strategy_data(self, coin: str, thread_id: int, price: float, strategy_results: Dict):
         """전략 분석 결과 업데이트
         
         Args:
@@ -812,7 +814,7 @@ class TradingManager:
                 active_trades = self.db.trades.find(
                     {
                         'coin': coin, 
-                        'thread_id': self.thread_id,
+                        'thread_id': thread_id,
                         'status': 'active'
                     }
                 )

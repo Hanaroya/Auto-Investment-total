@@ -2,9 +2,8 @@ import asyncio
 import logging
 from datetime import datetime, time, timedelta
 from typing import Callable, Dict, Any
-import aioschedule as schedule
-from database.mongodb_manager import MongoDBManager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from database.mongodb_manager import MongoDBManager
 
 class Scheduler:
     def __init__(self):
@@ -16,23 +15,27 @@ class Scheduler:
 
     async def start(self):
         """스케줄러 시작"""
-        self.running = True
-        self.scheduler.start()
-        while self.running:
-            await asyncio.sleep(1)
+        try:
+            self.running = True
+            self.scheduler.start()
+            self.logger.info("Scheduler started successfully")
+            
+            # 스케줄러가 실행 중인 동안 대기
+            while self.running:
+                await asyncio.sleep(1)
+                
+        except Exception as e:
+            self.logger.error(f"Error starting scheduler: {str(e)}")
+            raise
 
     async def stop(self):
         """스케줄러 중지"""
-        self.running = False
-        self.scheduler.shutdown()
-
-    def schedule_daily_report(self, report_func: Callable):
-        """일일 리포트 스케줄링 (매일 오후 8시)"""
         try:
-            schedule.every().day.at("20:00").do(report_func)
-            self.logger.info("Daily report scheduled for 20:00")
+            self.running = False
+            self.scheduler.shutdown()
+            self.logger.info("Scheduler stopped successfully")
         except Exception as e:
-            self.logger.error(f"Error scheduling daily report: {e}")
+            self.logger.error(f"Error stopping scheduler: {str(e)}")
 
     async def schedule_task(self, task_name: str, task_func, interval: int = None, cron: str = None, immediate: bool = False):
         """태스크 스케줄링
@@ -45,11 +48,9 @@ class Scheduler:
             immediate: 즉시 실행 여부 (기본값: False)
         """
         try:
-            scheduler = AsyncIOScheduler()
-            
             if cron:
                 # Cron 표현식으로 스케줄링
-                scheduler.add_job(
+                self.scheduler.add_job(
                     task_func,
                     'cron',
                     id=task_name,
@@ -57,9 +58,10 @@ class Scheduler:
                     next_run_time=datetime.now() if immediate else None,
                     **self._parse_cron(cron)
                 )
+                self.logger.info(f"Scheduled cron task '{task_name}' with expression: {cron}")
             else:
-                # 기존 interval 스케줄링
-                scheduler.add_job(
+                # interval 스케줄링
+                self.scheduler.add_job(
                     task_func,
                     'interval',
                     seconds=interval or 3600,
@@ -67,9 +69,14 @@ class Scheduler:
                     # immediate가 False면 next_run_time을 설정하지 않음
                     next_run_time=datetime.now() if immediate else None
                 )
+                self.logger.info(f"Scheduled interval task '{task_name}' with interval: {interval}s")
             
-            scheduler.start()
-            self.logger.info(f"Task {task_name} scheduled successfully")
+            # 작업 정보 저장
+            self.tasks[task_name] = {
+                'func': task_func,
+                'type': 'cron' if cron else 'interval',
+                'schedule': cron if cron else interval
+            }
             
         except Exception as e:
             self.logger.error(f"Error scheduling task {task_name}: {str(e)}")
@@ -105,18 +112,11 @@ class Scheduler:
         """
         try:
             if task_id in self.tasks:
-                schedule.cancel_job(self.tasks[task_id]['func'])
+                self.scheduler.remove_job(task_id)
                 del self.tasks[task_id]
-
-                await self.db.get_collection('scheduled_tasks').update_one(
-                    {'_id': task_id},
-                    {'$set': {'status': 'cancelled'}}
-                )
-
                 self.logger.info(f"Task {task_id} cancelled successfully")
-
         except Exception as e:
-            self.logger.error(f"Error cancelling task {task_id}: {e}")
+            self.logger.error(f"Error cancelling task {task_id}: {str(e)}")
 
     async def check_missed_tasks(self):
         """누락된 작업 확인 및 재실행
@@ -187,12 +187,20 @@ class Scheduler:
 
             for task in tasks:
                 if task['interval']:
-                    schedule.every(task['interval']).seconds.do(
-                        self.tasks.get(task['_id'], {}).get('func')
+                    self.scheduler.add_job(
+                        self.tasks.get(task['_id'], {}).get('func'),
+                        'interval',
+                        seconds=task['interval'],
+                        id=str(task['_id'])
                     )
                 elif task['at_time']:
-                    schedule.every().day.at(task['at_time']).do(
-                        self.tasks.get(task['_id'], {}).get('func')
+                    hour, minute = task['at_time'].split(':')
+                    self.scheduler.add_job(
+                        self.tasks.get(task['_id'], {}).get('func'),
+                        'cron',
+                        hour=hour,
+                        minute=minute,
+                        id=str(task['_id'])
                     )
 
             self.logger.info(f"Initialized {len(tasks)} tasks")

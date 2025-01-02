@@ -137,7 +137,7 @@ class TradingThread(threading.Thread):
             
             # 전략 데이터 저장
             current_price = candles[-1]['close']
-            self.trading_manager.update_strategy_data(coin, current_price, signals)
+            self.trading_manager.update_strategy_data(coin, self.thread_id, current_price, signals)
 
             # 분석 결과 저장 및 거래 신호 처리
             with self.shared_locks['trade']:
