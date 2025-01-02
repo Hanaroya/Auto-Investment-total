@@ -494,7 +494,7 @@ class TradingManager:
             매도 메시지
         """
         strategy_data = trade_data['strategy_data']
-        total_investment = trade_data.get('total_investment', 0)
+        total_investment = trade_data.get('investment_amount', 0)
         
         message = (
             f"------------------------------------------------\n"
