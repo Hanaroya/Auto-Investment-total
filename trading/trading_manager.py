@@ -148,6 +148,24 @@ class TradingManager:
 
             # KST 시간으로 통일
             kst_now = datetime.now(timezone(timedelta(hours=9)))
+            
+            # 수익률 계산
+            profit_rate = ((price - active_trade['price']) / active_trade['price']) * 100
+
+            # 수수료 계산
+            fee_rate = self.config['api_keys']['upbit'].get('fee', 0.05) / 100
+            sell_amount = active_trade.get('executed_volume', 0) * price
+            fee_amount = sell_amount * fee_rate
+            actual_sell_amount = sell_amount - fee_amount  # 수수료를 제외한 실제 판매금액
+
+            if actual_sell_amount < active_trade.get('investment_amount', 0) and active_trade.get('profit_rate', 0) >= 0:
+                self.logger.warning(f"매도 금액이 투자 금액보다 작습니다: {coin} - 매도 금액: {actual_sell_amount:,.0f}원, 투자 금액: {active_trade.get('investment_amount', 0):,.0f}원")
+                return False
+            
+            # 수익률 계산 (수수료 포함)
+            total_fees = active_trade.get('fee_amount', 0) + fee_amount  # 매수/매도 수수료 합계
+            profit_amount = actual_sell_amount - active_trade.get('investment_amount', 0)
+            profit_rate = (profit_amount / active_trade.get('investment_amount', 0)) * 100
 
             # 테스트 모드 확인
             is_test = (
@@ -177,20 +195,6 @@ class TradingManager:
                     'price': price
                 }
 
-            # 수익률 계산
-            profit_rate = ((price - active_trade['price']) / active_trade['price']) * 100
-
-            # 수수료 계산
-            fee_rate = self.config['api_keys']['upbit'].get('fee', 0.05) / 100
-            sell_amount = active_trade.get('executed_volume', 0) * price
-            fee_amount = sell_amount * fee_rate
-            actual_sell_amount = sell_amount - fee_amount  # 수수료를 제외한 실제 판매금액
-            
-            # 수익률 계산 (수수료 포함)
-            total_fees = active_trade.get('fee_amount', 0) + fee_amount  # 매수/매도 수수료 합계
-            profit_amount = actual_sell_amount - active_trade.get('actual_investment', 0)
-            profit_rate = (profit_amount / active_trade.get('investment_amount', 0)) * 100
-            
             update_data = {
                 'status': 'closed',
                 'sell_price': price,

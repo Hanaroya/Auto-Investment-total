@@ -155,17 +155,17 @@ class TradingThread(threading.Thread):
 
                     if active_trade:
                         # 매도 신호 확인
-                        if (signals.get('overall_signal') <= 0.45 and active_trade.get('profit_rate', 0) >= 0.05
+                        if (signals.get('overall_signal') <= 0.5 and active_trade.get('profit_rate', 0) >= 0.15
                             ) or active_trade.get('profit_rate', 0) <= -3:  # 수치 기반 매도 신호 확인
                             self.logger.info(f"매도 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
-                            self.trading_manager.process_sell_signal(
+                            if self.trading_manager.process_sell_signal(
                                 coin=coin,
                                 thread_id=self.thread_id,
                                 signal_strength=signals.get('overall_signal', 0.0),
                                 price=current_price,
                                 strategy_data=signals
-                            )
-                            self.logger.info(f"매도 신호 처리 완료: {coin}")
+                            ):
+                                self.logger.info(f"매도 신호 처리 완료: {coin}")
                     
                     else:
                         # 매수 신호 확인
