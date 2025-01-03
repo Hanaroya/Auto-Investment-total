@@ -1,7 +1,5 @@
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import time
-import schedule
 from datetime import datetime, timedelta, timezone
 import yaml
 import logging
@@ -11,8 +9,6 @@ from trade_market_api.UpbitCall import UpbitCall
 from messenger.Messenger import Messenger
 from strategy.StrategyBase import StrategyManager
 from strategy.Strategies import *
-from trade_market_api.MarketDataConverter import MarketDataConverter
-from utils.scheduler import SimpleScheduler
 from trading.thread_manager import ThreadManager
 from trading.market_analyzer import MarketAnalyzer
 from trading.trading_manager import TradingManager
@@ -65,9 +61,6 @@ class InvestmentCenter:
         
         # 메신저 초기화
         self.messenger = self._initialize_messenger()
-        
-        # 스케줄러 초기화
-        self.scheduler = SimpleScheduler()
         
         # 마켓 분석기 초기화
         self.market_analyzer = MarketAnalyzer(self.config)
@@ -243,29 +236,6 @@ class InvestmentCenter:
             
             # 시스템 상태 초기화
             self._initialize_system_state()
-            
-            # 스케줄러 초기화
-            self.logger.info("스케줄러 초기화 시작...")
-            
-            # 시간별 리포트 - 매시 정각에 실행
-            self.scheduler.schedule_task(
-                'hourly_report',
-                self.trading_manager.generate_hourly_report,
-                minute=0  # 매시 0분에 실행
-            )
-            
-            # 일일 리포트 - 매일 20시에 실행
-            self.scheduler.schedule_task(
-                'daily_report',
-                self.trading_manager.generate_daily_report,
-                hour=20,
-                minute=0
-            )
-            
-            # 스케줄러 실행
-            asyncio.create_task(self.scheduler.run())
-            
-            self.logger.info("스케줄러 작업 등록 완료")
             
             # 코인 시장 정보 수집 및 정렬
             markets = await self.market_analyzer.get_sorted_markets()

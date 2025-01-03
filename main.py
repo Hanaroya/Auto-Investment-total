@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from control_center.InvestmentCenter import InvestmentCenter
 from database.mongodb_manager import MongoDBManager
 from dotenv import load_dotenv
+from utils.scheduler import SimpleScheduler
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger('investment-center')
@@ -31,6 +32,8 @@ class CryptoTradingBot:
         # InvestmentCenter 초기화 (기본값으로 upbit 사용)
         self.investment_center = InvestmentCenter("upbit")
         
+        self.scheduler = SimpleScheduler()
+        
     async def initialize(self):
         """초기화"""
         try:
@@ -51,6 +54,28 @@ class CryptoTradingBot:
             
             # 메신저로 시작 메시지 전송
             self.investment_center.messenger.send_message(message="자동 거래를 시작합니다.", messenger_type="slack")
+            
+            # 스케줄러 초기화 및 작업 등록
+            self.logger.info("스케줄러 초기화 시작...")
+            
+            # 시간별 리포트 - 매시 정각에 실행
+            self.scheduler.schedule_task(
+                'hourly_report',
+                self.investment_center.trading_manager.generate_hourly_report,
+                minute=0
+            )
+            
+            # 일일 리포트 - 매일 20시에 실행
+            self.scheduler.schedule_task(
+                'daily_report',
+                self.investment_center.trading_manager.generate_daily_report,
+                hour=20,
+                minute=0
+            )
+            
+            # 스케줄러 실행
+            asyncio.create_task(self.scheduler.run())
+            self.logger.info("스케줄러 작업 등록 완료")
             
         except Exception as e:
             self.logger.error(f"초기화 중 오류 발생: {str(e)}")
