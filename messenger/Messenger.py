@@ -67,7 +67,7 @@ class Messenger:
             result = messenger_handlers[messenger_type](message, **kwargs)
             
             if result:
-                self.logger.info(f"{messenger_type} 메시지 전송 성공")
+                self.logger.debug(f"{messenger_type} 메시지 전송 성공")
             else:
                 self.logger.error(f"{messenger_type} 메시지 전송 실패")
             
@@ -102,7 +102,7 @@ class Messenger:
             )
             
             if response.status_code == 200:
-                self.logger.info("Slack 메시지 전송 성공")
+                self.logger.debug("Slack 메시지 전송 성공")
                 return True
             else:
                 self.logger.error(f"Slack API 오류: {response.text}")
