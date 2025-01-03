@@ -17,15 +17,17 @@ class Scheduler:
         """스케줄러 시작"""
         try:
             self.running = True
-            self.scheduler.start()
-            self.logger.info("Scheduler started successfully")
+            if not self.scheduler.running:
+                self.scheduler.start()
+            self.logger.info("스케줄러가 시작되었습니다")
             
-            # 스케줄러가 실행 중인 동안 대기
-            while self.running:
-                await asyncio.sleep(1)
-                
+            # 현재 등록된 작업 로깅
+            jobs = self.scheduler.get_jobs()
+            for job in jobs:
+                self.logger.info(f"등록된 작업: {job.id}, 다음 실행 시간: {job.next_run_time}")
+            
         except Exception as e:
-            self.logger.error(f"Error starting scheduler: {str(e)}")
+            self.logger.error(f"스케줄러 시작 오류: {str(e)}")
             raise
 
     async def stop(self):
@@ -48,17 +50,26 @@ class Scheduler:
             immediate: 즉시 실행 여부 (기본값: False)
         """
         try:
+            # 비동기 함수 래퍼 추가
+            async def wrapper():
+                try:
+                    if asyncio.iscoroutinefunction(task_func):
+                        await task_func()
+                    else:
+                        task_func()
+                except Exception as e:
+                    self.logger.error(f"Task execution error: {str(e)}")
+
             if cron:
-                # Cron 표현식으로 스케줄링
                 self.scheduler.add_job(
-                    task_func,
+                    wrapper,  # 래퍼 함수 사용
                     'cron',
                     id=task_name,
-                    # immediate가 False면 next_run_time을 설정하지 않음
                     next_run_time=datetime.now() if immediate else None,
-                    **self._parse_cron(cron)
+                    **self._parse_cron(cron),
+                    misfire_grace_time=None  # 누락된 작업 즉시 실행
                 )
-                self.logger.info(f"Scheduled cron task '{task_name}' with expression: {cron}")
+                self.logger.info(f"스케줄링된 cron 작업 '{task_name}' 표현식: {cron}")
             else:
                 # interval 스케줄링
                 self.scheduler.add_job(
@@ -71,15 +82,23 @@ class Scheduler:
                 )
                 self.logger.info(f"Scheduled interval task '{task_name}' with interval: {interval}s")
             
-            # 작업 정보 저장
-            self.tasks[task_name] = {
-                'func': task_func,
-                'type': 'cron' if cron else 'interval',
-                'schedule': cron if cron else interval
-            }
+            # 작업 정보 MongoDB에 저장 (동기식)
+            collection = self.db.get_sync_collection('scheduled_tasks')
+            collection.update_one(
+                {'_id': task_name},
+                {
+                    '$set': {
+                        'type': 'cron' if cron else 'interval',
+                        'schedule': cron if cron else interval,
+                        'last_updated': datetime.now(),
+                        'status': 'active'
+                    }
+                },
+                upsert=True
+            )
             
         except Exception as e:
-            self.logger.error(f"Error scheduling task {task_name}: {str(e)}")
+            self.logger.error(f"작업 스케줄링 오류 {task_name}: {str(e)}")
             raise
 
     def _parse_cron(self, cron_expression: str) -> dict:

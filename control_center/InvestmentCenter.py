@@ -244,6 +244,31 @@ class InvestmentCenter:
             # 시스템 상태 초기화
             self._initialize_system_state()
             
+            # 스케줄러 시작 (다른 작업보다 먼저 실행)
+            self.logger.info("스케줄러 초기화 시작...")
+            self.scheduler.scheduler.start()  # 직접 APScheduler 인스턴스 시작
+            
+            # 스케줄러 작업 등록
+            self.logger.info("스케줄러 작업 등록 시작...")
+            
+            # 시간별 리포트 - 매시 정각에 실행 (0분 0초)
+            await self.scheduler.schedule_task(
+                'hourly_report',
+                self.trading_manager.generate_hourly_report,
+                cron='0 * * * *',  # 매시 0분에 실행
+                immediate=True  # 즉시 실행으로 변경
+            )
+            
+            # 일일 리포트 - 매일 20시에 실행
+            await self.scheduler.schedule_task(
+                'daily_report',
+                self.trading_manager.generate_daily_report,
+                cron='0 20 * * *',  # 매일 20시 0분에 실행
+                immediate=False
+            )
+            
+            self.logger.info("스케줄러 작업 등록 완료")
+            
             # 코인 시장 정보 수집 및 정렬
             markets = await self.market_analyzer.get_sorted_markets()
             if not markets:
@@ -255,25 +280,6 @@ class InvestmentCenter:
             
             # 스레드 매니저 시작
             await self.thread_manager.start_threads(markets)
-            
-            # 스케줄러 시작
-            await self.scheduler.start()
-            
-            # 시간별 리포트 - 매시 정각에 실행 (0분 0초)
-            await self.scheduler.schedule_task(
-                'hourly_report',
-                self.trading_manager.generate_hourly_report,
-                cron='0 * * * *',  # 매시 0분에 실행
-                immediate=False
-            )
-            
-            # 일일 리포트 - 매일 20시에 실행
-            await self.scheduler.schedule_task(
-                'daily_report',
-                self.trading_manager.generate_daily_report,
-                cron='0 20 * * *',  # 매일 20시 0분에 실행
-                immediate=False
-            )
             
             # 메인 루프
             while self.is_running:
@@ -287,6 +293,12 @@ class InvestmentCenter:
                     # 활성 거래 상태 체크
                     active_trades = self.trading_manager.get_active_trades()
                     self.logger.info(f"현재 활성 거래: {len(active_trades)}건")
+                    
+                    # 스케줄러 상태 확인
+                    jobs = self.scheduler.scheduler.get_jobs()
+                    self.logger.debug(f"현재 등록된 스케줄러 작업: {len(jobs)}개")
+                    for job in jobs:
+                        self.logger.debug(f"작업: {job.id}, 다음 실행 시간: {job.next_run_time}")
                     
                     await asyncio.sleep(60)
                     

@@ -466,6 +466,39 @@ class MongoDBManager:
         config = self.db.system_config.find_one({'_id': 'config'})
         return config if config else {}
 
+    def get_sync_collection(self, name: str):
+        """동기식 컬렉션 반환
+        컬렉션이 없으면 새로 생성합니다.
+
+        Args:
+            name (str): 컬렉션 이름
+
+        Returns:
+            Collection: MongoDB 컬렉션 객체
+        """
+        try:
+            # 컬렉션 존재 여부 확인
+            if name not in self.db.list_collection_names():
+                self.logger.info(f"새로운 컬렉션 '{name}' 생성")
+                # 컬렉션 생성 및 기본 문서 삽입
+                self.db[name].insert_one({
+                    '_id': 'init',
+                    'created_at': datetime.now(timezone(timedelta(hours=9))),
+                    'status': 'initialized'
+                })
+                
+                # 컬렉션 별 기본 인덱스 설정
+                if name == 'scheduled_tasks':
+                    self.db[name].create_index([('last_updated', -1)])
+                    self.db[name].create_index([('status', 1)])
+                    self.logger.info(f"'{name}' 컬렉션 인덱스 생성 완료")
+
+            return self.db[name]
+
+        except Exception as e:
+            self.logger.error(f"컬렉션 '{name}' 가져오기/생성 실패: {str(e)}")
+            raise
+
     def close(self):
         """
         MongoDB 연결 종료
