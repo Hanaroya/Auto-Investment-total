@@ -158,7 +158,7 @@ class TradingManager:
             fee_amount = sell_amount * fee_rate
             actual_sell_amount = sell_amount - fee_amount  # 수수료를 제외한 실제 판매금액
 
-            if actual_sell_amount < active_trade.get('investment_amount', 0) and active_trade.get('profit_rate', 0) >= 0:
+            if actual_sell_amount < active_trade.get('investment_amount', 0) and active_trade.get('profit_rate', 0) >= 0.1:
                 self.logger.warning(f"매도 금액이 투자 금액보다 작습니다: {coin} - 매도 금액: {actual_sell_amount:,.0f}원, 투자 금액: {active_trade.get('investment_amount', 0):,.0f}원")
                 return False
             
