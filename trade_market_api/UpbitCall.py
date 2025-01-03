@@ -43,7 +43,7 @@ class ThreadLock:
         """락 획득 시도"""
         if self.lock.acquire(blocking=False):
             self.current_thread = thread_id
-            self.logger.info(f"Thread {thread_id} acquired lock for {operation}")
+            self.logger.debug(f"Thread {thread_id} acquired lock for {operation}")
             return True
         return False
 
@@ -52,7 +52,7 @@ class ThreadLock:
         if self.current_thread == thread_id:
             self.lock.release()
             self.current_thread = None
-            self.logger.info(f"Thread {thread_id} released lock")
+            self.logger.debug(f"Thread {thread_id} released lock")
 
 def with_thread_lock(operation: str):
     """API 작업에 대한 스레드 락을 제공하는 데코레이터
@@ -253,7 +253,7 @@ class UpbitCall:
             final_url = url + "?code=" + market_code + "&count=" + str(count) + "&to"
             
             # URL 로깅
-            self.logger.info(f"Thread {threading.current_thread().name} - API 요청 URL: {final_url}")
+            self.logger.debug(f"Thread {threading.current_thread().name} - API 요청 URL: {final_url}")
             
             headers = {
                 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36'
@@ -466,7 +466,7 @@ class UpbitCall:
             )
             
             if response.status_code == 201:
-                self.logger.info(f"매수 주문 성공: {market}, 금액: {price}")
+                self.logger.debug(f"매수 주문 성공: {market}, 금액: {price}")
                 return response.json()
             else:
                 self.logger.error(f"매수 주문 실패: {response.text}")
@@ -505,7 +505,7 @@ class UpbitCall:
             )
             
             if response.status_code == 201:
-                self.logger.info(f"매도 주문 성공: {market}, 수량: {volume}")
+                self.logger.debug(f"매도 주문 성공: {market}, 수량: {volume}")
                 return response.json()
             else:
                 self.logger.error(f"매도 주문 실패: {response.text}")

@@ -37,7 +37,7 @@ class ThreadLock:
         """
         if self.lock.acquire(blocking=False):  # non-blocking 방식으로 락 획득 시도
             self.current_thread = thread_id
-            self.logger.info(f"Thread {thread_id} acquired lock for {operation}")
+            self.logger.debug(f"Thread {thread_id} acquired lock for {operation}")
             return True
         return False
 
@@ -52,7 +52,7 @@ class ThreadLock:
         if self.current_thread == thread_id:
             self.lock.release()
             self.current_thread = None
-            self.logger.info(f"Thread {thread_id} released lock")
+            self.logger.debug(f"Thread {thread_id} released lock")
 
 def with_thread_lock(operation: str):
     """
