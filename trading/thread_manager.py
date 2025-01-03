@@ -13,6 +13,7 @@ import signal
 from trade_market_api.UpbitCall import UpbitCall
 import sys
 import os
+import schedule
 
 class TradingThread(threading.Thread):
     """
@@ -207,6 +208,26 @@ class TradingThread(threading.Thread):
         except Exception as e:
             self.logger.error(f"Error processing {coin}: {str(e)}")
 
+class SchedulerThread(threading.Thread):
+    """스케줄러 전용 스레드"""
+    def __init__(self, scheduler, stop_flag: threading.Event):
+        super().__init__()
+        self.scheduler = scheduler
+        self.stop_flag = stop_flag
+        self.logger = logging.getLogger('investment-center')
+
+    def run(self):
+        """스케줄러 실행"""
+        self.logger.info("스케줄러 스레드 시작")
+        try:
+            while not self.stop_flag.is_set():
+                schedule.run_pending()
+                time.sleep(1)
+        except Exception as e:
+            self.logger.error(f"스케줄러 스레드 오류: {str(e)}")
+        finally:
+            self.logger.info("스케줄러 스레드 종료")
+
 class ThreadManager:
     """
     여러 거래 스레드를 관리하는 매니저 클래스
@@ -237,6 +258,8 @@ class ThreadManager:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
 
+        self.scheduler_thread = None
+
     def signal_handler(self, signum, frame):
         """시그널 핸들러"""
         self.logger.info(f"Signal {signum} received, initiating shutdown...")
@@ -247,6 +270,11 @@ class ThreadManager:
         """모든 스레드 강제 종료"""
         try:
             self.logger.info("모든 스레드 종료 시작...")
+            self.stop_flag.set()
+            
+            # 스케줄러 스레드 종료
+            if self.scheduler_thread and self.scheduler_thread.is_alive():
+                self.scheduler_thread.join(timeout=2)
             
             # 먼저 stop_flag 설정
             self.stop_flag.set()
@@ -434,3 +462,12 @@ class ThreadManager:
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+
+    def start_scheduler(self, scheduler):
+        """스케줄러 스레드 시작"""
+        try:
+            self.scheduler_thread = SchedulerThread(scheduler, self.stop_flag)
+            self.scheduler_thread.start()
+            self.logger.info("스케줄러 스레드 시작됨")
+        except Exception as e:
+            self.logger.error(f"스케줄러 스레드 시작 실패: {str(e)}")

@@ -286,7 +286,7 @@ class TradingManager:
             self.logger.error(f"Error in process_sell_signal: {e}")
             return False
 
-    async def generate_daily_report(self):
+    def generate_daily_report(self):
         """일일 리포트 생성
         
         Note:
@@ -477,11 +477,11 @@ class TradingManager:
             total_profit = sum(trade['profit_amount'] for trade in trading_history)
             
             # system_config 업데이트
-            current_config = await self.db.get_collection('system_config').find_one({})
+            current_config = self.db.get_sync_collection('system_config').find_one({})
             new_total_investment = current_config['total_max_investment'] + total_profit
             
             # system_config 업데이트
-            await self.db.get_collection('system_config').update_one(
+            self.db.get_sync_collection('system_config').update_one(
                 {},
                 {
                     '$set': {
@@ -504,7 +504,7 @@ class TradingManager:
             current_portfolio = self.db.portfolio.find_one({})
             if current_portfolio:
                 accumulated_profit = current_portfolio.get('profit_earned', 0) + total_profit
-                await self.db.get_collection('portfolio').update_one(
+                self.db.get_sync_collection('portfolio').update_one(
                     {},
                     {
                         '$set': {
@@ -668,7 +668,7 @@ class TradingManager:
             self.logger.error(f"포지션 정리 중 오류 발생: {e}")
             return False
 
-    async def generate_hourly_report(self):
+    def generate_hourly_report(self):
         """시간별 리포트 생성
         
         매 시간 정각에 실행되며 현재 보유 포지션과 투자 현황을 보고합니다.
@@ -677,32 +677,37 @@ class TradingManager:
         - 총 투자금액
         """
         try:
-            # 활성 거래(현재 보유 중인 포지션) 조회
-            collection = self.db.get_collection('trades')
-            active_trades = await collection.find({'status': 'active'}).to_list(None)
+            self.logger.info("시간별 리포트 생성 시작")
+            kst = timezone(timedelta(hours=9))
+            current_time = datetime.now(kst).strftime('%Y-%m-%d %H:00')
+            message = ""
             
-            if not active_trades:
-                self.logger.info("현재 보유 중인 코인이 없습니다.")
-                await self.messenger.send_message(message="현재 보유 중인 코인이 없습니다.", messenger_type="slack")
-                return
-            
-            # 총 투자금액과 현재 가치 계산을 위한 변수
+            # 변수 초기화
             total_investment = 0
             total_current_value = 0
+
+            # 활성 거래 조회
+            active_trades = list(self.db.get_sync_collection('trades').find({
+                'status': 'active'
+            }))
             
-            # 메시지 생성
-            current_time = datetime.now().strftime('%Y-%m-%d %H:00')
-            message = (
-                f"📊 시간별 투자 현황 ({current_time})\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            )
+            # 포트폴리오 정보 조회
+            portfolio = self.db.get_sync_collection('portfolio').find_one({'_id': 'main'})
+            if not portfolio:
+                self.logger.warning("포트폴리오 정보를 찾을 수 없습니다")
+                return
             
             # 각 코인별 상세 정보
             for trade in active_trades:
-                hold_time = datetime.utcnow() - trade['timestamp']
+                # timestamp를 KST로 변환
+                trade_time = trade['timestamp']
+                if trade_time.tzinfo is None:
+                    trade_time = trade_time.replace(tzinfo=kst)
+                
+                hold_time = datetime.now(kst) - trade_time
                 hours = hold_time.total_seconds() / 3600
                 
-                # 현재 가격 조회 (이 부분은 거래소 API를 통해 구현 필요)
+                # 현재 가격 조회
                 current_price = self.upbit.get_current_price(trade['coin'])
                 investment_amount = trade.get('investment_amount', 0)
                 
@@ -721,7 +726,7 @@ class TradingManager:
                     f"  └ 수익률: {profit_rate:+.2f}% (₩{profit_amount:+,.0f})\n"
                     f"  └ 매수시간: {trade['timestamp'].strftime('%Y-%m-%d %H:%M')}"
                     f" ({hours:.1f}시간 전)\n"
-                    f"  └ 매수 임계값: {trade['strategy_data'].get('buy_threshold', 'N/A')}\n"
+                    f"  └ 매수 임계값: {trade['strategy_data'].get('overall_signal', 'N/A')}\n"
                     f"  └ 투자금액: ₩{investment_amount:,}\n"
                 )
                 message += coin_info + "\n"
@@ -754,7 +759,7 @@ class TradingManager:
             )
             
             # Slack으로 메시지 전송
-            await self.messenger.send_message(message=message, messenger_type="slack")
+            self.messenger.send_message(message=message, messenger_type="slack")
             
             self.logger.info(f"시간별 리포트 생성 완료: {current_time}")
             

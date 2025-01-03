@@ -33,10 +33,17 @@ class SimpleScheduler:
             minute: 실행할 분 (0-59)
         """
         try:
-            async def wrapper():
+            def sync_wrapper():
+                """동기식 래퍼 함수"""
                 try:
                     if asyncio.iscoroutinefunction(task_func):
-                        await task_func()
+                        # 새로운 이벤트 루프 생성 및 실행
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            loop.run_until_complete(task_func())
+                        finally:
+                            loop.close()
                     else:
                         task_func()
                 except Exception as e:
@@ -44,11 +51,11 @@ class SimpleScheduler:
 
             # 매시간 실행
             if hour == -1:
-                schedule.every().hour.at(f":{minute:02d}").do(lambda: asyncio.create_task(wrapper()))
+                schedule.every().hour.at(f":{minute:02d}").do(sync_wrapper)
                 self.logger.info(f"매시 {minute:02d}분에 실행되도록 작업 '{task_name}' 등록됨")
             # 특정 시간 실행
             else:
-                schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(lambda: asyncio.create_task(wrapper()))
+                schedule.every().day.at(f"{hour:02d}:{minute:02d}").do(sync_wrapper)
                 self.logger.info(f"매일 {hour:02d}:{minute:02d}에 실행되도록 작업 '{task_name}' 등록됨")
 
             # 작업 정보 저장
@@ -57,7 +64,7 @@ class SimpleScheduler:
                 {'_id': task_name},
                 {
                     '$set': {
-                        'type': 'hourly' if hour is None else 'daily',
+                        'type': 'hourly' if hour == -1 else 'daily',
                         'hour': hour,
                         'minute': minute,
                         'last_updated': datetime.now(),

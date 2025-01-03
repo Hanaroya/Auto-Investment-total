@@ -51,10 +51,6 @@ class CryptoTradingBot:
             # MongoDB 연결 테스트
             if not self.db.test_connection():
                 raise Exception("MongoDB 초기화 실패")
-            
-            # 메신저로 시작 메시지 전송
-            self.investment_center.messenger.send_message(message="자동 거래를 시작합니다.", messenger_type="slack")
-            
             # 스케줄러 초기화 및 작업 등록
             self.logger.info("스케줄러 초기화 시작...")
             
@@ -73,10 +69,13 @@ class CryptoTradingBot:
                 minute=0
             )
             
-            # 스케줄러 실행
-            asyncio.create_task(self.scheduler.run())
+            # 스케줄러 스레드 시작
+            self.investment_center.thread_manager.start_scheduler(self.scheduler)
             self.logger.info("스케줄러 작업 등록 완료")
-            
+            self.logger.debug("초기화 완료")
+            # 메신저로 시작 메시지 전송
+            self.investment_center.messenger.send_message(message="자동 거래를 시작합니다.", messenger_type="slack")
+
         except Exception as e:
             self.logger.error(f"초기화 중 오류 발생: {str(e)}")
             raise
