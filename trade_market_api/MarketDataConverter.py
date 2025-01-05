@@ -155,6 +155,10 @@ class MarketDataConverter:
             # 거래량 변화율
             df['volume_change_rate'] = df['volume'].pct_change().fillna(0).astype(float) * 100
             
+            # 가격 추세와 변동성 계산 추가
+            df['price_trend'] = self._calculate_price_trend(df)
+            df['volatility'] = self._calculate_volatility(df)
+            
             # NaN 값을 0으로 변환
             df = df.fillna(0)
             
@@ -375,4 +379,53 @@ class MarketDataConverter:
             return sentiment.clip(-1, 1).fillna(0)
         except Exception as e:
             print(f"시장 심리 지수 계산 중 오류: {str(e)}")
+            return pd.Series([0] * len(df))
+
+    def _calculate_price_trend(self, df: pd.DataFrame) -> pd.Series:
+        """
+        가격 추세 계산 (-1 ~ 1)
+        - 양수: 상승 추세
+        - 음수: 하락 추세
+        - 절대값이 클수록 추세가 강함
+        """
+        try:
+            # 단기(5일)와 장기(20일) 이동평균 계산
+            ma5 = df['close'].rolling(window=5, min_periods=1).mean()
+            ma20 = df['close'].rolling(window=20, min_periods=1).mean()
+            
+            # 추세 강도 계산
+            trend = ((ma5 - ma20) / ma20.replace(0, np.inf)).clip(-1, 1)
+            
+            # 모멘텀 반영
+            momentum = df['close'].pct_change(5).fillna(0).clip(-0.1, 0.1) * 5
+            
+            # 최종 추세 계산 (추세 + 모멘텀)
+            price_trend = ((trend + momentum) / 2).clip(-1, 1)
+            
+            return price_trend.fillna(0)
+            
+        except Exception as e:
+            print(f"가격 추세 계산 중 오류: {str(e)}")
+            return pd.Series([0] * len(df))
+
+    def _calculate_volatility(self, df: pd.DataFrame) -> pd.Series:
+        """
+        변동성 계산 (0 ~ 1)
+        - 0: 변동성 낮음
+        - 1: 변동성 매우 높음
+        """
+        try:
+            # 일일 변동폭 계산
+            daily_volatility = ((df['high'] - df['low']) / df['close']).rolling(window=10).std()
+            
+            # 거래량 변동성
+            volume_volatility = (df['volume'] / df['volume'].rolling(window=20).mean()).clip(0, 5)
+            
+            # 종합 변동성 (거래량 변동성 반영)
+            volatility = (daily_volatility * 0.7 + (volume_volatility / 5) * 0.3).clip(0, 1)
+            
+            return volatility.fillna(0)
+            
+        except Exception as e:
+            print(f"변동성 계산 중 오류: {str(e)}")
             return pd.Series([0] * len(df))

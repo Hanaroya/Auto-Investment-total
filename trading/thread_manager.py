@@ -156,9 +156,31 @@ class TradingThread(threading.Thread):
 
                     if active_trade:
                         # 매도 신호 확인
-                        if (signals.get('overall_signal') <= self.config['strategy']['sell_threshold'] and active_trade.get('profit_rate', 0) >= 0.15
-                            ) or active_trade.get('profit_rate', 0) <= -3:  # 수치 기반 매도 신호 확인
-                            self.logger.info(f"매도 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
+                        current_profit_rate = active_trade.get('profit_rate', 0)
+                        price_trend = signals.get('price_trend', 0)  # 가격 추세 (-1 ~ 1)
+                        volatility = signals.get('volatility', 0)    # 변동성 지표
+                        
+                        # 매도 조건 확인
+                        should_sell = any([
+                            # 1. 급격한 하락 감지
+                            price_trend < -0.7 and volatility > 0.8,
+                            
+                            # 2. 지속적인 하락 추세
+                            price_trend < -0.3 and current_profit_rate < -2,
+                            
+                            # 3. 목표 수익 달성 후 하락 추세
+                            current_profit_rate > 3 and price_trend < -0.2,
+                            
+                            # 4. 과도한 손실 방지
+                            current_profit_rate < -5,
+                            
+                            # 5. 변동성 급증 시 이익 실현
+                            current_profit_rate > 2 and volatility > 0.9
+                        ])
+                        
+                        if should_sell:
+                            self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
+                                           f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
                             if self.trading_manager.process_sell_signal(
                                 coin=coin,
                                 thread_id=self.thread_id,
