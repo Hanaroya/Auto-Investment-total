@@ -536,3 +536,62 @@ class ThreadManager:
             
         except Exception as e:
             self.logger.error(f"코인 목록 재분배 중 오류: {str(e)}")
+
+    async def watch_orders(self):
+        """주문 감시 스레드"""
+        while True:
+            try:
+                # 대기 중인 주문 조회
+                pending_orders = await self.db.get_collection('order_list').find({
+                    'status': 'pending'
+                }).to_list(None)
+                
+                for order in pending_orders:
+                    current_price = self.upbit.get_current_price(order['coin'])
+                    
+                    if order['type'] == 'buy':
+                        if current_price <= order['price']:
+                            # 매수 조건 충족
+                            await self.trading_manager.process_buy_signal(
+                                coin=order['coin'],
+                                thread_id=0,
+                                signal_strength=1.0,
+                                price=current_price,
+                                strategy_data=order['strategy_data']
+                            )
+                            # 주문 상태 업데이트
+                            await self.db.get_collection('order_list').update_one(
+                                {'_id': order['_id']},
+                                {'$set': {
+                                    'status': 'completed',
+                                    'executed_price': current_price,
+                                    'updated_at': datetime.now(timezone(timedelta(hours=9)))
+                                }}
+                            )
+                    
+                    elif order['type'] == 'sell':
+                        if current_price >= order['price']:
+                            # 매도 조건 충족
+                            await self.trading_manager.process_sell_signal(
+                                coin=order['coin'],
+                                thread_id=order['trade_data']['thread_id'],
+                                signal_strength=1.0,
+                                price=current_price,
+                                strategy_data={'forced_sell': True}
+                            )
+                            # 주문 상태 업데이트
+                            await self.db.get_collection('order_list').update_one(
+                                {'_id': order['_id']},
+                                {'$set': {
+                                    'status': 'completed',
+                                    'executed_price': current_price,
+                                    'updated_at': datetime.now(timezone(timedelta(hours=9)))
+                                }}
+                            )
+                
+                # 1초 대기
+                await asyncio.sleep(1)
+                
+            except Exception as e:
+                self.logger.error(f"주문 감시 중 오류 발생: {str(e)}")
+                await asyncio.sleep(5)  # 오류 발생시 5초 대기

@@ -984,3 +984,137 @@ class TradingManager:
         except Exception as e:
             self.logger.error(f"투자 한도 확인 중 오류 발생: {str(e)}")
             return False  # 오류 발생 시 안전을 위해 False 반환
+
+    async def user_call_buy(self, coin: str, price: float, immediate: bool = False) -> Dict:
+        """사용자 매수 주문
+        
+        Args:
+            coin: 코인명
+            price: 주문 가격
+            immediate: 즉시 체결 여부
+            
+        Returns:
+            Dict: 주문 결과
+        """
+        try:
+            # 테스트 모드 확인
+            is_test = self.config.get('test_mode', True)
+            self.logger.info(f"매수 주문 시작 - 코인: {coin}, 가격: {price:,}, 즉시체결: {immediate}")
+            
+            # 전략/시장 데이터 조회
+            strategy_data = await self.db.get_collection('strategy_data').find_one({'coin': coin})
+            if not strategy_data:
+                self.logger.warning(f"{coin} - 전략 데이터 없음")
+                return {'success': False, 'message': '전략 데이터 없음'}
+            
+            # 주문 데이터 생성
+            order_data = {
+                'coin': coin,
+                'type': 'buy',
+                'price': price,
+                'status': 'pending',
+                'immediate': immediate,
+                'created_at': datetime.now(timezone(timedelta(hours=9))),
+                'updated_at': datetime.now(timezone(timedelta(hours=9))),
+                'is_test': is_test,
+                'strategy_data': strategy_data
+            }
+            
+            # 주문 컬렉션 초기화 확인 및 생성
+            await self._ensure_order_collection()
+            
+            # 주문 추가
+            result = await self.db.get_collection('order_list').insert_one(order_data)
+            
+            if immediate:
+                # 즉시 체결인 경우 바로 process_buy_signal 호출
+                await self.process_buy_signal(
+                    coin=coin,
+                    thread_id=0,  # 사용자 주문은 thread_id 0 사용
+                    signal_strength=1.0,
+                    price=price,
+                    strategy_data=strategy_data
+                )
+                return {'success': True, 'message': '즉시 매수 주문 처리됨'}
+            
+            return {'success': True, 'message': '매수 주문이 등록되었습니다', 'order_id': str(result.inserted_id)}
+            
+        except Exception as e:
+            self.logger.error(f"매수 주문 처리 중 오류: {str(e)}")
+            return {'success': False, 'message': f'주문 처리 실패: {str(e)}'}
+
+    async def user_call_sell(self, coin: str, price: float, immediate: bool = False) -> Dict:
+        """사용자 매도 주문
+        
+        Args:
+            coin: 코인명
+            price: 주문 가격
+            immediate: 즉시 체결 여부
+            
+        Returns:
+            Dict: 주문 결과
+        """
+        try:
+            # 테스트 모드 확인
+            is_test = self.config.get('test_mode', True)
+            self.logger.info(f"매도 주문 시작 - 코인: {coin}, 가격: {price:,}, 즉시체결: {immediate}")
+            
+            # 활성 거래 확인
+            active_trade = await self.db.get_collection('trades').find_one({
+                'coin': coin,
+                'status': 'active'
+            })
+            
+            if not active_trade:
+                return {'success': False, 'message': '해당 코인의 활성 거래가 없습니다'}
+            
+            # 주문 데이터 생성
+            order_data = {
+                'coin': coin,
+                'type': 'sell',
+                'price': price,
+                'status': 'pending',
+                'immediate': immediate,
+                'created_at': datetime.now(timezone(timedelta(hours=9))),
+                'updated_at': datetime.now(timezone(timedelta(hours=9))),
+                'is_test': is_test,
+                'trade_data': active_trade
+            }
+            
+            # 주문 컬렉션 초기화 확인 및 생성
+            await self._ensure_order_collection()
+            
+            # 주문 추가
+            result = await self.db.get_collection('order_list').insert_one(order_data)
+            
+            if immediate:
+                # 즉시 체결인 경우 바로 process_sell_signal 호출
+                await self.process_sell_signal(
+                    coin=coin,
+                    thread_id=active_trade['thread_id'],
+                    signal_strength=1.0,
+                    price=price,
+                    strategy_data={'forced_sell': True}
+                )
+                return {'success': True, 'message': '즉시 매도 주문 처리됨'}
+            
+            return {'success': True, 'message': '매도 주문이 등록되었습니다', 'order_id': str(result.inserted_id)}
+            
+        except Exception as e:
+            self.logger.error(f"매도 주문 처리 중 오류: {str(e)}")
+            return {'success': False, 'message': f'주문 처리 실패: {str(e)}'}
+
+    async def _ensure_order_collection(self):
+        """주문 컬렉션 초기화 확인"""
+        try:
+            collections = await self.db.get_collection('order_list').list_collection_names()
+            if 'order_list' not in collections:
+                await self.db.get_collection('order_list').create_index([
+                    ('coin', 1),
+                    ('status', 1),
+                    ('created_at', -1)
+                ])
+                self.logger.info("order_list 컬렉션 생성 완료")
+        except Exception as e:
+            self.logger.error(f"order_list 컬렉션 초기화 중 오류: {str(e)}")
+            raise
