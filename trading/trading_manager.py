@@ -44,8 +44,12 @@ class TradingManager:
                 self.logger.warning(f"투자 한도 초과: thread_id={thread_id}")
                 return False
 
-            # KST 시간으로 통일
-            kst_now = datetime.now(timezone(timedelta(hours=9)))
+            # KST 시간대 설정
+            KST = timezone(timedelta(hours=9))
+            kst_now = datetime.now(KST)
+            
+            # 시간대 확인 로깅
+            self.logger.debug(f"현재 KST 시간: {kst_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             
             # 테스트 모드 확인 (config의 mode와 upbit test_mode 모두 확인)
             is_test = (
@@ -473,51 +477,89 @@ class TradingManager:
                 attachment_path=filename
             )
             
-            # 일일 수익 계산
-            total_profit = sum(trade['profit_amount'] for trade in trading_history)
+            # system_config에서 초기 투자금 가져오기
+            system_config = self.db.get_sync_collection('system_config').find_one({})
+            initial_investment = system_config.get('initial_investment', 1000000)
             
-            # system_config 업데이트
-            current_config = self.db.get_sync_collection('system_config').find_one({})
-            new_total_investment = current_config['total_max_investment'] + total_profit
+            # 누적 수익 계산
+            total_profit_earned = system_config.get('total_profit_earned', 0)
+            
+            # 현성 거래에서 총 투자금과 현재 가치 계산
+            total_investment = 0
+            total_current_value = 0
+            
+            for trade in active_trades:
+                investment_amount = trade.get('investment_amount', 0)
+                current_price = self.upbit.get_current_price(trade['coin'])
+                executed_volume = trade.get('executed_volume', 0)
+                
+                # 현재 가치 계산 (현재가 * 보유수량)
+                current_value = current_price * executed_volume
+                
+                total_investment += investment_amount
+                total_current_value += current_value
+            
+            # 수익 계산
+            total_profit_amount = total_current_value - total_investment
+            total_profit_rate = (total_profit_earned / initial_investment * 100)
             
             # system_config 업데이트
             self.db.get_sync_collection('system_config').update_one(
                 {},
                 {
                     '$set': {
-                        'total_max_investment': new_total_investment,
-                        'reserve_amount': new_total_investment * 0.2,
+                        'total_profit_earned': total_profit_earned + total_profit_amount,
                         'last_updated': datetime.now(timezone(timedelta(hours=9)))
                     }
                 }
             )
             
-            # daily_profit 기록
-            self.db.daily_profit.insert_one({
-                'timestamp': datetime.now(timezone(timedelta(hours=9))),
-                'profit_earned': total_profit,
-                'total_max_investment': new_total_investment,
-                'reserve_amount': current_config['reserve_amount']
-            })
+            portfolio_summary = (
+                f"📈 포트폴리오 요약\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 총기 투자금: ₩{initial_investment:,}\n"
+                f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
+                f"📊 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
+                f"📈 당일 수익률: {((total_profit_amount/total_investment)*100):+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"🔢 보유 코인: {len(active_trades)}개\n"
+            )
             
-            # portfolio 업데이트
-            current_portfolio = self.db.portfolio.find_one({})
-            if current_portfolio:
-                accumulated_profit = current_portfolio.get('profit_earned', 0) + total_profit
-                self.db.get_sync_collection('portfolio').update_one(
-                    {},
-                    {
-                        '$set': {
-                            'available_investment': new_total_investment * 0.8,
-                            'profit_earned': accumulated_profit,
-                            'total_investment': new_total_investment,
-                            'reserve_amount': new_total_investment * 0.2,
-                            'last_updated': datetime.now(timezone(timedelta(hours=9)))
-                        }
-                    }
-                )
-
-            self.logger.info("일일 리포트 생성 및 전송 완료")
+            message = portfolio_summary + "\n" + message + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # 포트폴리오 정보 추가
+            portfolio = self.db.get_portfolio()
+            
+            # 포트폴리오 정보 업데이트
+            portfolio_update = {
+                'current_amount': floor(total_current_value),
+                'investment_amount': initial_investment,
+                'available_investment': floor(initial_investment - total_investment),
+                'last_updated': datetime.now(timezone(timedelta(hours=9))),
+                'coin_list': {
+                    trade['coin']: {
+                        'amount': trade.get('executed_volume', 0),
+                        'price': trade.get('price', 0),
+                        'current_price': self.upbit.get_current_price(trade['coin']),
+                        'investment_amount': trade.get('investment_amount', 0)
+                    } for trade in active_trades
+                }
+            }
+            
+            self.db.update_portfolio(portfolio_update)
+            
+            message += (
+                f"\n📊 포트폴리오 현황\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 총 투자금액: ₩{portfolio.get('investment_amount', 0):,.0f}\n"
+                f"💵 사용 가능 금액: ₩{portfolio.get('available_investment', 0):,.0f}\n"
+                f"📈 현재 평가금액: ₩{portfolio.get('current_amount', 0):,.0f}\n"
+                f"📊 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n\n"
+            )
+            
+            # Slack으로 메시지 전송
+            self.messenger.send_message(message=message, messenger_type="slack")
+            
+            self.logger.info(f"일일 리포트 생성 및 전송 완료: {kst_today.strftime('%Y-%m-%d')}")
             
         except Exception as e:
             self.logger.error(f"일일 리포트 생성 중 오류 발생: {str(e)}")
@@ -735,12 +777,35 @@ class TradingManager:
             total_profit_rate = ((total_current_value - total_investment) / total_investment * 100) if total_investment > 0 else 0
             total_profit_amount = total_current_value - total_investment
             
+            # system_config에서 초기 투자금 가져오기
+            system_config = self.db.get_sync_collection('system_config').find_one({})
+            initial_investment = system_config.get('initial_investment', 1000000)
+            
+            # 누적 수익 계산
+            total_profit_earned = system_config.get('total_profit_earned', 0)
+            
+            # 현재 수익률 계산
+            total_profit_amount = total_current_value - total_investment
+            total_profit_rate = (total_profit_earned / initial_investment * 100)
+            
+            # 일일 리포트 후 system_config 업데이트
+            self.db.get_sync_collection('system_config').update_one(
+                {},
+                {
+                    '$set': {
+                        'total_profit_earned': total_profit_earned + total_profit_amount,
+                        'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                    }
+                }
+            )
+            
             portfolio_summary = (
                 f"📈 포트폴리오 요약\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 총 투자금액: ₩{total_investment:,}\n"
+                f"💰 초기 투자금: ₩{initial_investment:,}\n"
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
-                f"📊 총 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"📊 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
+                f"📈 당일 수익률: {((total_profit_amount/total_investment)*100):+.2f}% (₩{total_profit_amount:+,.0f})\n"
                 f"🔢 보유 코인: {len(active_trades)}개\n"
             )
             
@@ -761,10 +826,10 @@ class TradingManager:
             # Slack으로 메시지 전송
             self.messenger.send_message(message=message, messenger_type="slack")
             
-            self.logger.info(f"시간별 리포트 생성 완료: {current_time}")
+            self.logger.info(f"일일 리포트 생성 및 전송 완료: {kst.strftime('%Y-%m-%d')}")
             
         except Exception as e:
-            self.logger.error(f"시간별 리포트 생성 중 오류 발생: {e}")
+            self.logger.error(f"일일 리포트 생성 중 오류 발생: {e}")
             raise
 
     def update_strategy_data(self, coin: str, thread_id: int, price: float, strategy_results: Dict):
