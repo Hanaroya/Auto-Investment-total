@@ -88,9 +88,10 @@ class TradingManager:
             trade_data = {
                 'coin': coin,
                 'type': 'buy',
-                'timestamp': kst_now,
                 'price': price,
                 'signal_strength': signal_strength,
+                'current_price': price,
+                'profit_rate': 0,
                 'thread_id': thread_id,
                 'strategy_data': strategy_data,
                 'status': 'active',
@@ -100,7 +101,8 @@ class TradingManager:
                 'fee_rate': fee_rate,
                 'order_id': order_result.get('uuid'),
                 'executed_volume': order_result.get('executed_volume', 0),
-                'test_mode': is_test
+                'test_mode': is_test,
+                'timestamp': kst_now
             }
 
             # 거래 데이터 저장
