@@ -755,7 +755,7 @@ class TradingManager:
                 f"💰 총 투자금액: ₩{portfolio.get('investment_amount', 0):,.0f}\n"
                 f"💵 사용 가능 금액: ₩{portfolio.get('available_investment', 0):,.0f}\n"
                 f"📈 현재 평가금액: ₩{portfolio.get('current_amount', 0):,.0f}\n"
-                f"📊 수익률: {((portfolio.get('current_amount', 0) / portfolio.get('investment_amount', 1) - 1) * 100):+.2f}%\n"
+                f"📊 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n\n"
             )
             
             # Slack으로 메시지 전송
