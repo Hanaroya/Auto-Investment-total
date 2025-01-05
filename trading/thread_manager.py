@@ -175,7 +175,13 @@ class TradingThread(threading.Thread):
                             current_profit_rate < -5,
                             
                             # 5. 변동성 급증 시 이익 실현
-                            current_profit_rate > 2 and volatility > 0.9
+                            current_profit_rate > 2 and volatility > 0.9,
+                            
+                            # 6. 평균 매수 가격보다 10% 이상 상승한 경우
+                            current_profit_rate > 10 and current_price > active_trade.get('average_buy_price', 0) * 1.1,
+                            
+                            # 7. sell_threshold 이하
+                            signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold']
                         ])
                         
                         if should_sell:
