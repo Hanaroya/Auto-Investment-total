@@ -69,6 +69,14 @@ class CryptoTradingBot:
                 minute=0
             )
             
+            # 코인 목록 재분배 - 4시간마다 실행 (00:00, 04:00, 08:00, 12:00, 16:00, 20:00)
+            self.scheduler.schedule_task(
+                'market_redistribution',
+                self.investment_center.thread_manager.update_market_distribution,
+                hour=-1,  # 매시간 체크
+                minute=0  # 정각에 실행
+            )
+            
             # 스케줄러 스레드 시작
             self.investment_center.thread_manager.start_scheduler(self.scheduler)
             self.logger.info("스케줄러 작업 등록 완료")
