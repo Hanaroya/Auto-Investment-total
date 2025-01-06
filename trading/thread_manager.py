@@ -194,7 +194,6 @@ class TradingThread(threading.Thread):
                                 # 기존 거래 정보 가져오기
                                 existing_trade = self.db.trades.find_one({
                                     'coin': coin,
-                                    'thread_id': self.thread_id,
                                     'status': 'active'
                                 })
                                 
