@@ -182,26 +182,21 @@ class TradingThread(threading.Thread):
                                 self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
                                 
                                 # 기존 거래 정보 가져오기
-                                existing_trade = self.db.trades.find_one({
-                                    'coin': coin,
-                                    'status': 'active'
-                                })
                                 
-                                if existing_trade:
-                                    # 물타기용 전략 데이터 업데이트
-                                    signals['investment_amount'] = averaging_down_amount
-                                    signals['is_averaging_down'] = True
-                                    signals['existing_trade_id'] = existing_trade['_id']
-                                    
-                                    self.trading_manager.process_buy_signal(
-                                        coin=coin,
-                                        thread_id=self.thread_id,
-                                        signal_strength=0.8,  # 물타기용 신호 강도
-                                        price=current_price,
-                                        strategy_data=signals
-                                    )
-                                    self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
-                                    return
+                                # 물타기용 전략 데이터 업데이트
+                                signals['investment_amount'] = averaging_down_amount
+                                signals['is_averaging_down'] = True
+                                signals['existing_trade_id'] = active_trade['_id']
+                                
+                                self.trading_manager.process_buy_signal(
+                                    coin=coin,
+                                    thread_id=self.thread_id,
+                                    signal_strength=0.8,  # 물타기용 신호 강도
+                                    price=current_price,
+                                    strategy_data=signals
+                                )
+                                self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
+                                return
                     
                     # 매도 조건 확인
                         should_sell = any([
