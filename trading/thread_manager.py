@@ -571,7 +571,7 @@ class ThreadManager:
             )
             
             # 새로운 마켓 목록 조회 (거래량 순)
-            markets = upbit.get_market_all()
+            markets = upbit.get_krw_markets()
             if not markets:
                 self.logger.error("마켓 목록 조회 실패")
                 return
