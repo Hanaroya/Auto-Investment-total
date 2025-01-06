@@ -154,101 +154,94 @@ class TradingThread(threading.Thread):
                     self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.max_investment}")
 
                     if active_trade:
-                        # 매도 신호 확인
                         current_profit_rate = active_trade.get('profit_rate', 0)
                         price_trend = signals.get('price_trend', 0)  # 가격 추세 (-1 ~ 1)
                         volatility = signals.get('volatility', 0)    # 변동성 지표
+                        current_investment = active_trade.get('total_investment', 0)
+                        averaging_down_count = active_trade.get('averaging_down_count', 0)
                         
-                        # 해당 코인의 모든 활성 거래 내역 조회
-                        active_avg_trades = list(self.db.trades.find({
-                            'coin': coin,
-                            'status': 'active'
-                        }))
-                        
-                        # 평균 수익률 계산
-                        if active_avg_trades:
-                            total_profit_rate = sum(trade.get('profit_rate', 0) for trade in active_avg_trades)
-                            total_investment = sum(trade.get('total_investment', 0) for trade in active_avg_trades)
-                            avg_profit_rate = total_profit_rate / len(active_avg_trades)
-                        else:
-                            total_profit_rate = 0
-                            total_investment = 0
-                            avg_profit_rate = 0
+                        # 디버깅 로깅
+                        self.logger.debug(f"{coin} - 수익률: {current_profit_rate:.2f}%, "
+                                         f"투자금: {current_investment:,}원, "
+                                         f"물타기 횟수: {averaging_down_count}")
                         
                         # 물타기 조건 확인
                         should_average_down = (
-                            avg_profit_rate <= -1 and  # 수익률이 -1% 이하
-                            total_investment < self.max_investment * 0.8  # 최대 투자금의 80% 미만 사용
+                            current_profit_rate <= -1 and  # 수익률이 -1% 이하
+                            current_investment < self.max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
+                            averaging_down_count < 3  # 최대 3회까지만 물타기
+                        )
+                    else:
+                        should_average_down = False
+
+                    if should_average_down:
+                        # 물타기 투자금 계산 (기존 투자금의 50%)
+                        averaging_down_amount = min(
+                            floor(current_investment * 0.5),
+                            self.max_investment - current_investment
                         )
                         
-                        if should_average_down:
-                            # 물타기 투자금 계산 (기존 투자금의 50%)
-                            averaging_down_amount = min(
-                                floor(total_investment * 0.5),
-                                self.max_investment - total_investment
-                            )
+                        if averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
+                            self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
                             
-                            if averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
-                                self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {avg_profit_rate:.2f}%")
+                            # 기존 거래 정보 가져오기
+                            existing_trade = self.db.trades.find_one({
+                                'coin': coin,
+                                'status': 'active'
+                            })
+                            
+                            if existing_trade:
+                                # 물타기용 전략 데이터 업데이트
+                                signals['investment_amount'] = averaging_down_amount
+                                signals['is_averaging_down'] = True
+                                signals['existing_trade_id'] = existing_trade['_id']
                                 
-                                # 기존 거래 정보 가져오기
-                                existing_trade = self.db.trades.find_one({
-                                    'coin': coin,
-                                    'status': 'active'
-                                })
-                                
-                                if existing_trade:
-                                    # 물타기용 전략 데이터 업데이트
-                                    signals['investment_amount'] = averaging_down_amount
-                                    signals['is_averaging_down'] = True
-                                    signals['existing_trade_id'] = existing_trade['_id']
-                                    
-                                    self.trading_manager.process_buy_signal(
-                                        coin=coin,
-                                        thread_id=self.thread_id,
-                                        signal_strength=0.8,  # 물타기용 신호 강도
-                                        price=current_price,
-                                        strategy_data=signals
-                                    )
-                                    self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
-                                    return
+                                self.trading_manager.process_buy_signal(
+                                    coin=coin,
+                                    thread_id=self.thread_id,
+                                    signal_strength=0.8,  # 물타기용 신호 강도
+                                    price=current_price,
+                                    strategy_data=signals
+                                )
+                                self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
+                                return
+                    
+                    # 매도 조건 확인
+                    should_sell = any([
+                        # 1. 급격한 하락 감지
+                        price_trend < -0.7 and volatility > 0.8,
                         
-                        # 매도 조건 확인
-                        should_sell = any([
-                            # 1. 급격한 하락 감지
-                            price_trend < -0.7 and volatility > 0.8,
-                            
-                            # 2. 지속적인 하락 추세
-                            price_trend < -0.3 and current_profit_rate < -2,
-                            
-                            # 3. 목표 수익 달성 후 하락 추세
-                            current_profit_rate > 3 and price_trend < -0.2,
-                            
-                            # 4. 과도한 손실 방지
-                            current_profit_rate < -3,
-                            
-                            # 5. 변동성 급증 시 이익 실현
-                            current_profit_rate > 2 and volatility > 0.9,
-                            
-                            # 6. 평균 매수 가격보다 10% 이상 상승한 경우
-                            current_profit_rate > 10 and current_price > active_trade.get('average_buy_price', 0) * 1.1,
-                            
-                            # 7. sell_threshold 이하
-                            signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and (
-                                current_profit_rate > 0.15)
-                        ])
+                        # 2. 지속적인 하락 추세
+                        price_trend < -0.3 and current_profit_rate < -2,
                         
-                        if should_sell:
-                            self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
-                                           f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
-                            if self.trading_manager.process_sell_signal(
-                                coin=coin,
-                                thread_id=self.thread_id,
-                                signal_strength=signals.get('overall_signal', 0.0),
-                                price=current_price,
-                                strategy_data=signals
-                            ):
-                                self.logger.info(f"매도 신호 처리 완료: {coin}")
+                        # 3. 목표 수익 달성 후 하락 추세
+                        current_profit_rate > 3 and price_trend < -0.2,
+                        
+                        # 4. 과도한 손실 방지
+                        current_profit_rate < -3,
+                        
+                        # 5. 변동성 급증 시 이익 실현
+                        current_profit_rate > 2 and volatility > 0.9,
+                        
+                        # 6. 평균 매수 가격보다 10% 이상 상승한 경우
+                        current_profit_rate > 10 and current_price > active_trade.get('average_buy_price', 0) * 1.1,
+                        
+                        # 7. sell_threshold 이하
+                        signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and (
+                            current_profit_rate > 0.15)
+                    ])
+                    
+                    if should_sell:
+                        self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
+                                       f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
+                        if self.trading_manager.process_sell_signal(
+                            coin=coin,
+                            thread_id=self.thread_id,
+                            signal_strength=signals.get('overall_signal', 0.0),
+                            price=current_price,
+                            strategy_data=signals
+                        ):
+                            self.logger.info(f"매도 신호 처리 완료: {coin}")
                     
                     else:
                         # 일반 매수 신호 처리 (기존 로직)
