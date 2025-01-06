@@ -146,7 +146,6 @@ class TradingThread(threading.Thread):
                     # 현재 코인의 활성 거래 확인 및 로깅
                     active_trade = self.db.trades.find_one({
                         'coin': coin,
-                        'thread_id': self.thread_id,
                         'status': 'active'
                     })
                     
@@ -163,7 +162,6 @@ class TradingThread(threading.Thread):
                         # 해당 코인의 모든 활성 거래 내역 조회
                         all_active_trades = list(self.db.trades.find({
                             'coin': coin,
-                            'thread_id': self.thread_id,
                             'status': 'active'
                         }))
                         
