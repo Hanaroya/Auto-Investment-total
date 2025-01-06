@@ -51,7 +51,7 @@ class TradingManager:
             # 시간대 확인 로깅
             self.logger.debug(f"현재 KST 시간: {kst_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             
-            # 테스트 모드 확인 (config의 mode와 upbit test_mode 모두 확인)
+            # 테스트 모드 확인
             is_test = (
                 self.config.get('mode') == 'test' or 
                 self.config.get('api_keys', {}).get('upbit', {}).get('test_mode', True)
@@ -61,16 +61,26 @@ class TradingManager:
             fee_rate = self.config['api_keys']['upbit'].get('fee', 0.05) / 100  # 0.05% -> 0.0005
             investment_amount = strategy_data.get('investment_amount', 0)
             fee_amount = investment_amount * fee_rate
-            actual_investment = investment_amount - fee_amount  # 수수료를 제외한 실제 투자금액
-            
+            actual_investment = investment_amount - fee_amount
+
+            # 물타기 여부 확인 및 기존 거래 정보 조회
+            is_averaging_down = strategy_data.get('is_averaging_down', False)
+            existing_trade = None
+            if is_averaging_down:
+                existing_trade = self.db.trades.find_one({
+                    'coin': coin,
+                    'thread_id': thread_id,
+                    'status': 'active'
+                })
+
             order_result = None
             if not is_test:
-                # 실제 매수 주문 실행 (수수료를 제외한 금액으로 주문)
+                # 실제 매수 주문 실행
                 order_result = self.upbit.place_order(
                     market=coin,
                     side='bid',
                     price=price,
-                    volume=strategy_data.get('investment_amount', 0) / price
+                    volume=actual_investment / price
                 )
 
                 if not order_result:
@@ -85,41 +95,68 @@ class TradingManager:
                     'price': price
                 }
 
-            trade_data = {
-                'coin': coin,
-                'type': 'buy',
-                'price': price,
-                'signal_strength': signal_strength,
-                'current_price': price,
-                'profit_rate': 0,
-                'thread_id': thread_id,
-                'strategy_data': strategy_data,
-                'status': 'active',
-                'investment_amount': investment_amount,
-                'fee_amount': floor(fee_amount),
-                'actual_investment': floor(actual_investment),
-                'fee_rate': fee_rate,
-                'order_id': order_result.get('uuid'),
-                'executed_volume': order_result.get('executed_volume', 0),
-                'test_mode': is_test,
-                'timestamp': kst_now.strftime('%Y-%m-%d %H:%M:%S %Z')
-            }
+            if is_averaging_down and existing_trade:
+                # 기존 거래 정보 업데이트 (물타기)
+                total_investment = existing_trade['investment_amount'] + investment_amount
+                total_volume = existing_trade['executed_volume'] + order_result['executed_volume']
+                average_price = (existing_trade['price'] * existing_trade['executed_volume'] + 
+                               price * order_result['executed_volume']) / total_volume
 
-            # 거래 데이터 저장
-            self.db.insert_trade(trade_data)
-            
+                update_data = {
+                    'investment_amount': total_investment,
+                    'executed_volume': total_volume,
+                    'price': average_price,
+                    'averaging_down_count': existing_trade.get('averaging_down_count', 0) + 1,
+                    'last_averaging_down': {
+                        'price': price,
+                        'amount': investment_amount,
+                        'timestamp': kst_now.strftime('%Y-%m-%d %H:%M:%S %Z')
+                    }
+                }
+                
+                self.db.trades.update_one(
+                    {'_id': existing_trade['_id']},
+                    {'$set': update_data}
+                )
+                
+                trade_data = {**existing_trade, **update_data}
+            else:
+                # 새로운 거래 데이터 생성
+                trade_data = {
+                    'coin': coin,
+                    'type': 'buy',
+                    'price': price,
+                    'signal_strength': signal_strength,
+                    'current_price': price,
+                    'profit_rate': 0,
+                    'thread_id': thread_id,
+                    'strategy_data': strategy_data,
+                    'status': 'active',
+                    'investment_amount': investment_amount,
+                    'fee_amount': floor(fee_amount),
+                    'actual_investment': floor(actual_investment),
+                    'fee_rate': fee_rate,
+                    'order_id': order_result.get('uuid'),
+                    'executed_volume': order_result.get('executed_volume', 0),
+                    'test_mode': is_test,
+                    'timestamp': kst_now.strftime('%Y-%m-%d %H:%M:%S %Z'),
+                    'averaging_down_count': 0
+                }
+                
+                # 새 거래 데이터 저장
+                self.db.insert_trade(trade_data)
+
             # 메신저로 매수 알림
             message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(trade_data)
             self.messenger.send_message(message=message, messenger_type="slack")
             
+            # 포트폴리오 업데이트
             if order_result:
-                # 포트폴리오 업데이트
                 portfolio = self.db.get_portfolio()
-                investment_amount = strategy_data.get('investment_amount', 0)
                 
                 portfolio['coin_list'][coin] = {
-                    'amount': order_result.get('executed_volume', 0),
-                    'price': price,
+                    'amount': trade_data['executed_volume'],
+                    'price': trade_data['price'],
                     'timestamp': kst_now
                 }
                 portfolio['available_investment'] -= investment_amount
@@ -589,7 +626,19 @@ class TradingManager:
         strategy_data = trade_data['strategy_data']
         
         # 구매 경로 확인
-        buy_reason = "상승세 감지" if strategy_data.get('uptrend_signal', 0) > 0.5 else "하락세 종료"
+        if trade_data.get('averaging_down_count', 0) > 0:
+            buy_reason = "물타기"
+            last_averaging = trade_data.get('last_averaging_down', {})
+            additional_info = (
+                f" 물타기 횟수: {trade_data['averaging_down_count']}회\n"
+                f" 평균 매수가: {trade_data['price']:,}원\n"
+                f" 이전 매수가: {last_averaging.get('price', 0):,}원\n"
+                f" 추가 매수액: {last_averaging.get('amount', 0):,}원\n"
+            )
+        else:
+            buy_reason = "상승세 감지" if strategy_data.get('uptrend_signal', 0) > 0.5 else "하락세 종료"
+            additional_info = ""
+
         kst_now = datetime.now(timezone(timedelta(hours=9)))
 
         message = (
@@ -601,6 +650,10 @@ class TradingManager:
             f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
             f" 투자 금액: W{trade_data.get('investment_amount', 0):,}\n"
         )
+
+        # 물타기 정보 추가
+        if additional_info:
+            message += additional_info
 
         # 전략별 결과 추가
         if 'rsi' in strategy_data:

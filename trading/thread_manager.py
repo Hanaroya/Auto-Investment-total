@@ -198,7 +198,52 @@ class TradingThread(threading.Thread):
                                 self.logger.info(f"매도 신호 처리 완료: {coin}")
                     
                     else:
-                        # 매수 신호 확인
+                        # 매수 신호 확인 (기존 매수 또는 물타기)
+                        
+                        # 해당 코인의 모든 활성 거래 내역 조회
+                        all_active_trades = list(self.db.trades.find({
+                            'coin': coin,
+                            'thread_id': self.thread_id,
+                            'status': 'active'
+                        }))
+                        
+                        # 평균 수익률 계산
+                        if all_active_trades:
+                            total_profit_rate = sum(trade.get('profit_rate', 0) for trade in all_active_trades)
+                            avg_profit_rate = total_profit_rate / len(all_active_trades)
+                            total_investment = sum(trade.get('total_investment', 0) for trade in all_active_trades)
+                            
+                            # 물타기 조건 확인
+                            should_average_down = (
+                                avg_profit_rate <= -1 and  # 수익률이 -1% 이하
+                                total_investment < self.max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
+                                signals.get('price_trend', 0) > -0.5 and  # 급격한 하락이 아닌 경우
+                                signals.get('volatility', 0) < 0.7  # 변동성이 과도하지 않은 경우
+                            )
+                            
+                            if should_average_down:
+                                # 물타기 투자금 계산 (기존 투자금의 50%)
+                                averaging_down_amount = min(
+                                    floor(total_investment * 0.5),
+                                    self.max_investment - total_investment
+                                )
+                                
+                                if averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
+                                    self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {avg_profit_rate:.2f}%")
+                                    signals['investment_amount'] = averaging_down_amount
+                                    signals['is_averaging_down'] = True # 물타기 플래그 추가
+                                    
+                                    self.trading_manager.process_buy_signal(
+                                        coin=coin,
+                                        thread_id=self.thread_id,
+                                        signal_strength=0.8,  # 물타기용 신호 강도
+                                        price=current_price,
+                                        strategy_data=signals
+                                    )
+                                    self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
+                                    return
+                        
+                        # 일반 매수 신호 처리 (기존 로직)
                         if signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and current_investment < self.max_investment:
                             self.logger.info(f"매수 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
                             investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
