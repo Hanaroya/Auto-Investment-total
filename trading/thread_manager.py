@@ -160,18 +160,24 @@ class TradingThread(threading.Thread):
                         volatility = signals.get('volatility', 0)    # 변동성 지표
                         
                         # 해당 코인의 모든 활성 거래 내역 조회
-                        active_avg_trades = self.db.trades.find({
+                        active_avg_trades = list(self.db.trades.find({
                             'coin': coin,
                             'status': 'active'
-                        })
+                        }))
                         
                         # 평균 수익률 계산
-                        total_profit_rate = active_avg_trades.get('profit_rate', 0)
-                        total_investment = active_avg_trades.get('total_investment', 0)
+                        if active_avg_trades:
+                            total_profit_rate = sum(trade.get('profit_rate', 0) for trade in active_avg_trades)
+                            total_investment = sum(trade.get('total_investment', 0) for trade in active_avg_trades)
+                            avg_profit_rate = total_profit_rate / len(active_avg_trades)
+                        else:
+                            total_profit_rate = 0
+                            total_investment = 0
+                            avg_profit_rate = 0
                         
                         # 물타기 조건 확인
                         should_average_down = (
-                            total_profit_rate <= -1 and  # 수익률이 -1% 이하
+                            avg_profit_rate <= -1 and  # 수익률이 -1% 이하
                             total_investment < self.max_investment * 0.8  # 최대 투자금의 80% 미만 사용
                         )
                         
@@ -183,7 +189,7 @@ class TradingThread(threading.Thread):
                             )
                             
                             if averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
-                                self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {total_profit_rate:.2f}%")
+                                self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {avg_profit_rate:.2f}%")
                                 
                                 # 기존 거래 정보 가져오기
                                 existing_trade = self.db.trades.find_one({
