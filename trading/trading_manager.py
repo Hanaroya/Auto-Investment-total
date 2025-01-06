@@ -102,7 +102,7 @@ class TradingManager:
                 'order_id': order_result.get('uuid'),
                 'executed_volume': order_result.get('executed_volume', 0),
                 'test_mode': is_test,
-                'timestamp': kst_now
+                'timestamp': kst_now.strftime('%Y-%m-%d %H:%M:%S %Z')
             }
 
             # 거래 데이터 저장
@@ -561,10 +561,15 @@ class TradingManager:
             # Slack으로 메시지 전송
             self.messenger.send_message(message=message, messenger_type="slack")
             
+            # 리포트 전송 상태 업데이트
+            self.db.update_daily_profit_report_status(reported=True)
+            
             self.logger.info(f"일일 리포트 생성 및 전송 완료: {kst_today.strftime('%Y-%m-%d')}")
             
         except Exception as e:
             self.logger.error(f"일일 리포트 생성 중 오류 발생: {str(e)}")
+            # 리포트 전송 실패 시 상태 업데이트
+            self.db.update_daily_profit_report_status(reported=False)
             raise
         finally:
             # 파일 정리
@@ -585,11 +590,12 @@ class TradingManager:
         
         # 구매 경로 확인
         buy_reason = "상승세 감지" if strategy_data.get('uptrend_signal', 0) > 0.5 else "하락세 종료"
-        
+        kst_now = datetime.now(timezone(timedelta(hours=9)))
+
         message = (
             f"------------------------------------------------\n"
             f"Coin: {trade_data['coin']}, 구매 ({buy_reason})\n"
-            f" 구매 시간: {trade_data['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f" 구매 시간: {kst_now.strftime('%Y-%m-%d %H:%M:%S')}\n"
             f" 구매 가격: {trade_data['price']:,}\n"
             f" 구매 신호: {trade_data['signal_strength']:.2f}\n"
             f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
@@ -630,11 +636,12 @@ class TradingManager:
         """
         profit_amount = floor((sell_price - trade_data['price']) * trade_data.get('executed_volume', 0))
         total_investment = trade_data.get('investment_amount', 0) + profit_amount
-        
+        kst_now = datetime.now(timezone(timedelta(hours=9)))
+
         message = (
             f"------------------------------------------------\n"
             f"Coin: {trade_data['coin']}, 판매\n"
-            f" 판매 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f" 판매 시간: {kst_now.strftime('%Y-%m-%d %H:%M:%S')}\n"
             f" 구매 가격: {buy_price:,}\n"
             f" 판매 가격: {sell_price:,}\n"
             f" 판매 신호: {sell_signal:.2f}\n"
@@ -722,8 +729,8 @@ class TradingManager:
         """
         try:
             self.logger.info("시간별 리포트 생성 시작")
-            kst = timezone(timedelta(hours=9))
-            current_time = datetime.now(kst).strftime('%Y-%m-%d %H:00')
+            now = datetime.now(timezone(timedelta(hours=9)))
+            current_time = now.strftime('%Y-%m-%d %H:00')
             message = ""
             
             # 변수 초기화
@@ -746,9 +753,9 @@ class TradingManager:
                 # timestamp를 KST로 변환
                 trade_time = trade['timestamp']
                 if trade_time.tzinfo is None:
-                    trade_time = trade_time.replace(tzinfo=kst)
+                    trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))
                 
-                hold_time = datetime.now(kst) - trade_time
+                hold_time = now - trade_time
                 hours = hold_time.total_seconds() / 3600
                 
                 # 현재 가격 조회
@@ -828,10 +835,10 @@ class TradingManager:
             # Slack으로 메시지 전송
             self.messenger.send_message(message=message, messenger_type="slack")
             
-            self.logger.info(f"일일 리포트 생성 및 전송 완료: {kst.strftime('%Y-%m-%d')}")
+            self.logger.info(f"시간별 리포트 생성 및 전송 완료: {current_time}")
             
         except Exception as e:
-            self.logger.error(f"일일 리포트 생성 중 오류 발생: {e}")
+            self.logger.error(f"시간별 리포트 생성 중 오류 발생: {e}")
             raise
 
     def update_strategy_data(self, coin: str, thread_id: int, price: float, strategy_results: Dict):

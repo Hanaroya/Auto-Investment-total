@@ -172,7 +172,7 @@ class TradingThread(threading.Thread):
                             current_profit_rate > 3 and price_trend < -0.2,
                             
                             # 4. 과도한 손실 방지
-                            current_profit_rate < -5,
+                            current_profit_rate < -3,
                             
                             # 5. 변동성 급증 시 이익 실현
                             current_profit_rate > 2 and volatility > 0.9,
@@ -182,7 +182,7 @@ class TradingThread(threading.Thread):
                             
                             # 7. sell_threshold 이하
                             signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and (
-                                current_profit_rate > 0.15 or current_profit_rate < -0.15)
+                                current_profit_rate > 0.45)
                         ])
                         
                         if should_sell:
