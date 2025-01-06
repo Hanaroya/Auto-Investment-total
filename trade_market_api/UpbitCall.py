@@ -124,7 +124,7 @@ class UpbitCall:
             - 주문 관련 작업은 WARNING 레벨로 처리
         """
         logger = logging.getLogger('investment_center') # 로거 이름 설정
-        logger.setLevel(logging.DEBUG if self.is_test else logging.INFO)
+        logger.setLevel(logging.CRITICAL if self.is_test else logging.WARNING)
         
         log_dir = Path('log')
         log_dir.mkdir(exist_ok=True)
