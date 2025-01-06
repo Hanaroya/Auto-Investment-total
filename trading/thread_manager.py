@@ -182,7 +182,7 @@ class TradingThread(threading.Thread):
                             
                             # 7. sell_threshold 이하
                             signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and (
-                                current_profit_rate > 0.45)
+                                current_profit_rate > 0.15)
                         ])
                         
                         if should_sell:
