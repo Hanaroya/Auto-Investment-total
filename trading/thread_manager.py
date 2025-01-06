@@ -181,8 +181,6 @@ class TradingThread(threading.Thread):
                             if averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
                                 self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
                                 
-                                # 기존 거래 정보 가져오기
-                                
                                 # 물타기용 전략 데이터 업데이트
                                 signals['investment_amount'] = averaging_down_amount
                                 signals['is_averaging_down'] = True
