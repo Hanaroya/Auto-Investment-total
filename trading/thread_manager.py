@@ -157,7 +157,7 @@ class TradingThread(threading.Thread):
                         current_profit_rate = active_trade.get('profit_rate', 0)
                         price_trend = signals.get('price_trend', 0)  # 가격 추세 (-1 ~ 1)
                         volatility = signals.get('volatility', 0)    # 변동성 지표
-                        current_investment = active_trade.get('total_investment', 0)
+                        current_investment = active_trade.get('investment_amount', 0)
                         averaging_down_count = active_trade.get('averaging_down_count', 0)
                         
                         # 디버깅 로깅
@@ -177,7 +177,8 @@ class TradingThread(threading.Thread):
                                 floor(current_investment * 0.5),
                                 self.max_investment - current_investment
                             )
-                        
+                            # self.logger.warning(f"물타기 투자금 계산: {averaging_down_amount:,}원")
+
                             if averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
                                 self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
                                 
@@ -554,7 +555,7 @@ class ThreadManager:
             )
             
             # 새로운 마켓 목록 조회 (거래량 순)
-            markets = upbit.get_krw_markets()
+            markets = [market['market'] for market in upbit.get_krw_markets()]  # market 키값만 추출
             if not markets:
                 self.logger.error("마켓 목록 조회 실패")
                 return

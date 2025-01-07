@@ -69,9 +69,9 @@ class TradingManager:
             if is_averaging_down:
                 existing_trade = self.db.trades.find_one({
                     'coin': coin,
-                    'thread_id': thread_id,
                     'status': 'active'
                 })
+                self.logger.warning(f"물타기 신호 감지: {coin} - 현재 수익률: {existing_trade.get('profit_rate', 0):.2f}%")
 
             order_result = None
             if not is_test:
@@ -104,8 +104,9 @@ class TradingManager:
 
                 update_data = {
                     'investment_amount': total_investment,
+                    'actual_investment': existing_trade['actual_investment'] + actual_investment,
                     'executed_volume': total_volume,
-                    'price': average_price,
+                    'price': round(average_price, 2),
                     'averaging_down_count': existing_trade.get('averaging_down_count', 0) + 1,
                     'last_averaging_down': {
                         'price': price,
@@ -951,7 +952,6 @@ class TradingManager:
                 active_trades = self.db.trades.find(
                     {
                         'coin': coin, 
-                        'thread_id': thread_id,
                         'status': 'active'
                     }
                 )
