@@ -338,7 +338,6 @@ class TradingManager:
         - 파일 처리 후 정리
         """
         try:
-            message = ""
             # 오늘 날짜 기준으로 거래 내역 조회
             kst_today = datetime.now(timezone(timedelta(hours=9))).replace(
                 hour=0, minute=0, second=0, microsecond=0
@@ -557,7 +556,7 @@ class TradingManager:
                 f"🔢 보유 코인: {len(active_trades)}개\n"
             )
             
-            message = portfolio_summary + "\n" + message + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            message = "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + portfolio_summary + "\n" + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # 포트폴리오 정보 추가
             portfolio = self.db.get_portfolio()
