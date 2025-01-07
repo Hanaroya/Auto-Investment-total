@@ -579,15 +579,6 @@ class TradingManager:
             
             self.db.update_portfolio(portfolio_update)
             
-            message += (
-                f"\n📊 포트폴리오 현황\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 총 투자금액: ₩{portfolio.get('investment_amount', 0):,.0f}\n"
-                f"💵 사용 가능 금액: ₩{portfolio.get('available_investment', 0):,.0f}\n"
-                f"📈 현재 평가금액: ₩{portfolio.get('current_amount', 0):,.0f}\n"
-                f"📊 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n\n"
-            )
-            
             # Slack으로 메시지 전송
             self.messenger.send_message(message=message, messenger_type="slack")
             
