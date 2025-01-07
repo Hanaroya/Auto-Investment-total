@@ -554,8 +554,8 @@ class ThreadManager:
                 self.config['api_keys']['upbit']['secret_key']
             )
             
-            # 새로운 마켓 목록 조회 (거래량 순)
-            markets = [market['market'] for market in upbit.get_krw_markets()]  # market 키값만 추출
+            # 새로운 마켓 목록 조회 (거래량 순으로 이미 정렬되어 있음)
+            markets = upbit.get_krw_markets()
             if not markets:
                 self.logger.error("마켓 목록 조회 실패")
                 return
@@ -568,6 +568,9 @@ class ThreadManager:
                 if i < len(market_groups):
                     thread.coins = market_groups[i]
                     self.logger.info(f"Thread {i}: {len(market_groups[i])} 개의 코인 재할당")
+                    # 첫 번째 코인 로깅
+                    if market_groups[i]:
+                        self.logger.debug(f"Thread {i}의 첫 번째 코인: {market_groups[i][0]}")
                     
             self.logger.info("코인 목록 재분배 완료")
             

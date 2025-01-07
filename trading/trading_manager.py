@@ -338,6 +338,7 @@ class TradingManager:
         - 파일 처리 후 정리
         """
         try:
+            message = ""
             # 오늘 날짜 기준으로 거래 내역 조회
             kst_today = datetime.now(timezone(timedelta(hours=9))).replace(
                 hour=0, minute=0, second=0, microsecond=0
@@ -487,14 +488,6 @@ class TradingManager:
                 # 숨겨진 차트 데이터 영역 숨기기
                 if active_trades:
                     worksheet.set_default_row(hide_unused_rows=True)
-
-            # 이메일 전송
-            self.messenger.send_message(
-                message=f"{kst_today.strftime('%Y-%m-%d')} 일일 리포트입니다.",
-                messenger_type="email",
-                subject=f"{kst_today.strftime('%Y-%m-%d')} 투자 리포트",
-                attachment_path=filename
-            )
             
             # 메신저 알림
             stats_message = (
