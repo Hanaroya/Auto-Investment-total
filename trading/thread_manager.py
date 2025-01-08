@@ -86,9 +86,9 @@ class TradingThread(threading.Thread):
                         break
                         
                     try:
-                        self.process_single_coin(coin['market'])
+                        self.process_single_coin(coin)
                     except Exception as e:
-                        self.logger.error(f"Error processing {coin['market']}: {str(e)}")
+                        self.logger.error(f"Error processing {coin}: {str(e)}")
                         continue
                 
                 # 사이클 완료 시간 계산
@@ -439,15 +439,15 @@ class ThreadManager:
             self.logger.error(f"스레드 시작 실패: {str(e)}")
             self.stop_all_threads()
 
-    def split_markets(self, markets: List[Dict]) -> List[List[Dict]]:
+    def split_markets(self, markets: List) -> List[List]:
         """
         전체 마켓 목록을 10개의 균등한 그룹으로 분할합니다.
         
         Args:
-            markets (List[Dict]): 분할할 마켓 목록
+            markets (List): 분할할 마켓 목록
             
         Returns:
-            List[List[Dict]]: 분할된 마켓 그룹 목록
+            List[List]: 분할된 마켓 그룹 목록
         """
         try:
             # 이미 거래량으로 정렬된 마켓 리스트를 역순으로 변경
@@ -465,7 +465,7 @@ class ThreadManager:
                 market_groups.append(group)
                 
                 # 각 그룹의 첫 번째 코인 로깅
-                self.logger.debug(f"Thread {i}에 할당된 첫 번째 코인: {group[0]['market'] if group else 'None'}")
+                self.logger.debug(f"Thread {i}에 할당된 첫 번째 코인: {group[0] if group else 'None'}")   
             
             return market_groups
             

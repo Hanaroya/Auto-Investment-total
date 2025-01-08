@@ -710,16 +710,6 @@ class MongoDBManager:
             self.logger.error(f"전략 데이터 조회 실패 - 코인: {coin}, 오류: {str(e)}")
             return {}
 
-    def get_sorted_markets(self) -> List[Dict]:
-        """정렬된 마켓 데이터 조회"""
-        try:
-            cursor = self.market_data.find().sort('volume', -1)
-            markets = cursor.to_list(length=None)
-            return markets
-        except Exception as e:
-            self.logger.error(f"마켓 데이터 조회 중 오류: {str(e)}")
-            return []
-
     def cleanup_strategy_data(self):
         """strategy_data 컬렉션 정리"""
         try:

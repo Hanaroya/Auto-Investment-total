@@ -58,7 +58,7 @@ class MarketAnalyzer:
             'Divergence': DivergenceStrategy()
         }
 
-    async def get_sorted_markets(self) -> List[Dict]:
+    async def get_sorted_markets(self) -> List:
         """
         거래량 기준으로 정렬된 시장 목록을 반환합니다.
         """
@@ -80,7 +80,7 @@ class MarketAnalyzer:
                         {'$set': data},
                         upsert=True
                     )
-                    market_data.append(data)
+                    market_data.append(market)
                 except Exception as e:
                     self.logger.error(f"마켓 데이터 업데이트 실패 - {market}: {str(e)}")
                     continue

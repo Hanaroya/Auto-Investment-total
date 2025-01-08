@@ -240,7 +240,7 @@ class InvestmentCenter:
             # 코인 시장 정보 수집 및 정렬
             markets = await self.market_analyzer.get_sorted_markets()
             if not markets:
-                await self.messenger.send_message(message="마켓 정보를 가져오는데 실패했습니다.", messenger_type="slack")
+                self.messenger.send_message(message="마켓 정보를 가져오는데 실패했습니다.", messenger_type="slack")
                 return
             
             self.logger.info(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
