@@ -54,7 +54,7 @@ class TradingThread(threading.Thread):
         system_config = self.db.system_config.find_one({'_id': 'system_config'})
         if not system_config:
             self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
-            self.max_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))
+            self.max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 80000))
             self.investment_each = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)) / 40
         else:
             self.max_investment = system_config.get('max_thread_investment', 80000)
