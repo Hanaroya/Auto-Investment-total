@@ -54,11 +54,13 @@ class TradingThread(threading.Thread):
         system_config = self.db.system_config.find_one({'_id': 'system_config'})
         if not system_config:
             self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
-            self.max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 80000))
-            self.investment_each = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)) / 40
+            self.max_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))
+            self.total_max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000))
+            self.investment_each = self.total_max_investment / 40
         else:
             self.max_investment = system_config.get('max_thread_investment', 80000)
-            self.investment_each = system_config.get('total_max_investment', 800000) / 40
+            self.total_max_investment = system_config.get('total_max_investment', 800000)
+            self.investment_each = self.total_max_investment / 40
         
         self.logger.info(f"Thread {thread_id} 초기화 완료 (최대 투자금: {self.max_investment:,}원)")
 
@@ -129,7 +131,7 @@ class TradingThread(threading.Thread):
             current_investment = sum(trade.get('total_investment', 0) for trade in active_trades)
 
             # 최대 투자금 체크
-            if current_investment >= self.max_investment:
+            if current_investment >= self.total_max_investment:
                 self.logger.info(f"Thread {self.thread_id}: {coin} - 최대 투자금 도달")
                 return
 
@@ -151,7 +153,7 @@ class TradingThread(threading.Thread):
                     
                     self.logger.info(f"Thread {self.thread_id}: {coin} - Active trade check result: {active_trade is not None}")
                     self.logger.debug(f"Signals: {signals}")
-                    self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.max_investment}")
+                    self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.total_max_investment}")
 
                     if active_trade:
                         current_profit_rate = active_trade.get('profit_rate', 0)
@@ -168,14 +170,14 @@ class TradingThread(threading.Thread):
                         # 물타기 조건 확인
                         should_average_down = (
                             current_profit_rate <= -2 and  # 수익률이 -2% 이하
-                            current_investment < self.max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
+                            current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
                             averaging_down_count < 3  # 최대 3회까지만 물타기
                         )
                         if should_average_down:
                             # 물타기 투자금 계산 (기존 투자금의 50%)
                             averaging_down_amount = min(
                                 floor(current_investment * 0.5),
-                                self.max_investment - current_investment
+                                self.total_max_investment - current_investment
                             )
                             # self.logger.warning(f"물타기 투자금 계산: {averaging_down_amount:,}원")
 
