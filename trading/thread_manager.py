@@ -166,38 +166,7 @@ class TradingThread(threading.Thread):
                         self.logger.debug(f"{coin} - 수익률: {current_profit_rate:.2f}%, "
                                          f"투자금: {current_investment:,}원, "
                                          f"물타기 횟수: {averaging_down_count}")
-                        
-                        # 물타기 조건 확인
-                        should_average_down = (
-                            current_profit_rate <= -2 and  # 수익률이 -2% 이하
-                            current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
-                            averaging_down_count < 3  # 최대 3회까지만 물타기
-                        )
-                        if should_average_down:
-                            # 물타기 투자금 계산 (기존 투자금의 50%)
-                            averaging_down_amount = min(
-                                floor(current_investment * 0.5),
-                                self.total_max_investment - current_investment
-                            )
-                            # self.logger.warning(f"물타기 투자금 계산: {averaging_down_amount:,}원")
 
-                            if averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
-                                self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
-                                
-                                # 물타기용 전략 데이터 업데이트
-                                signals['investment_amount'] = averaging_down_amount
-                                signals['is_averaging_down'] = True
-                                signals['existing_trade_id'] = active_trade['_id']
-                                
-                                self.trading_manager.process_buy_signal(
-                                    coin=coin,
-                                    thread_id=self.thread_id,
-                                    signal_strength=0.8,  # 물타기용 신호 강도
-                                    price=current_price,
-                                    strategy_data=signals
-                                )
-                                self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
-                    
                     # 매도 조건 확인
                         should_sell = any([
                             # 1. 급격한 하락 감지
@@ -223,7 +192,7 @@ class TradingThread(threading.Thread):
                                 current_profit_rate > 0.15)
                         ])
                         
-                        if should_sell and should_average_down == False:
+                        if should_sell:
                             self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
                                         f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
                             if self.trading_manager.process_sell_signal(
@@ -234,7 +203,38 @@ class TradingThread(threading.Thread):
                                 strategy_data=signals
                             ):
                                 self.logger.info(f"매도 신호 처리 완료: {coin}")
+                        
+                        # 물타기 조건 확인
+                        should_average_down = (
+                            current_profit_rate <= -2 and  # 수익률이 -2% 이하
+                            current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
+                            averaging_down_count < 3  # 최대 3회까지만 물타기
+                        )
+                        if should_average_down and should_sell == False:
+                            # 물타기 투자금 계산 (기존 투자금의 50%)
+                            averaging_down_amount = min(
+                                floor(current_investment * 0.5),
+                                self.total_max_investment - current_investment
+                            )
+                            # self.logger.warning(f"물타기 투자금 계산: {averaging_down_amount:,}원")
 
+                            if averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
+                                self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
+                                
+                                # 물타기용 전략 데이터 업데이트
+                                signals['investment_amount'] = averaging_down_amount
+                                signals['is_averaging_down'] = True
+                                signals['existing_trade_id'] = active_trade['_id']
+                                
+                                self.trading_manager.process_buy_signal(
+                                    coin=coin,
+                                    thread_id=self.thread_id,
+                                    signal_strength=0.8,  # 물타기용 신호 강도
+                                    price=current_price,
+                                    strategy_data=signals
+                                )
+                                self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
+                    
                     else:
                         # 일반 매수 신호 처리 (기존 로직)
                         if signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and current_investment < self.max_investment:
