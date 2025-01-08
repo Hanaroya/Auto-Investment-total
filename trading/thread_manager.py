@@ -195,7 +195,6 @@ class TradingThread(threading.Thread):
                                     strategy_data=signals
                                 )
                                 self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
-                                return
                     
                     # 매도 조건 확인
                         should_sell = any([
@@ -222,7 +221,7 @@ class TradingThread(threading.Thread):
                                 current_profit_rate > 0.15)
                         ])
                         
-                        if should_sell:
+                        if should_sell and should_average_down == False:
                             self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
                                         f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
                             if self.trading_manager.process_sell_signal(
