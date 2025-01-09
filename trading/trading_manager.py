@@ -142,7 +142,8 @@ class TradingManager:
                     'executed_volume': order_result.get('executed_volume', 0),
                     'test_mode': is_test,
                     'timestamp': kst_now.strftime('%Y-%m-%d %H:%M:%S %Z'),
-                    'averaging_down_count': 0
+                    'averaging_down_count': 0,
+                    'user_call': False
                 }
                 
                 # 새 거래 데이터 저장
@@ -186,7 +187,7 @@ class TradingManager:
             
             # 해당 코인의 활성 거래 찾기
             active_trade = next((trade for trade in active_trades 
-                               if trade['coin'] == coin and trade['thread_id'] == thread_id), None)
+                               if trade['coin'] == coin), None)
 
             if not active_trade:
                 return False
@@ -950,10 +951,12 @@ class TradingManager:
                         {
                             '$set': {
                                 'current_price': current_price,
+                                'thread_id': thread_id,
                                 'current_value': current_price * active_trade.get('executed_volume', 0),
                                 'signal_strength': strategy_results.get('overall_signal', 0),
                                 'profit_rate': ((current_price / active_trade.get('price', current_price)) - 1) * 100,
-                                'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                                'last_updated': datetime.now(timezone(timedelta(hours=9))),
+                                'user_call': active_trade.get('user_call', False)
                             }
                         }
                     )

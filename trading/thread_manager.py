@@ -161,11 +161,6 @@ class TradingThread(threading.Thread):
                         volatility = signals.get('volatility', 0)    # 변동성 지표
                         current_investment = active_trade.get('investment_amount', 0)
                         averaging_down_count = active_trade.get('averaging_down_count', 0)
-                        
-                        # 디버깅 로깅
-                        self.logger.debug(f"{coin} - 수익률: {current_profit_rate:.2f}%, "
-                                         f"투자금: {current_investment:,}원, "
-                                         f"물타기 횟수: {averaging_down_count}")
 
                         # 매도 조건 확인
                         should_sell = (
@@ -185,12 +180,21 @@ class TradingThread(threading.Thread):
                             (current_profit_rate > 2 and volatility > 0.9) or
                             
                             # 6. 평균 매수 가격보다 10% 이상 상승한 경우
-                            (current_profit_rate > 10 and current_price > active_trade.get('average_buy_price', 0) * 1.1) or
+                            (current_profit_rate > 10 and current_price > active_trade.get('price', 0) * 1.1) or
                             
                             # 7. sell_threshold 이하
                             (signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and (
-                                current_profit_rate > 0.15))
+                                current_profit_rate > 0.15)) or
+
+                            # 8. 사용자 호출
+                            (active_trade.get('user_call', False))
                         )
+
+                        # 디버깅 로깅
+                        self.logger.debug(f"{coin} - 수익률: {current_profit_rate:.2f}%, "
+                                          f"should_sell: {should_sell}, "
+                                         f"투자금: {current_investment:,}원, "
+                                         f"물타기 횟수: {averaging_down_count}")
                         
                         if should_sell:
                             self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
