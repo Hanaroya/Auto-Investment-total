@@ -875,7 +875,7 @@ class TradingManager:
                 f"💰 총 투자금액: ₩{portfolio.get('investment_amount', 0):,.0f}\n"
                 f"💵 사용 가능 금액: ₩{portfolio.get('available_investment', 0):,.0f}\n"
                 f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
-                f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
                 f"🔢 보유 코인: {len(active_trades)}개\n\n"
             )
             
