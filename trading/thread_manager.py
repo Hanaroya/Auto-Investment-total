@@ -63,6 +63,29 @@ class TradingThread(threading.Thread):
             self.investment_each = self.total_max_investment / 40
         
         self.logger.info(f"Thread {thread_id} 초기화 완료 (최대 투자금: {self.max_investment:,}원)")
+        
+        # system_config 모니터링 및 업데이트를 위한 마지막 체크 시간 추가
+        self.last_config_check = datetime.now()
+        self.update_investment_limits()
+
+    def update_investment_limits(self):
+        """system_config에서 투자 한도를 업데이트"""
+        try:
+            system_config = self.db.system_config.find_one({'_id': 'system_config'})
+            if system_config:
+                initial_investment = system_config.get('initial_investment', 1000000)
+                # total_max_investment를 initial_investment의 80%로 설정
+                self.total_max_investment = floor(initial_investment * 0.8)
+                # 스레드당 최대 투자금은 total_max_investment의 10%로 설정
+                self.max_investment = floor(self.total_max_investment * 0.1)
+                # 코인당 투자금은 total_max_investment를 40으로 나눈 값
+                self.investment_each = floor(self.total_max_investment / 40)
+                
+                self.logger.info(f"Thread {self.thread_id} 투자 한도 업데이트: "
+                               f"최대 투자금: {self.max_investment:,}원, "
+                               f"코인당 투자금: {self.investment_each:,}원")
+        except Exception as e:
+            self.logger.error(f"투자 한도 업데이트 중 오류: {str(e)}")
 
     def run(self):
         """스레드 실행"""
@@ -111,6 +134,12 @@ class TradingThread(threading.Thread):
     def process_single_coin(self, coin: str):
         """단일 코인 처리"""
         try:
+            # 5분마다 투자 한도 업데이트 체크
+            current_time = datetime.now()
+            if (current_time - self.last_config_check).total_seconds() >= 300:  # 5분
+                self.update_investment_limits()
+                self.last_config_check = current_time
+
             # 캔들 데이터 조회 - 락으로 보호
             with self.shared_locks['candle_data']:
                 self.logger.debug(f"Thread {self.thread_id} acquired lock for {coin}")
