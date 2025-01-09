@@ -405,12 +405,13 @@ class TradingManager:
                 # 포트폴리오 현황 시트 추가
                 if portfolio:
                     portfolio_data = {
-                        '항목': ['총 투자금액', '사용 가능 금액', '현재 평가금액', '수익률'],
+                        '항목': ['총 투자금액', '사용 가능 금액', '현재 평가금액', '수익 금액', '수익률'],
                         '금액': [
                             f"₩{portfolio.get('investment_amount', 0):,.0f}",
                             f"₩{portfolio.get('available_investment', 0):,.0f}",
                             f"₩{portfolio.get('current_amount', 0):,.0f}",
-                            f"{((portfolio.get('current_amount', 0) / portfolio.get('investment_amount', 1) - 1) * 100):+.2f}%"
+                            f"₩{portfolio.get('profit_earned', 0):,.0f}",
+                            f"{((portfolio.get('profit_earned', 0) / portfolio.get('investment_amount', 1) - 1) * 100):+.2f}%"
                         ]
                     }
                     pd.DataFrame(portfolio_data).to_excel(
@@ -495,7 +496,7 @@ class TradingManager:
                 f"총 거래: {total_trades}건\n"
                 f"수익 거래: {profitable_trades}건\n"
                 f"승률: {(profitable_trades/total_trades*100):.1f}%\n"
-                f"총 수익금: ₩{total_profit:,.0f}"
+                f"총 수익금: ₩{portfolio.get('profit_earned', 0):,.0f}"
             ) if trading_history else "오늘의 거래 내역이 없습니다."
             
             self.messenger.send_message(
@@ -515,10 +516,10 @@ class TradingManager:
             initial_investment = system_config.get('initial_investment', 1000000)
             
             # 누적 수익 계산
-            total_profit_earned = system_config.get('total_profit_earned', 0)
+            total_profit_earned = portfolio.get('profit_earned', 0)
             
             # 현성 거래에서 총 투자금과 현재 가치 계산
-            total_investment = 0
+            total_investment = system_config.get('investment_amount', 0)
             total_current_value = 0
             
             for trade in active_trades:
@@ -533,7 +534,7 @@ class TradingManager:
                 total_current_value += current_value
             
             # 수익 계산
-            total_profit_amount = total_current_value - total_investment
+            total_profit_amount = total_profit_earned
             total_profit_rate = (total_profit_earned / initial_investment * 100)
             
             # system_config 업데이트
@@ -830,10 +831,9 @@ class TradingManager:
             initial_investment = system_config.get('initial_investment', 1000000)
             
             # 누적 수익 계산
-            total_profit_earned = system_config.get('total_profit_earned', 0)
+            total_profit_earned = portfolio.get('profit_earned', 0)
             
             # 현재 수익률 계산
-            total_profit_amount = total_current_value - total_investment
             total_profit_rate = (total_profit_earned / initial_investment * 100)
             
             # 일일 리포트 후 system_config 업데이트
@@ -841,7 +841,7 @@ class TradingManager:
                 {},
                 {
                     '$set': {
-                        'total_profit_earned': total_profit_earned + total_profit_amount,
+                        'total_profit_earned': total_profit_earned,
                         'last_updated': datetime.now(timezone(timedelta(hours=9)))
                     }
                 }
@@ -852,7 +852,7 @@ class TradingManager:
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 초기 투자금: ₩{initial_investment:,}\n"
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
-                f"📊 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
+                f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
                 f"📈 당일 수익률: {((total_profit_amount/total_investment)*100):+.2f}% (₩{total_profit_amount:+,.0f})\n"
                 f"🔢 보유 코인: {len(active_trades)}개\n"
             )
@@ -867,8 +867,9 @@ class TradingManager:
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 총 투자금액: ₩{portfolio.get('investment_amount', 0):,.0f}\n"
                 f"💵 사용 가능 금액: ₩{portfolio.get('available_investment', 0):,.0f}\n"
-                f"📈 현재 평가금액: ₩{portfolio.get('current_amount', 0):,.0f}\n"
-                f"📊 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n\n"
+                f"📈 당일 수익률: {((total_profit_amount/total_investment)*100):+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"🔢 보유 코인: {len(active_trades)}개\n\n"
             )
             
             # Slack으로 메시지 전송
