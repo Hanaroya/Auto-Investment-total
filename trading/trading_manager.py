@@ -72,7 +72,7 @@ class TradingManager:
                     'coin': coin,
                     'status': 'active'
                 })
-                self.logger.warning(f"물타기 신호 감지: {coin} - 현재 수익률: {existing_trade.get('profit_rate', 0):.2f}%")
+                self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {existing_trade.get('profit_rate', 0):.2f}%")
 
             order_result = None
             if not is_test:
@@ -107,7 +107,7 @@ class TradingManager:
                     'investment_amount': total_investment,
                     'actual_investment': existing_trade['actual_investment'] + actual_investment,
                     'executed_volume': total_volume,
-                    'price': round(average_price, 2),
+                    'price': round(average_price, 9),
                     'averaging_down_count': existing_trade.get('averaging_down_count', 0) + 1,
                     'last_averaging_down': {
                         'price': price,
@@ -536,8 +536,11 @@ class TradingManager:
             
             # 수익 계산
             total_profit_amount = total_profit_earned
-            total_profit_rate = (total_profit_earned / initial_investment * 100)
+            total_profit_rate = (total_profit_earned / initial_investment * 100) if initial_investment > 0 else 0
             
+            # 당일 수익률 계산 (0으로 나누기 방지)
+            daily_profit_rate = ((total_profit_amount/total_investment)*100) if total_investment > 0 else 0
+
             # system_config 업데이트
             self.db.get_sync_collection('system_config').update_one(
                 {},
@@ -552,10 +555,10 @@ class TradingManager:
             portfolio_summary = (
                 f"📈 포트폴리오 요약\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💰 총기 투자금: ₩{initial_investment:,}\n"
+                f"💰 초기 투자금: ₩{initial_investment:,}\n"
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
                 f"📊 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
-                f"📈 당일 수익률: {((total_profit_amount/total_investment)*100):+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
                 f"🔢 보유 코인: {len(active_trades)}개\n"
             )
             
@@ -834,8 +837,8 @@ class TradingManager:
             # 누적 수익 계산
             total_profit_earned = portfolio.get('profit_earned', 0)
             
-            # 현재 수익률 계산
-            total_profit_rate = (total_profit_earned / initial_investment * 100)
+            # 현재 수익률 계산 (0으로 나누기 방지)
+            total_profit_rate = (total_profit_earned / initial_investment * 100) if initial_investment > 0 else 0
             
             # 일일 리포트 후 system_config 업데이트
             self.db.get_sync_collection('system_config').update_one(
@@ -847,6 +850,9 @@ class TradingManager:
                     }
                 }
             )
+
+            # 당일 수익률 계산 (0으로 나누기 방지)
+            daily_profit_rate = ((total_profit_amount/total_investment)*100) if total_investment > 0 else 0
             
             portfolio_summary = (
                 f"📈 포트폴리오 요약\n"
@@ -854,7 +860,7 @@ class TradingManager:
                 f"💰 초기 투자금: ₩{initial_investment:,}\n"
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
                 f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
-                f"📈 당일 수익률: {((total_profit_amount/total_investment)*100):+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
                 f"🔢 보유 코인: {len(active_trades)}개\n"
             )
             
@@ -868,7 +874,7 @@ class TradingManager:
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 총 투자금액: ₩{portfolio.get('investment_amount', 0):,.0f}\n"
                 f"💵 사용 가능 금액: ₩{portfolio.get('available_investment', 0):,.0f}\n"
-                f"📈 당일 수익률: {((total_profit_amount/total_investment)*100):+.2f}% (₩{total_profit_amount:+,.0f})\n"
+                f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
                 f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
                 f"🔢 보유 코인: {len(active_trades)}개\n\n"
             )
@@ -945,6 +951,14 @@ class TradingManager:
                 current_price = strategy_results.get('price', price)
                 
                 for active_trade in active_trades:
+                    # 수익률 계산 시 0으로 나누기 방지
+                    base_price = active_trade.get('price', current_price)
+                    if base_price <= 0:
+                        self.logger.warning(f"{coin} - 유효하지 않은 매수가: {base_price}")
+                        profit_rate = 0
+                    else:
+                        profit_rate = ((current_price / base_price) - 1) * 100
+
                     # 현재 가격 업데이트
                     self.db.trades.update_one(
                         {'_id': active_trade['_id']},
@@ -954,7 +968,7 @@ class TradingManager:
                                 'thread_id': thread_id,
                                 'current_value': current_price * active_trade.get('executed_volume', 0),
                                 'signal_strength': strategy_results.get('overall_signal', 0),
-                                'profit_rate': ((current_price / active_trade.get('price', current_price)) - 1) * 100,
+                                'profit_rate': profit_rate,
                                 'last_updated': datetime.now(timezone(timedelta(hours=9))),
                                 'user_call': active_trade.get('user_call', False)
                             }
