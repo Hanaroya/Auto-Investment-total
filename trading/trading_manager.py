@@ -951,6 +951,7 @@ class TradingManager:
                             '$set': {
                                 'current_price': current_price,
                                 'current_value': current_price * active_trade.get('executed_volume', 0),
+                                'signal_strength': strategy_results.get('overall_signal', 0),
                                 'profit_rate': ((current_price / active_trade.get('price', current_price)) - 1) * 100,
                                 'last_updated': datetime.now(timezone(timedelta(hours=9)))
                             }
