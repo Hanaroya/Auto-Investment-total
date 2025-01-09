@@ -546,7 +546,8 @@ class TradingManager:
                 {},
                 {
                     '$set': {
-                        'total_profit_earned': total_profit_earned + total_profit_amount,
+                        'total_profit_earned': total_profit_earned,
+                        'initial_investment': initial_investment + total_profit_amount,
                         'last_updated': datetime.now(timezone(timedelta(hours=9)))
                     }
                 }
@@ -570,8 +571,8 @@ class TradingManager:
             # 포트폴리오 정보 업데이트
             portfolio_update = {
                 'current_amount': floor(total_current_value),
-                'investment_amount': initial_investment,
-                'available_investment': floor(initial_investment - total_investment),
+                'investment_amount': initial_investment + total_profit_amount,
+                'profit_earned': 0,
                 'last_updated': datetime.now(timezone(timedelta(hours=9))),
                 'coin_list': {
                     trade['coin']: {
