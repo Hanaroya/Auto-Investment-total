@@ -1,3 +1,4 @@
+import time
 from typing import Dict, List
 import logging
 from database.mongodb_manager import MongoDBManager
@@ -818,6 +819,7 @@ class TradingManager:
                     f"  └ 투자금액: ₩{investment_amount:,}\n"
                 )
                 message += coin_info + "\n"
+                time.sleep(0.07)
             
             # 전체 포트폴리오 수익률
             total_profit_rate = ((total_current_value - total_investment) / total_investment * 100) if total_investment > 0 else 0
