@@ -374,6 +374,8 @@ class ThreadManager:
             
             # 먼저 stop_flag 설정
             self.stop_flag.set()
+
+            # 모든 거래 강제 판매
             
             # 각 스레드 종료 대기
             for thread in self.threads:
