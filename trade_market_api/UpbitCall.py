@@ -195,7 +195,7 @@ class UpbitCall:
 
     def _has_sufficient_data(self, candle_data: List[Dict], market: str) -> bool:
         """충분한 캔들 데이터가 있는지 확인"""
-        required_candles = 200  # 필요한 최소 캔들 수
+        required_candles = 100  # 필요한 최소 캔들 수
         if not candle_data or len(candle_data) < required_candles:
             self.logger.warning(f"Thread {threading.current_thread().name} - {market} - 불충분한 캔들 데이터 (수신: {len(candle_data) if candle_data else 0})")
             return False

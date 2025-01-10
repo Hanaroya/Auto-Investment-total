@@ -147,10 +147,6 @@ class TradingThread(threading.Thread):
                 interval = '1' if self.thread_id <= 3 else '240'
                 candles = self.upbit.get_candle(market=coin, interval=interval, count=300)
                 self.logger.debug(f"Thread {self.thread_id} released lock for {coin}")
-                
-            if not candles or len(candles) < 100:
-                self.logger.warning(f"Thread {self.thread_id}: {coin} - 불충분한 캔들 데이터 (수신: {len(candles)})")
-                return
 
             # 현재 투자 상태 확인
             active_trades = self.db.trades.find({
