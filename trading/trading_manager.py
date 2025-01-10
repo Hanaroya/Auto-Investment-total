@@ -549,7 +549,7 @@ class TradingManager:
                 {
                     '$set': {
                         'total_profit_earned': total_profit_earned,
-                        'initial_investment': initial_investment + total_profit_amount,
+                        'total_max_investment': initial_investment + total_profit_amount,
                         'last_updated': datetime.now(timezone(timedelta(hours=9)))
                     }
                 }

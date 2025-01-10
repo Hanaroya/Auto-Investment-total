@@ -73,9 +73,9 @@ class TradingThread(threading.Thread):
         try:
             system_config = self.db.system_config.find_one({'_id': 'system_config'})
             if system_config:
-                initial_investment = system_config.get('initial_investment', 1000000)
+                total_max_investment = system_config.get('total_max_investment', 1000000)
                 # total_max_investment를 initial_investment의 80%로 설정
-                self.total_max_investment = floor(initial_investment * 0.8)
+                self.total_max_investment = floor(total_max_investment * 0.8)
                 # 스레드당 최대 투자금은 total_max_investment의 10%로 설정
                 self.max_investment = floor(self.total_max_investment * 0.1)
                 # 코인당 투자금은 total_max_investment를 40으로 나눈 값
