@@ -376,7 +376,25 @@ class ThreadManager:
             self.stop_flag.set()
 
             # 모든 거래 강제 판매
+            existing_trade = self.db.trades.find_one({
+                'status': 'active'
+            })
             
+            if existing_trade:
+                upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],
+                                  self.config['api_keys']['upbit']['secret_key'])
+                for trade in existing_trade:
+                    current_price = upbit.get_current_price(trade['coin'])
+                    
+                    self.trading_manager.process_sell_signal(
+                        coin=trade['coin'],
+                        thread_id=trade['thread_id'],
+                        signal_strength=0,
+                        price=current_price,
+                        strategy_data={'force_sell': True}
+                    )
+                    time.sleep(0.07)
+            del upbit
             # 각 스레드 종료 대기
             for thread in self.threads:
                 try:
@@ -398,6 +416,17 @@ class ThreadManager:
             self.threads.clear()
             self.logger.info("모든 스레드 종료 완료")
             
+            # add profit earn to system_config's total_max_investment
+            current_config = self.db.system_config.find_one({'_id': 'config'})
+            portfolio = self.db.portfolio.find_one({'_id': 'portfolio'})
+            if current_config and portfolio:
+                total_profit = portfolio.get('profit_earned', 0)
+                new_total_investment = current_config.get('total_max_investment', 0) + total_profit
+                self.db.system_config.update_one(
+                    {'_id': 'config'},
+                    {'$set': {'total_max_investment': new_total_investment}}
+                )
+            
             # 데이터베이스 정리 작업
             try:
                 from database.mongodb_manager import MongoDBManager
@@ -411,7 +440,7 @@ class ThreadManager:
                     self.logger.error(f"strategy_data 정리 실패: {str(e)}")
                 
                 try:
-                    db.cleanup_trades()
+                    db.cleanup_trades(trading_manager=self.trading_manager)
                     self.logger.info("trades 컬렉션 정리 완료")
                 except Exception as e:
                     self.logger.error(f"trades 정리 실패: {str(e)}")

@@ -319,12 +319,12 @@ class MongoDBManager:
         """일일 수익 초기화"""
         try:
             today = datetime.now(timezone(timedelta(hours=9))).replace(hour=0, minute=0, second=0, microsecond=0)
+            portfolio = self.get_portfolio()
             if not self.daily_profit.find_one({'date': today}):
                 initial_profit = {
                     'date': today,
-                    'profit_history': [],
                     'reported': False,  # 리포트 전송 상태 추적
-                    'total_profit': 0,
+                    'total_profit': portfolio.get('profit_earned', 0),
                     'created_at': datetime.now(timezone(timedelta(hours=9)))
                 }
                 self.daily_profit.insert_one(initial_profit)
@@ -725,7 +725,7 @@ class MongoDBManager:
         except Exception as e:
             self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
             
-    def cleanup_trades(self):
+    def cleanup_trades(self, trading_manager: object):
         """trades, trading_history, portfolio 컬렉션 정리"""
         try:
             # trades 컬렉션 정리
@@ -745,7 +745,7 @@ class MongoDBManager:
             
             # daily_profit 문서가 없으면 생성
             if not daily_profit_doc:
-                self._initialize_daily_profit()
+                trading_manager.generate_daily_profit()
                 daily_profit_doc = self.daily_profit.find_one({'date': today})
             
             # 리포트가 전송된 경우에만 trading_history와 portfolio 초기화
