@@ -128,6 +128,8 @@ class TradingManager:
                     'coin': coin,
                     'type': 'buy',
                     'price': price,
+                    'buy_signal': signal_strength,
+                    'sell_signal': 0,
                     'signal_strength': signal_strength,
                     'current_price': price,
                     'profit_rate': 0,
@@ -276,7 +278,7 @@ class TradingManager:
                 'total_fees': floor(total_fees),
                 'profit_amount': floor(profit_amount),
                 'profit_rate': round(profit_rate, 2),
-                'buy_signal': active_trade.get('signal_strength', 0),
+                'buy_signal': active_trade.get('buy_signal', 0),
                 'sell_signal': signal_strength,
                 'strategy_data': {
                     'buy': active_trade.get('strategy_data', {}),
