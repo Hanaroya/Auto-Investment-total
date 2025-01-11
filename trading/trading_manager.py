@@ -588,6 +588,11 @@ class TradingManager:
             
             self.db.update_portfolio(portfolio_update)
             
+            # 오후 8시 이전 거래 내역 삭제
+            kst_cutoff = kst_today.replace(hour=20, minute=0, second=0, microsecond=0)
+            self.db.trading_history.delete_many({'sell_timestamp': {'$lt': kst_cutoff}})
+            self.logger.info(f"오후 8시 이전 거래 내역 삭제 완료 (기준시간: {kst_cutoff.strftime('%Y-%m-%d %H:%M:%S')})")
+            
             # Slack으로 메시지 전송
             self.messenger.send_message(message=message, messenger_type="slack")
             
