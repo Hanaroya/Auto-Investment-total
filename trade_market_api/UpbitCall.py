@@ -123,18 +123,24 @@ class UpbitCall:
             - API 호출 결과는 INFO 레벨로 기록
             - 주문 관련 작업은 WARNING 레벨로 처리
         """
-        logger = logging.getLogger('investment_center') # 로거 이름 설정
+        logger = logging.getLogger('investment_center')
+        
+        # 이미 핸들러가 설정되어 있다면 추가 설정하지 않음
+        if logger.handlers:
+            return logger
+        
         logger.setLevel(logging.CRITICAL if self.is_test else logging.WARNING)
         
         log_dir = Path('log')
         log_dir.mkdir(exist_ok=True)
         
         today = datetime.now().strftime('%Y-%m-%d')
-        handler = logging.FileHandler(f'{log_dir}/{today}-trade.log')
+        handler = logging.FileHandler(f'{log_dir}/{today}-trade.log', encoding='utf-8')
         
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+        
         return logger
 
     def _get_auth_header(self, query: Optional[Dict] = None) -> Dict:

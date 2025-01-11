@@ -380,13 +380,15 @@ class ThreadManager:
                 'status': 'active'
             })
             
+            trading_manager = TradingManager()  # 클래스 레벨로 이동
+            
             if existing_trades:
                 upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],
                                   self.config['api_keys']['upbit']['secret_key'])
+                
                 for trade in existing_trades:
                     try:
                         current_price = upbit.get_current_price(trade['coin'])
-                        trading_manager = TradingManager()
                         trading_manager.process_sell_signal(
                             coin=trade['coin'],
                             thread_id=trade['thread_id'],
@@ -398,8 +400,8 @@ class ThreadManager:
                     except Exception as e:
                         self.logger.error(f"강제 매도 처리 중 오류 발생: {str(e)}")
                         continue
+                
                 del upbit
-                del trading_manager
 
             # 각 스레드 종료 대기
             for thread in self.threads:
@@ -438,7 +440,6 @@ class ThreadManager:
                 from database.mongodb_manager import MongoDBManager
                 db = MongoDBManager()
                 
-                # 각 정리 작업을 개별적으로 try-except로 감싸서 처리
                 try:
                     db.cleanup_strategy_data()
                     self.logger.info("strategy_data 컬렉션 정리 완료")
@@ -446,17 +447,19 @@ class ThreadManager:
                     self.logger.error(f"strategy_data 정리 실패: {str(e)}")
                 
                 try:
-                    db.cleanup_trades(trading_manager=self.trading_manager)
+                    db.cleanup_trades(trading_manager=trading_manager)  # 여기서 trading_manager 사용
                     self.logger.info("trades 컬렉션 정리 완료")
                 except Exception as e:
                     self.logger.error(f"trades 정리 실패: {str(e)}")
+                
+                del trading_manager  # 사용 완료 후 정리
                 
             except Exception as e:
                 self.logger.error(f"데이터베이스 정리 중 오류: {str(e)}")
             
             # 프로그램 종료
             try:
-                os._exit(0)  # 더 강력한 종료 방법 사용
+                os._exit(0)
             except:
                 sys.exit(0)
                 
