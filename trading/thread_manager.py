@@ -51,7 +51,7 @@ class TradingThread(threading.Thread):
         )
         
         # system_config에서 설정값 가져오기
-        system_config = self.db.system_config.find_one({'_id': 'system_config'})
+        system_config = self.db.system_config.find_one({'_id': 'config'})
         if not system_config:
             self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
             self.max_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))
@@ -71,7 +71,7 @@ class TradingThread(threading.Thread):
     def update_investment_limits(self):
         """system_config에서 투자 한도를 업데이트"""
         try:
-            system_config = self.db.system_config.find_one({'_id': 'system_config'})
+            system_config = self.db.system_config.find_one({'_id': 'config'})
             if system_config:
                 total_max_investment = system_config.get('total_max_investment', 1000000)
                 # total_max_investment를 initial_investment의 80%로 설정
