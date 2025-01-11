@@ -414,7 +414,7 @@ class TradingManager:
                             f"₩{portfolio.get('available_investment', 0):,.0f}",
                             f"₩{portfolio.get('current_amount', 0):,.0f}",
                             f"₩{portfolio.get('profit_earned', 0):,.0f}",
-                            f"{((portfolio.get('profit_earned', 0) / portfolio.get('investment_amount', 1) - 1) * 100):+.2f}%"
+                            f"{(portfolio.get('profit_earned', 0) / portfolio.get('investment_amount', 1) * 100):+.2f}%"
                         ]
                     }
                     pd.DataFrame(portfolio_data).to_excel(
