@@ -740,13 +740,16 @@ class MongoDBManager:
             self.logger.info("trades 컬렉션 재설정 완료")
             
             # 오늘 날짜의 daily_profit 문서 확인
-            today = datetime.now(timezone(timedelta(hours=9))).replace(hour=0, minute=0, second=0, microsecond=0)
+            kst_now = datetime.now(timezone(timedelta(hours=9)))
+            today = kst_now.replace(hour=0, minute=0, second=0, microsecond=0)
             daily_profit_doc = self.daily_profit.find_one({'date': today})
             
-            # daily_profit 문서가 없으면 생성
-            if not daily_profit_doc:
+            # daily_profit 문서가 없고 현재 시간이 20시 이전일 때만 생성
+            if not daily_profit_doc and kst_now.hour < 20:
                 trading_manager.generate_daily_profit()
                 daily_profit_doc = self.daily_profit.find_one({'date': today})
+            elif not daily_profit_doc:
+                self.logger.info("20시 이후에는 새로운 daily_profit 문서를 생성하지 않습니다.")
             
             # 리포트가 전송된 경우에만 trading_history와 portfolio 초기화
             if daily_profit_doc and daily_profit_doc.get('reported', False):
