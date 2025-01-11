@@ -59,8 +59,18 @@ class TradingThread(threading.Thread):
             self.investment_each = self.total_max_investment / 40
         else:
             self.max_investment = system_config.get('max_thread_investment', 80000)
-            self.total_max_investment = system_config.get('total_max_investment', 800000)
-            self.investment_each = self.total_max_investment / 40
+            self.total_max_investment = system_config.get('total_max_investment', 1000000)
+            self.investment_each = (self.total_max_investment * 0.8) / 40
+        
+        self.db.portfolio.update_one(
+                    {'_id': 'main'},
+                    {'$set': {
+                        'investment_amount': system_config.get('total_max_investment', 1000000),
+                        'available_investment': self.total_max_investment * 0.8,
+                        'reserve_amount': floor(system_config.get('total_max_investment', 1000000) * 0.2)
+                        }
+                     }
+                )
         
         self.logger.info(f"Thread {thread_id} 초기화 완료 (최대 투자금: {self.max_investment:,}원)")
         
@@ -84,6 +94,16 @@ class TradingThread(threading.Thread):
                 self.logger.info(f"Thread {self.thread_id} 투자 한도 업데이트: "
                                f"최대 투자금: {self.max_investment:,}원, "
                                f"코인당 투자금: {self.investment_each:,}원")
+                
+                # portfolio 컬렉션 업데이트
+                self.db.portfolio.update_one(
+                    {'_id': 'main'},
+                    {'$set': {
+                        'available_investment': self.total_max_investment,
+                        'reserve_amount': floor(total_max_investment * 0.2)
+                        }
+                     }
+                )
         except Exception as e:
             self.logger.error(f"투자 한도 업데이트 중 오류: {str(e)}")
 
@@ -426,13 +446,17 @@ class ThreadManager:
             
             # add profit earn to system_config's total_max_investment
             current_config = self.db.system_config.find_one({'_id': 'config'})
-            portfolio = self.db.portfolio.find_one({'_id': 'portfolio'})
+            portfolio = self.db.portfolio.find_one({'_id': 'main'})
             if current_config and portfolio:
                 total_profit = portfolio.get('profit_earned', 0)
                 new_total_investment = current_config.get('total_max_investment', 0) + total_profit
                 self.db.system_config.update_one(
                     {'_id': 'config'},
                     {'$set': {'total_max_investment': new_total_investment}}
+                )
+                self.db.portfolio.update_one(
+                    {'_id': 'main'},
+                    {'$set': {'investment_amount': new_total_investment}}
                 )
             
             # 데이터베이스 정리 작업
