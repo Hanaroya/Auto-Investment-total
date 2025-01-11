@@ -376,25 +376,31 @@ class ThreadManager:
             self.stop_flag.set()
 
             # 모든 거래 강제 판매
-            existing_trade = self.db.trades.find_one({
+            existing_trades = self.db.trades.find({
                 'status': 'active'
             })
             
-            if existing_trade:
+            if existing_trades:
                 upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],
                                   self.config['api_keys']['upbit']['secret_key'])
-                for trade in existing_trade:
-                    current_price = upbit.get_current_price(trade['coin'])
-                    
-                    self.trading_manager.process_sell_signal(
-                        coin=trade['coin'],
-                        thread_id=trade['thread_id'],
-                        signal_strength=0,
-                        price=current_price,
-                        strategy_data={'force_sell': True}
-                    )
-                    time.sleep(0.07)
-            del upbit
+                for trade in existing_trades:
+                    try:
+                        current_price = upbit.get_current_price(trade['coin'])
+                        trading_manager = TradingManager()
+                        trading_manager.process_sell_signal(
+                            coin=trade['coin'],
+                            thread_id=trade['thread_id'],
+                            signal_strength=0,
+                            price=current_price,
+                            strategy_data={'force_sell': True}
+                        )
+                        time.sleep(0.07)
+                    except Exception as e:
+                        self.logger.error(f"강제 매도 처리 중 오류 발생: {str(e)}")
+                        continue
+                del upbit
+                del trading_manager
+
             # 각 스레드 종료 대기
             for thread in self.threads:
                 try:

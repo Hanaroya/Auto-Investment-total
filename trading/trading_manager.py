@@ -586,7 +586,19 @@ class TradingManager:
                 }
             }
             
+            # 포트폴리오 업데이트   
             self.db.update_portfolio(portfolio_update)
+            
+            # 일일 수익 업데이트
+            daily_profit_update = {
+                'date': kst_today,
+                'profit_earned': total_profit_earned,
+                'profit_rate': total_profit_rate,
+                'total_investment': total_investment,
+                'total_current_value': total_current_value,
+                'reported': True
+            }
+            self.db.daily_profit.insert_one(daily_profit_update)
             
             # 오후 8시 이전 거래 내역 삭제
             kst_cutoff = kst_today.replace(hour=20, minute=0, second=0, microsecond=0)

@@ -315,24 +315,6 @@ class MongoDBManager:
             self.logger.error(f"포트폴리오 초기화 실패: {str(e)}")
             raise
 
-    def _initialize_daily_profit(self):
-        """일일 수익 초기화"""
-        try:
-            today = datetime.now(timezone(timedelta(hours=9))).replace(hour=0, minute=0, second=0, microsecond=0)
-            portfolio = self.get_portfolio()
-            if not self.daily_profit.find_one({'date': today}):
-                initial_profit = {
-                    'date': today,
-                    'reported': False,  # 리포트 전송 상태 추적
-                    'total_profit': portfolio.get('profit_earned', 0),
-                    'created_at': datetime.now(timezone(timedelta(hours=9)))
-                }
-                self.daily_profit.insert_one(initial_profit)
-                self.logger.info("일일 수익 초기화 완료")
-        except Exception as e:
-            self.logger.error(f"일일 수익 초기화 실패: {str(e)}")
-            raise
-
     def update_daily_profit_report_status(self, reported: bool = True) -> bool:
         """일일 수익 리포트 상태 업데이트"""
         try:
@@ -744,12 +726,10 @@ class MongoDBManager:
             today = kst_now.replace(hour=0, minute=0, second=0, microsecond=0)
             daily_profit_doc = self.daily_profit.find_one({'date': today})
             
-            # daily_profit 문서가 없고 현재 시간이 20시 이전일 때만 생성
-            if not daily_profit_doc and kst_now.hour < 20:
-                trading_manager.generate_daily_profit()
+            # daily_profit 문서가 없으면 일일 리포트 생성
+            if not daily_profit_doc:
+                trading_manager.generate_daily_report()
                 daily_profit_doc = self.daily_profit.find_one({'date': today})
-            elif not daily_profit_doc:
-                self.logger.info("20시 이후에는 새로운 daily_profit 문서를 생성하지 않습니다.")
             
             # 리포트가 전송된 경우에만 trading_history와 portfolio 초기화
             if daily_profit_doc and daily_profit_doc.get('reported', False):
