@@ -267,7 +267,7 @@ class TradingThread(threading.Thread):
                             )
                             # self.logger.warning(f"물타기 투자금 계산: {averaging_down_amount:,}원")
 
-                            if signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
+                            if signals.get('overall_signal', 0.0) >= self.config['strategy']['sell_threshold'] and averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
                                 self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
                                 
                                 # 물타기용 전략 데이터 업데이트
