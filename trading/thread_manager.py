@@ -67,6 +67,7 @@ class TradingThread(threading.Thread):
                     {'$set': {
                         'investment_amount': system_config.get('total_max_investment', 1000000),
                         'available_investment': self.total_max_investment * 0.8,
+                        'current_amount': self.total_max_investment * 0.8,
                         'reserve_amount': floor(system_config.get('total_max_investment', 1000000) * 0.2)
                         }
                      }

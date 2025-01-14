@@ -164,8 +164,7 @@ class TradingManager:
                     'price': trade_data['price'],
                     'timestamp': kst_now
                 }
-                portfolio['available_investment'] -= investment_amount
-                portfolio['current_amount'] = portfolio.get('current_amount', 0)
+                portfolio['current_amount'] -= investment_amount
                 
                 self.db.update_portfolio(portfolio)
             
@@ -305,10 +304,7 @@ class TradingManager:
                     del portfolio['coin_list'][coin]
                 
                 # 가용 투자금액과 현재 금액 업데이트
-                portfolio['available_investment'] += sell_amount
-                portfolio['current_amount'] = floor(
-                    (portfolio.get('current_amount', 0) - active_trade.get('investment_amount', 0) + sell_amount)
-                )
+                portfolio['current_amount'] += sell_amount
                 
                 # 누적 수익 업데이트
                 portfolio['profit_earned'] = floor(
