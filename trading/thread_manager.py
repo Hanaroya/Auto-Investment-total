@@ -100,6 +100,7 @@ class TradingThread(threading.Thread):
                 self.db.portfolio.update_one(
                     {'_id': 'main'},
                     {'$set': {
+                        'investment_amount': floor(total_max_investment),
                         'available_investment': self.total_max_investment,
                         'reserve_amount': floor(total_max_investment * 0.2)
                         }
@@ -457,7 +458,14 @@ class ThreadManager:
                 )
                 self.db.portfolio.update_one(
                     {'_id': 'main'},
-                    {'$set': {'investment_amount': new_total_investment}}
+                    {'$set': {
+                        'investment_amount': floor(new_total_investment),
+                        'current_amount': floor(new_total_investment * 0.8),
+                        'available_investment': floor(new_total_investment * 0.8),
+                        'reserve_amount': floor(new_total_investment * 0.2),
+                        'profit_earned': 0
+                        }
+                    }
                 )
             
             # 데이터베이스 정리 작업
