@@ -229,8 +229,8 @@ class TradingThread(threading.Thread):
                             (current_profit_rate > 10 and current_price > active_trade.get('price', 0) * 1.1) or
                             
                             # 7. sell_threshold 이하
-                            (signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and (
-                                current_profit_rate > 0.15)) or
+                            ((signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and current_profit_rate > 0.15) or
+                             (signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.6))) or
 
                             # 8. 사용자 호출
                             (active_trade.get('user_call', False))

@@ -98,7 +98,7 @@ class MACDStrategy(StrategyBase):
             
         # 상승세 종료 감지: MACD가 시그널선 하향돌파
         if macd < signal and len(macd_history) >= 2 and macd_history[-2] > signal:
-            return max(-1.0, -0.5 - (signal - macd) * 2)  # 높은 변동성 범위
+            return max(-2.0, -1.5 - (signal - macd) * 2)  # 높은 변동성 범위
             
         return 0.5
 
@@ -147,7 +147,7 @@ class BollingerBandStrategy(StrategyBase):
             
         # 상승세 종료 감지: 상단밴드 터치 후 하락
         if price >= upper and len(price_history) >= 2 and price < price_history[-2]:
-            return max(-1.0, -0.5 - (price - upper) / upper * 10)
+            return max(-2.0, -1.5 - (price - upper) / upper * 10)
             
         return 0.5
 
@@ -252,7 +252,7 @@ class PriceChangeStrategy(StrategyBase):
         # 상승세 종료 감지: 급격한 상승 후 하락
         if (short_term_change < 0 and long_term_change > 5 and 
             volume_history[-1] > volume_history[-2] and rsi > 60):
-            return max(-1.0, -0.5 - short_term_change / 25)  # 매우 높은 변동성 범위
+            return max(-2.0, -1.5 - short_term_change / 25)  # 매우 높은 변동성 범위
             
         return 0.5
 
@@ -350,7 +350,7 @@ class MomentumStrategy(StrategyBase):
             
         # 상승세 종료 감지: 모멘텀 약화 + 거래량 감소
         if momentum < 0.3 and momentum > 0 and volume_surge < 0.8 and rsi > 60:
-            return max(-1.0, -0.5 - momentum * 2)  # 높은 변동성 범위
+            return max(-2.0, -1.5 - momentum * 2)  # 높은 변동성 범위
             
         return 0.5
 
@@ -397,7 +397,7 @@ class StochasticStrategy(StrategyBase):
             
         # 상승세 종료 감지: 과매수 구간에서 데드크로스
         if k > 80 and d > 80 and k < d and len(k_history) >= 2 and k < k_history[-2]:
-            return max(-1.0, -0.5 - (k - 80) / 10)  # 매우 높은 변동성 범위
+            return max(-2.0, -1.5 - (k - 80) / 10)  # 매우 높은 변동성 범위
             
         return 0.5
 
@@ -554,7 +554,7 @@ class DowntrendEndStrategy(StrategyBase):
                 
             # 하락 지속 (매우 강한 매도)
             if trend_strength < -0.7 or (rsi < 30 and volume_surge < 0.8):
-                return max(-1.0, -0.5 + trend_strength)  # 매우 높은 변동성 범위
+                return max(-2.0, -1.5 + trend_strength)  # 매우 높은 변동성 범위
                 
             return 0.5
             
@@ -609,7 +609,7 @@ class UptrendEndStrategy(StrategyBase):
             
             # 상승 추세 종료 + 하락 확인
             if momentum < 0.3 and rsi > 70 and volume_ratio < 0.8 and volatility > 0.2:
-                return max(-1.0, -0.5 - momentum * volatility)  # 매우 높은 변동성 범위
+                return max(-2.0, -1.5 - momentum * volatility)  # 매우 높은 변동성 범위
                 
             # 상승 지속
             if momentum > 0.7 and volume_ratio > 1.2:
@@ -673,7 +673,7 @@ class DivergenceStrategy(StrategyBase):
         if (price_history[-1] > price_history[-2] and 
             rsi_history[-1] < rsi_history[-2] and 
             volume_history[-1] < volume_history[-2]):
-            return max(-1.0, -0.5 - (rsi_history[-2] - rsi_history[-1]) / 100)
+            return max(-2.0, -1.5 - (rsi_history[-2] - rsi_history[-1]) / 100)
             
         return 0.5
 
