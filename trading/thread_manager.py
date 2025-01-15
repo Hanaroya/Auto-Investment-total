@@ -230,7 +230,7 @@ class TradingThread(threading.Thread):
                             
                             # 7. sell_threshold 이하
                             ((signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and current_profit_rate > 0.15) or
-                             (signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.6))) or
+                             (signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.4))) or
 
                             # 8. 사용자 호출
                             (active_trade.get('user_call', False))
