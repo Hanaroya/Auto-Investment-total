@@ -11,12 +11,22 @@ from urllib.parse import quote_plus
 import motor
 import asyncio
 import time
+import threading
 
 class MongoDBManager:
     _instance = None
     """
     MongoDB 연결 및 작업을 관리하는 싱글톤 클래스
     """
+    _collection_locks = {
+        'portfolio': threading.Lock(),
+        'trades': threading.Lock(),
+        'strategy_data': threading.Lock(),
+        'market_data': threading.Lock(),
+        'thread_status': threading.Lock(),
+        'system_config': threading.Lock()
+    }
+
     def __new__(cls, *args, **kwargs):
         """싱글톤 패턴 구현"""
         if cls._instance is None:
@@ -70,17 +80,18 @@ class MongoDBManager:
 
     def update_system_config(self, config_data: Dict[str, Any]) -> bool:
         """시스템 설정 업데이트"""
-        try:
-            result = self.system_config.update_one(
-                {'_id': 'system_config'},
-                {'$set': config_data},
-                upsert=True
-            )
-            # modified_count 또는 upserted_id가 있는 경우 성공
-            return bool(result.modified_count > 0 or result.upserted_id is not None)
-        except Exception as e:
-            self.logger.error(f"시스템 설정 업데이트 중 오류: {str(e)}")
-            return False
+        with self._get_collection_lock('system_config'):
+            try:
+                result = self.system_config.update_one(
+                    {'_id': 'system_config'},
+                    {'$set': config_data},
+                    upsert=True
+                )
+                # modified_count 또는 upserted_id가 있는 경우 성공
+                return bool(result.modified_count > 0 or result.upserted_id is not None)
+            except Exception as e:
+                self.logger.error(f"시스템 설정 업데이트 중 오류: {str(e)}")
+                return False
 
     def test_connection(self):
         """동기식 연결 테스트"""
@@ -330,27 +341,29 @@ class MongoDBManager:
 
     def update_daily_profit(self, profit_data: Dict[str, Any]) -> bool:
         """일일 수익 업데이트"""
-        try:
-            profit_data['timestamp'] = datetime.utcnow()
-            result = self.daily_profit.insert_one(profit_data)
-            return bool(result.inserted_id)
-        except Exception as e:
-            self.logger.error(f"일일 수익 업데이트 실패: {str(e)}")
-            return False
+        with self._get_collection_lock('daily_profit'):
+            try:
+                profit_data['timestamp'] = datetime.utcnow()
+                result = self.daily_profit.insert_one(profit_data)
+                return bool(result.inserted_id)
+            except Exception as e:
+                self.logger.error(f"일일 수익 업데이트 실패: {str(e)}")
+                return False
 
     def update_portfolio(self, update_data: Dict[str, Any]) -> bool:
         """포트폴리오 업데이트"""
-        try:
-            update_data['last_updated'] = datetime.utcnow()
-            result = self.portfolio.update_one(
-                {'_id': 'main'},
-                {'$set': update_data},
-                upsert=True
-            )
-            return bool(result.modified_count > 0 or result.upserted_id)
-        except Exception as e:
-            self.logger.error(f"포트폴리오 업데이트 실패: {str(e)}")
-            return False
+        with self._get_collection_lock('portfolio'):
+            try:
+                update_data['last_updated'] = datetime.utcnow()
+                result = self.portfolio.update_one(
+                    {'_id': 'main'},
+                    {'$set': update_data},
+                    upsert=True
+                )
+                return bool(result.modified_count > 0 or result.upserted_id)
+            except Exception as e:
+                self.logger.error(f"포트폴리오 업데이트 실패: {str(e)}")
+                return False
 
     def get_portfolio(self) -> Dict:
         """현재 포트폴리오 조회 및 없으면 생성"""
@@ -397,9 +410,14 @@ class MongoDBManager:
         Returns:
             str: 생성된 거래 기록의 ID
         """
-        trade_data['timestamp'] = datetime.utcnow()
-        result = self.db.trades.insert_one(trade_data)
-        return str(result.inserted_id)
+        with self._get_collection_lock('trades'):
+            try:
+                trade_data['timestamp'] = datetime.utcnow()
+                result = self.trades.insert_one(trade_data)
+                return str(result.inserted_id)
+            except Exception as e:
+                self.logger.error(f"거래 기록 추가 실패: {str(e)}")
+                return None
 
     def update_trade(self, trade_id: str, update_data: Dict[str, Any]) -> bool:
         """
@@ -412,11 +430,16 @@ class MongoDBManager:
         Returns:
             bool: 업데이트 성공 여부
         """
-        result = self.db.trades.update_one(
-            {'_id': trade_id},
-            {'$set': update_data}
-        )
-        return result.modified_count > 0
+        with self._get_collection_lock('trades'):
+            try:
+                result = self.trades.update_one(
+                    {'_id': trade_id},
+                    {'$set': update_data}
+                )
+                return result.modified_count > 0
+            except Exception as e:
+                self.logger.error(f"거래 기록 업데이트 실패: {str(e)}")
+                return False
 
     # 시장 데이터 관련 메서드
     def update_market_data(self, coin: str, market_data: Dict[str, Any]) -> bool:
@@ -430,12 +453,17 @@ class MongoDBManager:
         Returns:
             bool: 업데이트 성공 여부
         """
-        result = self.db.market_data.update_one(
-            {'coin': coin},
-            {'$set': market_data},
-            upsert=True
-        )
-        return True if result.upserted_id or result.modified_count > 0 else False
+        with self._get_collection_lock('market_data'):
+            try:
+                result = self.db.market_data.update_one(
+                    {'coin': coin},
+                    {'$set': market_data},
+                    upsert=True
+                )
+                return True if result.upserted_id or result.modified_count > 0 else False
+            except Exception as e:
+                self.logger.error(f"시장 데이터 업데이트 실패: {str(e)}")
+                return False
 
     # 스레드 상태 관련 메서드
     def update_thread_status(self, thread_id: int, status_data: Dict[str, Any]) -> bool:
@@ -449,13 +477,14 @@ class MongoDBManager:
         Returns:
             bool: 업데이트 성공 여부
         """
-        status_data['last_updated'] = datetime.utcnow()
-        result = self.db.thread_status.update_one(
-            {'thread_id': thread_id},
-            {'$set': status_data},
-            upsert=True
-        )
-        return True if result.upserted_id or result.modified_count > 0 else False
+        with self._get_collection_lock('thread_status'):
+            status_data['last_updated'] = datetime.utcnow()
+            result = self.db.thread_status.update_one(
+                {'thread_id': thread_id},
+                {'$set': status_data},
+                upsert=True
+            )
+            return True if result.upserted_id or result.modified_count > 0 else False
 
     # 시스템 설정 관련 메서드
     def get_system_config(self) -> Dict[str, Any]:
@@ -523,114 +552,115 @@ class MongoDBManager:
         Returns:
             bool: 저장 성공 여부
         """
-        try:
-            document = {
-                'coin': coin,
-                'timestamp': datetime.utcnow(),
-                'current_price': strategy_data.get('current_price', 0),
-                'strategies': {
-                    'rsi': {
-                        'value': strategy_data.get('rsi', 0),
-                        'signal': strategy_data.get('rsi_signal', 0),
-                        'buy_threshold': strategy_data.get('rsi_buy_threshold', 30),
-                        'sell_threshold': strategy_data.get('rsi_sell_threshold', 70)
+        with self._get_collection_lock('strategy_data'):
+            try:
+                document = {
+                    'coin': coin,
+                    'timestamp': datetime.utcnow(),
+                    'current_price': strategy_data.get('current_price', 0),
+                    'strategies': {
+                        'rsi': {
+                            'value': strategy_data.get('rsi', 0),
+                            'signal': strategy_data.get('rsi_signal', 0),
+                            'buy_threshold': strategy_data.get('rsi_buy_threshold', 30),
+                            'sell_threshold': strategy_data.get('rsi_sell_threshold', 70)
+                        },
+                        'macd': {
+                            'macd': strategy_data.get('macd', 0),
+                            'signal': strategy_data.get('macd_signal', 0),
+                            'histogram': strategy_data.get('macd_hist', 0),
+                            'buy_threshold': strategy_data.get('macd_buy_threshold', 0),
+                            'sell_threshold': strategy_data.get('macd_sell_threshold', 0)
+                        },
+                        'bollinger': {
+                            'upper': strategy_data.get('bb_upper', 0),
+                            'middle': strategy_data.get('bb_middle', 0),
+                            'lower': strategy_data.get('bb_lower', 0),
+                            'buy_threshold': strategy_data.get('bb_buy_threshold', 0),
+                            'sell_threshold': strategy_data.get('bb_sell_threshold', 0)
+                        },
+                        'volume': {
+                            'current': strategy_data.get('current_volume', 0),
+                            'average': strategy_data.get('average_volume', 0),
+                            'change_rate': strategy_data.get('volume_change_rate', 0)
+                        },
+                        'price_change': {
+                            'rate': strategy_data.get('price_change_rate', 0),
+                            'threshold': strategy_data.get('price_change_threshold', 0.02)
+                        },
+                        'moving_average': {
+                            'ma5': strategy_data.get('ma5', 0),
+                            'ma20': strategy_data.get('ma20', 0)
+                        },
+                        'momentum': {
+                            'value': strategy_data.get('momentum', 0)
+                        },
+                        'stochastic': {
+                            'k': strategy_data.get('stoch_k', 0),
+                            'd': strategy_data.get('stoch_d', 0),
+                            'buy_threshold': strategy_data.get('stoch_buy_threshold', 20),
+                            'sell_threshold': strategy_data.get('stoch_sell_threshold', 80)
+                        },
+                        'ichimoku': {
+                            'cloud_top': strategy_data.get('ichimoku_cloud_top', 0),
+                            'cloud_bottom': strategy_data.get('ichimoku_cloud_bottom', 0)
+                        },
+                        'market_sentiment': {
+                            'value': strategy_data.get('market_sentiment', 0)
+                        },
+                        'downtrend_end': {
+                            'trend_strength': strategy_data.get('trend_strength', 0),
+                            'volume_change': strategy_data.get('volume_change_24h', 0)
+                        },
+                        'uptrend_end': {
+                            'trend_strength': strategy_data.get('trend_strength', 0),
+                            'resistance_level': strategy_data.get('resistance_level', 0)
+                        },
+                        'divergence': {
+                            'price_rsi': strategy_data.get('price_rsi_divergence', 0),
+                            'price_macd': strategy_data.get('price_macd_divergence', 0)
+                        }
                     },
-                    'macd': {
-                        'macd': strategy_data.get('macd', 0),
-                        'signal': strategy_data.get('macd_signal', 0),
-                        'histogram': strategy_data.get('macd_hist', 0),
-                        'buy_threshold': strategy_data.get('macd_buy_threshold', 0),
-                        'sell_threshold': strategy_data.get('macd_sell_threshold', 0)
+                    'signals': {
+                        'buy_strength': strategy_data.get('buy_signal', 0),
+                        'sell_strength': strategy_data.get('sell_signal', 0),
+                        'overall_signal': strategy_data.get('overall_signal', 0),
+                        'combined_threshold': {
+                            'buy': strategy_data.get('combined_buy_threshold', 0.7),
+                            'sell': strategy_data.get('combined_sell_threshold', 0.3)
+                        }
                     },
-                    'bollinger': {
-                        'upper': strategy_data.get('bb_upper', 0),
-                        'middle': strategy_data.get('bb_middle', 0),
-                        'lower': strategy_data.get('bb_lower', 0),
-                        'buy_threshold': strategy_data.get('bb_buy_threshold', 0),
-                        'sell_threshold': strategy_data.get('bb_sell_threshold', 0)
+                    'market_metrics': {
+                        'volume': strategy_data.get('volume', 0),
+                        'market_cap': strategy_data.get('market_cap', 0),
+                        'rank': strategy_data.get('coin_rank', 0),
+                        'price_change_24h': strategy_data.get('price_change_24h', 0),
+                        'volume_change_24h': strategy_data.get('volume_change_24h', 0)
                     },
-                    'volume': {
-                        'current': strategy_data.get('current_volume', 0),
-                        'average': strategy_data.get('average_volume', 0),
-                        'change_rate': strategy_data.get('volume_change_rate', 0)
-                    },
-                    'price_change': {
-                        'rate': strategy_data.get('price_change_rate', 0),
-                        'threshold': strategy_data.get('price_change_threshold', 0.02)
-                    },
-                    'moving_average': {
-                        'ma5': strategy_data.get('ma5', 0),
-                        'ma20': strategy_data.get('ma20', 0)
-                    },
-                    'momentum': {
-                        'value': strategy_data.get('momentum', 0)
-                    },
-                    'stochastic': {
-                        'k': strategy_data.get('stoch_k', 0),
-                        'd': strategy_data.get('stoch_d', 0),
-                        'buy_threshold': strategy_data.get('stoch_buy_threshold', 20),
-                        'sell_threshold': strategy_data.get('stoch_sell_threshold', 80)
-                    },
-                    'ichimoku': {
-                        'cloud_top': strategy_data.get('ichimoku_cloud_top', 0),
-                        'cloud_bottom': strategy_data.get('ichimoku_cloud_bottom', 0)
-                    },
-                    'market_sentiment': {
-                        'value': strategy_data.get('market_sentiment', 0)
-                    },
-                    'downtrend_end': {
-                        'trend_strength': strategy_data.get('trend_strength', 0),
-                        'volume_change': strategy_data.get('volume_change_24h', 0)
-                    },
-                    'uptrend_end': {
-                        'trend_strength': strategy_data.get('trend_strength', 0),
-                        'resistance_level': strategy_data.get('resistance_level', 0)
-                    },
-                    'divergence': {
-                        'price_rsi': strategy_data.get('price_rsi_divergence', 0),
-                        'price_macd': strategy_data.get('price_macd_divergence', 0)
+                    'thresholds': {
+                        'price_change': strategy_data.get('price_change_threshold', 0.02),
+                        'volume_change': strategy_data.get('volume_change_threshold', 0.5),
+                        'trend_strength': strategy_data.get('trend_strength_threshold', 0.6)
                     }
-                },
-                'signals': {
-                    'buy_strength': strategy_data.get('buy_signal', 0),
-                    'sell_strength': strategy_data.get('sell_signal', 0),
-                    'overall_signal': strategy_data.get('overall_signal', 0),
-                    'combined_threshold': {
-                        'buy': strategy_data.get('combined_buy_threshold', 0.7),
-                        'sell': strategy_data.get('combined_sell_threshold', 0.3)
-                    }
-                },
-                'market_metrics': {
-                    'volume': strategy_data.get('volume', 0),
-                    'market_cap': strategy_data.get('market_cap', 0),
-                    'rank': strategy_data.get('coin_rank', 0),
-                    'price_change_24h': strategy_data.get('price_change_24h', 0),
-                    'volume_change_24h': strategy_data.get('volume_change_24h', 0)
-                },
-                'thresholds': {
-                    'price_change': strategy_data.get('price_change_threshold', 0.02),
-                    'volume_change': strategy_data.get('volume_change_threshold', 0.5),
-                    'trend_strength': strategy_data.get('trend_strength_threshold', 0.6)
                 }
-            }
 
-            result = self.strategy_data.insert_one(document)
-            success = bool(result.inserted_id)
-            
-            if success:
-                self.logger.debug(f"전략 데이터 저장 성공 - 코인: {coin}, ID: {result.inserted_id}")
-                self.logger.debug(f"저장된 데이터: RSI={document['strategies']['rsi']['value']:.2f}, "
-                              f"MACD={document['strategies']['macd']['macd']:.2f}, "
-                              f"매수신호={document['signals']['buy_strength']:.2f}, "
-                              f"매도신호={document['signals']['sell_strength']:.2f}")
-            else:
-                self.logger.warning(f"전략 데이터 저장 실패 - 코인: {coin}")
+                result = self.strategy_data.insert_one(document)
+                success = bool(result.inserted_id)
                 
-            return success
+                if success:
+                    self.logger.debug(f"전략 데이터 저장 성공 - 코인: {coin}, ID: {result.inserted_id}")
+                    self.logger.debug(f"저장된 데이터: RSI={document['strategies']['rsi']['value']:.2f}, "
+                                  f"MACD={document['strategies']['macd']['macd']:.2f}, "
+                                  f"매수신호={document['signals']['buy_strength']:.2f}, "
+                                  f"매도신호={document['signals']['sell_strength']:.2f}")
+                else:
+                    self.logger.warning(f"전략 데이터 저장 실패 - 코인: {coin}")
+                    
+                return success
 
-        except Exception as e:
-            self.logger.error(f"전략 데이터 저장 실패 - 코인: {coin}, 오류: {str(e)}")
-            return False
+            except Exception as e:
+                self.logger.error(f"전략 데이터 저장 실패 - 코인: {coin}, 오류: {str(e)}")
+                return False
 
     def get_strategy_history(self, coin: str, 
                                  start_time: datetime = None, 
@@ -709,70 +739,72 @@ class MongoDBManager:
             
     def cleanup_portfolio(self):
         """portfolio 컬렉션 정리"""
-        try:
-            # portfolio 컬렉션 초기화
-            self.db.drop_collection('portfolio')
-            self.logger.info("portfolio 컬렉션 삭제 완료")
+        with self._get_collection_lock('portfolio'):
+            try:
+                # portfolio 컬렉션 초기화
+                self.db.drop_collection('portfolio')
+                self.logger.info("portfolio 컬렉션 삭제 완료")
+                
+                # portfolio 컬렉션 재생성 및 초기 데이터 설정
+                self.portfolio = self.db['portfolio']
+                initial_portfolio = {
+                    '_id': 'main',
+                    'coin_list': {},
+                    'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
+                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
+                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'profit_earned': 0,
+                    'created_at': datetime.now(timezone(timedelta(hours=9))),
+                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                }
+                self.portfolio.insert_one(initial_portfolio)
+                self.portfolio.create_index([("_id", 1)])
             
-            # portfolio 컬렉션 재생성 및 초기 데이터 설정
-            self.portfolio = self.db['portfolio']
-            initial_portfolio = {
-                '_id': 'main',
-                'coin_list': {},
-                'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
-                'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
-                'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
-                'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
-                'profit_earned': 0,
-                'created_at': datetime.now(timezone(timedelta(hours=9))),
-                'last_updated': datetime.now(timezone(timedelta(hours=9)))
-            }
-            self.portfolio.insert_one(initial_portfolio)
-            self.portfolio.create_index([("_id", 1)])
-        
-            self.logger.info("portfolio 컬렉션 재설정 완료")
-        except Exception as e:
-            self.logger.error(f"portfolio 컬렉션 정리 실패: {str(e)}")
+                self.logger.info("portfolio 컬렉션 재설정 완료")
+            except Exception as e:
+                self.logger.error(f"portfolio 컬렉션 정리 실패: {str(e)}")
             
     def cleanup_trades(self, trading_manager: object):
         """trades, trading_history, portfolio 컬렉션 정리"""
-        try:
-            # trades 컬렉션 정리
-            self.db.drop_collection('trades')
-            self.logger.info("trades 컬렉션 삭제 완료")
-            
-            # trades 컬렉션 재생성 및 인덱스 설정
-            self.trades = self.db['trades']
-            self.trades.create_index([("coin", 1), ("thread_id", 1), ("status", 1)])
-            self.trades.create_index([("thread_id", 1)])
-            
-            self.logger.info("trades 컬렉션 재설정 완료")
-            
-            # 오늘 날짜의 daily_profit 문서 확인
-            kst_now = datetime.now(timezone(timedelta(hours=9)))
-            today = kst_now.replace(hour=0, minute=0, second=0, microsecond=0)
-            daily_profit_doc = self.daily_profit.find_one({'date': today})
-            
-            # daily_profit 문서가 없으면 일일 리포트 생성
-            if not daily_profit_doc:
-                trading_manager.generate_daily_report()
+        with self._get_collection_lock('trades'):
+            try:
+                # trades 컬렉션 정리
+                self.db.drop_collection('trades')
+                self.logger.info("trades 컬렉션 삭제 완료")
+                
+                # trades 컬렉션 재생성 및 인덱스 설정
+                self.trades = self.db['trades']
+                self.trades.create_index([("coin", 1), ("thread_id", 1), ("status", 1)])
+                self.trades.create_index([("thread_id", 1)])
+                
+                self.logger.info("trades 컬렉션 재설정 완료")
+                
+                # 오늘 날짜의 daily_profit 문서 확인
+                kst_now = datetime.now(timezone(timedelta(hours=9)))
+                today = kst_now.replace(hour=0, minute=0, second=0, microsecond=0)
                 daily_profit_doc = self.daily_profit.find_one({'date': today})
-            
-            # 리포트가 전송된 경우에만 trading_history와 portfolio 초기화
-            if daily_profit_doc and daily_profit_doc.get('reported', False):
-                # trading_history 컬렉션 정리
-                self.db.drop_collection('trading_history')
-                self.logger.info("trading_history 컬렉션 삭제 완료")
                 
-                # trading_history 컬렉션 재생성 및 인덱스 설정
-                self.trading_history = self.db['trading_history']
-                self.trading_history.create_index([("coin", 1), ("thread_id", 1)])
-                self.trading_history.create_index([("buy_timestamp", -1)])
-                self.trading_history.create_index([("sell_timestamp", -1)])
+                # daily_profit 문서가 없으면 일일 리포트 생성
+                if not daily_profit_doc:
+                    trading_manager.generate_daily_report()
+                    daily_profit_doc = self.daily_profit.find_one({'date': today})
                 
-                self.logger.info("trading_history 컬렉션 재설정 완료")
-            else:
-                self.logger.info("오늘의 일일 리포트가 아직 전송되지 않아 trading_history와 portfolio 컬렉션 유지")
-                
-        except Exception as e:
-            self.logger.error(f"trades/trading_history/portfolio 컬렉션 정리 실패: {str(e)}")
+                # 리포트가 전송된 경우에만 trading_history와 portfolio 초기화
+                if daily_profit_doc and daily_profit_doc.get('reported', False):
+                    # trading_history 컬렉션 정리
+                    self.db.drop_collection('trading_history')
+                    self.logger.info("trading_history 컬렉션 삭제 완료")
+                    
+                    # trading_history 컬렉션 재생성 및 인덱스 설정
+                    self.trading_history = self.db['trading_history']
+                    self.trading_history.create_index([("coin", 1), ("thread_id", 1)])
+                    self.trading_history.create_index([("buy_timestamp", -1)])
+                    self.trading_history.create_index([("sell_timestamp", -1)])
+                    
+                    self.logger.info("trading_history 컬렉션 재설정 완료")
+                else:
+                    self.logger.info("오늘의 일일 리포트가 아직 전송되지 않아 trading_history와 portfolio 컬렉션 유지")
+                    
+            except Exception as e:
+                self.logger.error(f"trades/trading_history/portfolio 컬렉션 정리 실패: {str(e)}")
