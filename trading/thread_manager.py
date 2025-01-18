@@ -285,8 +285,7 @@ class TradingThread(threading.Thread):
                     
                     else:
                         # 일반 매수 신호 처리 (기존 로직)
-                        if (signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and current_investment < self.max_investment
-                            ) or ((signals.get('overall_signal', 0.0) < self.config['strategy']['sell_threshold'] * 0.3) and current_investment < self.max_investment):
+                        if (signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and current_investment < self.max_investment):
                             self.logger.info(f"매수 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
                             investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
                             
@@ -301,6 +300,52 @@ class TradingThread(threading.Thread):
                                 strategy_data=signals
                             )
                             self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
+                        
+                        # 최저 신호 대비 반등 매수 전략
+                        elif current_investment < self.max_investment:
+                            current_signal = signals.get('overall_signal', 0.0)
+                            
+                            # 현재 신호가 매도 기준치의 30% 이하일 때 최저점 기록
+                            if current_signal < self.config['strategy']['sell_threshold'] * 0.3:
+                                # 최저 신호 정보 업데이트
+                                self.db.strategy_data.update_one(
+                                    {'coin': coin},
+                                    {
+                                        '$set': {
+                                            'lowest_signal': current_signal,
+                                            'timestamp': datetime.now(timezone(timedelta(hours=9)))
+                                        }
+                                    },
+                                    upsert=True
+                                )
+                                self.logger.debug(f"{coin} - 새로운 최저 신호 기록: {current_signal:.4f}")
+                            
+                            # 최저 신호 정보 조회
+                            lowest_data = self.db.strategy_data.find_one({'coin': coin})
+                            
+                            if lowest_data and 'lowest_signal' in lowest_data:
+                                signal_increase = ((current_signal - lowest_data['lowest_signal']) / abs(lowest_data['lowest_signal'])) * 100 if lowest_data['lowest_signal'] != 0 else 0
+                                
+                                # 최저 신호 대비 15% 이상 개선된 경우
+                                if signal_increase >= 15:
+                                    self.logger.info(f"반등 매수 신호 감지: {coin} - 신호 개선률: {signal_increase:.2f}%")
+                                    investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
+                                    
+                                    signals['investment_amount'] = investment_amount
+                                    signals['rebound_buy'] = True
+                                    signals['signal_increase'] = signal_increase
+                                    
+                                    self.trading_manager.process_buy_signal(
+                                        coin=coin,
+                                        thread_id=self.thread_id,
+                                        signal_strength=0.7,  # 반등 매수용 신호 강도
+                                        price=current_price,
+                                        strategy_data=signals
+                                    )
+                                    self.logger.info(f"반등 매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
+                                    
+                                    # 최저 신호 정보 초기화
+                                    self.db.strategy_data.delete_one({'coin': coin})
                         else:
                             self.logger.debug(f"매수 조건 미충족: {coin} - Signal: {signals.get('overall_signal')}, Investment: {current_investment}/{self.max_investment}")
 
