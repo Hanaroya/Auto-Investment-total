@@ -90,7 +90,7 @@ class TradingThread(threading.Thread):
                 # 스레드당 최대 투자금은 total_max_investment의 10%로 설정
                 self.max_investment = floor(self.total_max_investment * 0.1)
                 # 코인당 투자금은 total_max_investment를 40으로 나눈 값
-                self.investment_each = floor(self.total_max_investment / 40)
+                self.investment_each = floor(self.total_max_investment / 10)
                 
                 self.logger.info(f"Thread {self.thread_id} 투자 한도 업데이트: "
                                f"최대 투자금: {self.max_investment:,}원, "
@@ -285,7 +285,8 @@ class TradingThread(threading.Thread):
                     
                     else:
                         # 일반 매수 신호 처리 (기존 로직)
-                        if signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and current_investment < self.max_investment:
+                        if (signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and current_investment < self.max_investment
+                            ) or ((signals.get('overall_signal', 0.0) < self.config['strategy']['sell_threshold'] * 0.3) and current_investment < self.max_investment):
                             self.logger.info(f"매수 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
                             investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
                             
