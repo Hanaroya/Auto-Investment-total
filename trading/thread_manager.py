@@ -118,8 +118,8 @@ class TradingThread(threading.Thread):
                 cycle_start_time = time.time()
                 
                 # 스레드 ID에 따라 다른 대기 시간 설정
-                wait_time = 600  # 4~10번 스레드는 600초(10분)마다
-                initial_delay = (self.thread_id - 4) * 1  # 1초 간격으로 시작 시간 분배
+                wait_time = 300  # 모든 스레드는 300초(5분)마다
+                initial_delay = (self.thread_id * 1)  # 1초 간격으로 시작 시간 분배
                 
                 # 초기 지연 적용
                 time.sleep(initial_delay)

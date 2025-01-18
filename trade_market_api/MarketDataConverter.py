@@ -34,7 +34,7 @@ class MarketDataConverter:
             # 시간순으로 정렬 (오래된 데이터부터)
             sorted_candles = sorted(candle_data, key=lambda x: x['timestamp'])
             
-            if len(sorted_candles) < 100:
+            if len(sorted_candles) < 50:
                 print(f"불충분한 캔들 데이터: {len(sorted_candles)}개")
                 return []
 
