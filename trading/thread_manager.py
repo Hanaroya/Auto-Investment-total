@@ -305,20 +305,25 @@ class TradingThread(threading.Thread):
                         elif current_investment < self.max_investment:
                             current_signal = signals.get('overall_signal', 0.0)
                             
-                            # 현재 신호가 매도 기준치의 30% 이하일 때 최저점 기록
+                            # 현재 신호가 매도 기준치의 30% 이하일 때 최저점 검사
                             if current_signal < self.config['strategy']['sell_threshold'] * 0.3:
-                                # 최저 신호 정보 업데이트
-                                self.db.strategy_data.update_one(
-                                    {'coin': coin},
-                                    {
-                                        '$set': {
-                                            'lowest_signal': current_signal,
-                                            'timestamp': datetime.now(timezone(timedelta(hours=9)))
-                                        }
-                                    },
-                                    upsert=True
-                                )
-                                self.logger.debug(f"{coin} - 새로운 최저 신호 기록: {current_signal:.4f}")
+                                # 기존 최저점 조회
+                                existing_lowest = self.db.strategy_data.find_one({'coin': coin})
+                                
+                                # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때만 업데이트
+                                if not existing_lowest or current_signal < existing_lowest.get('lowest_signal', float('inf')):
+                                    # 최저 신호 정보 업데이트
+                                    self.db.strategy_data.update_one(
+                                        {'coin': coin},
+                                        {
+                                            '$set': {
+                                                'lowest_signal': current_signal,
+                                                'timestamp': datetime.now(timezone(timedelta(hours=9)))
+                                            }
+                                        },
+                                        upsert=True
+                                    )
+                                    self.logger.debug(f"{coin} - 새로운 최저 신호 기록: {current_signal:.4f}")
                             
                             # 최저 신호 정보 조회
                             lowest_data = self.db.strategy_data.find_one({'coin': coin})
