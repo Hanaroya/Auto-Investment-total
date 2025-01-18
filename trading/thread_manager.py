@@ -343,7 +343,7 @@ class TradingThread(threading.Thread):
                                     self.trading_manager.process_buy_signal(
                                         coin=coin,
                                         thread_id=self.thread_id,
-                                        signal_strength=0.7,  # 반등 매수용 신호 강도
+                                        signal_strength=current_signal,  # 반등 매수용 신호 강도
                                         price=current_price,
                                         strategy_data=signals
                                     )
