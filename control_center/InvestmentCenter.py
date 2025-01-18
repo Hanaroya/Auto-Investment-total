@@ -230,7 +230,8 @@ class InvestmentCenter:
                         thread_id=trade['thread_id'],
                         signal_strength=0,
                         price=current_price,
-                        strategy_data={'force_sell': True}
+                        strategy_data={'force_sell': True},
+                        sell_message="일반 매도"
                     )
                 except Exception as e:
                     self.logger.error(f"거래 청산 중 오류: {str(e)}")

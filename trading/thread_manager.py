@@ -276,7 +276,7 @@ class TradingThread(threading.Thread):
                                 signal_strength=signals.get('overall_signal', 0.0),
                                 price=current_price,
                                 strategy_data=signals,
-                                message=sell_reason
+                                sell_message=signals['sell_reason']
                             ):
                                 self.logger.info(f"매도 신호 처리 완료: {coin}")
                         
@@ -309,8 +309,8 @@ class TradingThread(threading.Thread):
                                     thread_id=self.thread_id,
                                     signal_strength=0.8,  # 물타기용 신호 강도
                                     price=current_price,
-                                    message="물타기",
-                                    strategy_data=signals
+                                    strategy_data=signals,
+                                    buy_message="물타기"
                                 )
                                 self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
                     
@@ -329,7 +329,7 @@ class TradingThread(threading.Thread):
                                 signal_strength=signals.get('overall_signal', 0.0),
                                 price=current_price,
                                 strategy_data=signals,
-                                message=buy_reason
+                                buy_message=buy_reason
                             )
                             self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
                         
@@ -378,7 +378,7 @@ class TradingThread(threading.Thread):
                                         signal_strength=current_signal,  # 반등 매수용 신호 강도
                                         price=current_price,
                                         strategy_data=signals,
-                                        message=buy_reason
+                                        buy_message=buy_reason
                                     )
                                     self.logger.info(f"반등 매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
                                     
@@ -497,7 +497,8 @@ class ThreadManager:
                             thread_id=trade['thread_id'],
                             signal_strength=0,
                             price=current_price,
-                            strategy_data={'force_sell': True}
+                            strategy_data={'force_sell': True},
+                            sell_message="일반 매도"
                         )
                         time.sleep(0.07)
                     except Exception as e:
@@ -781,7 +782,8 @@ class ThreadManager:
                                 thread_id=0,
                                 signal_strength=1.0,
                                 price=current_price,
-                                strategy_data=order['strategy_data']
+                                strategy_data=order['strategy_data'],
+                                buy_message="일반 매수"
                             )
                             # 주문 상태 업데이트
                             await self.db.get_collection('order_list').update_one(
@@ -801,7 +803,8 @@ class ThreadManager:
                                 thread_id=order['trade_data']['thread_id'],
                                 signal_strength=1.0,
                                 price=current_price,
-                                strategy_data={'forced_sell': True}
+                                strategy_data={'forced_sell': True},
+                                sell_message="일반 매도"
                             )
                             # 주문 상태 업데이트
                             await self.db.get_collection('order_list').update_one(

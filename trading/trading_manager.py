@@ -155,7 +155,7 @@ class TradingManager:
             # 메신저로 매수 알림
             message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(
                 trade_data=trade_data,
-                message=buy_message
+                buy_message=buy_message
             )
             self.messenger.send_message(message=message, messenger_type="slack")
             
@@ -180,7 +180,7 @@ class TradingManager:
             return False
 
     def process_sell_signal(self, coin: str, thread_id: int, signal_strength: float, 
-                            price: float, strategy_data: Dict, message: str = None):
+                            price: float, strategy_data: Dict, sell_message: str = None):
         """매도 신호 처리
         
         개선사항:
@@ -325,7 +325,7 @@ class TradingManager:
                 sell_signal=signal_strength,
                 fee_amount=fee_amount,
                 total_fees=total_fees,
-                message=message
+                sell_message=sell_message
             )
             self.messenger.send_message(message=message, messenger_type="slack")
             
