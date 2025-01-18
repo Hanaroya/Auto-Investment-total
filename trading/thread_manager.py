@@ -56,11 +56,11 @@ class TradingThread(threading.Thread):
             self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
             self.max_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))
             self.total_max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000))
-            self.investment_each = self.total_max_investment / 40
+            self.investment_each = self.total_max_investment / 10
         else:
             self.max_investment = system_config.get('max_thread_investment', 80000)
             self.total_max_investment = system_config.get('total_max_investment', 1000000)
-            self.investment_each = (self.total_max_investment * 0.8) / 40
+            self.investment_each = (self.total_max_investment * 0.8) / 10
         
         self.db.portfolio.update_one(
                     {'_id': 'main'},
@@ -118,12 +118,8 @@ class TradingThread(threading.Thread):
                 cycle_start_time = time.time()
                 
                 # 스레드 ID에 따라 다른 대기 시간 설정
-                if self.thread_id <= 3:
-                    wait_time = 10  # 0~3번 스레드는 10초마다
-                    initial_delay = self.thread_id * 1  # 1초 간격으로 시작 시간 분배
-                else:
-                    wait_time = 600  # 4~10번 스레드는 600초(10분)마다
-                    initial_delay = (self.thread_id - 4) * 1  # 1초 간격으로 시작 시간 분배
+                wait_time = 600  # 4~10번 스레드는 600초(10분)마다
+                initial_delay = (self.thread_id - 4) * 1  # 1초 간격으로 시작 시간 분배
                 
                 # 초기 지연 적용
                 time.sleep(initial_delay)
@@ -166,7 +162,7 @@ class TradingThread(threading.Thread):
             with self.shared_locks['candle_data']:
                 self.logger.debug(f"Thread {self.thread_id} acquired lock for {coin}")
                 # thread_id에 따라 다른 시간 간격 설정
-                interval = '1' if self.thread_id <= 3 else '240'
+                interval = '240'
                 candles = self.upbit.get_candle(market=coin, interval=interval, count=300)
                 self.logger.debug(f"Thread {self.thread_id} released lock for {coin}")
 
@@ -221,7 +217,7 @@ class TradingThread(threading.Thread):
                             (current_profit_rate > 3 and price_trend < -0.2) or
                             
                             # 4. 과도한 손실 방지
-                            (current_profit_rate < -3) or
+                            (current_profit_rate < -3 and (signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.2))) or
                             
                             # 5. 변동성 급증 시 이익 실현
                             (current_profit_rate > 2 and volatility > 0.9) or
@@ -230,8 +226,7 @@ class TradingThread(threading.Thread):
                             (current_profit_rate > 10 and current_price > active_trade.get('price', 0) * 1.1) or
                             
                             # 7. sell_threshold 이하
-                            ((signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and current_profit_rate > 0.15) or
-                             (signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.4))) or
+                            (signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and current_profit_rate > 0.15) or
 
                             # 8. 사용자 호출
                             (active_trade.get('user_call', False))
@@ -257,7 +252,9 @@ class TradingThread(threading.Thread):
                         
                         # 물타기 조건 확인
                         should_average_down = (
-                            current_profit_rate <= -2 and  # 수익률이 -2% 이하
+                            (current_profit_rate <= -2 and (
+                                signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.2))
+                             ) and  # 수익률이 -2% 이하
                             current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
                             averaging_down_count < 3  # 최대 3회까지만 물타기
                         )
