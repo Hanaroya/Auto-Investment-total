@@ -15,6 +15,7 @@ import threading
 
 class MongoDBManager:
     _instance = None
+    _instance_lock = threading.Lock()  # 인스턴스 생성을 위한 락 추가
     """
     MongoDB 연결 및 작업을 관리하는 싱글톤 클래스
     """
@@ -28,55 +29,58 @@ class MongoDBManager:
     }
 
     def __new__(cls, *args, **kwargs):
-        """싱글톤 패턴 구현"""
+        """스레드 안전한 싱글톤 패턴 구현"""
         if cls._instance is None:
-            cls._instance = super(MongoDBManager, cls).__new__(cls)
-            cls._instance._initialized = False
+            with cls._instance_lock:  # 인스턴스 생성 시 락 사용
+                if cls._instance is None:  # double-checking
+                    cls._instance = super(MongoDBManager, cls).__new__(cls)
+                    cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
-        """MongoDB 연결 초기화"""
-        if getattr(self, '_initialized', False):
-            return
-            
-        # InvestmentCenter의 logger 사용
-        self.logger = logging.getLogger('investment_center')
-        
-        try:
-            # Docker 컨테이너 상태 확인 및 실행
-            self._check_docker_container()
-            
-            # MongoDB 설정 가져오기
-            config = MONGODB_CONFIG
-            
-            # 연결 문자열 로깅 (비밀번호는 가림)
-            safe_connection_string = f'mongodb://{config["username"]}:****@{config["host"]}:{config["port"]}/{config["db_name"]}?authSource=admin'
-            self.logger.info(f"MongoDB 연결 시도: {safe_connection_string}")
-            
-            # 사용자 생성 시도
-            self._create_mongodb_user()  # 여기서 명시적으로 호출
-            
-            # 동기식 클라이언트로 연결
-            self.client = MongoClient(
-                host=config['host'],
-                port=config['port'],
-                username=config['username'],
-                password=config['password'],
-                authSource='admin'
-            )
-            
-            # 데이터베이스와 컬렉션 설정
-            self.db = self.client[config['db_name']]
-            self._setup_collections()
-            
-            # 시스템 설정 초기화 (추가)
-            self._initialize_system_config()
-            
-            self._initialized = True
-            
-        except Exception as e:
-            self.logger.error(f"MongoDB 연결 실패: {str(e)}")
-            raise
+        """초기화는 한 번만 수행"""
+        if not getattr(self, '_initialized', False):
+            with self._instance_lock:
+                if not getattr(self, '_initialized', False):
+                    # InvestmentCenter의 logger 사용
+                    self.logger = logging.getLogger('investment_center')
+                    
+                    try:
+                        # Docker 컨테이너 상태 확인 및 실행
+                        self._check_docker_container()
+                        
+                        # MongoDB 설정 가져오기
+                        config = MONGODB_CONFIG
+                        
+                        # 연결 문자열 로깅 (비밀번호는 가림)
+                        safe_connection_string = f'mongodb://{config["username"]}:****@{config["host"]}:{config["port"]}/{config["db_name"]}?authSource=admin'
+                        self.logger.info(f"MongoDB 연결 시도: {safe_connection_string}")
+                        
+                        # 사용자 생성 시도
+                        self._create_mongodb_user()  # 여기서 명시적으로 호출
+                        
+                        # 동기식 클라이언트로 연결
+                        self.client = MongoClient(
+                            host=config['host'],
+                            port=config['port'],
+                            username=config['username'],
+                            password=config['password'],
+                            authSource='admin'
+                        )
+                        
+                        # 데이터베이스와 컬렉션 설정
+                        self.db = self.client[config['db_name']]
+                        self._setup_collections()
+                        
+                        # 시스템 설정 초기화 (추가)
+                        self._initialize_system_config()
+                        
+                        self._initialized = True
+                        self.logger.debug("MongoDBManager 인스턴스 초기화 완료")
+                        
+                    except Exception as e:
+                        self.logger.error(f"MongoDB 연결 실패: {str(e)}")
+                        raise
 
     def update_system_config(self, config_data: Dict[str, Any]) -> bool:
         """시스템 설정 업데이트"""
@@ -808,3 +812,16 @@ class MongoDBManager:
                     
             except Exception as e:
                 self.logger.error(f"trades/trading_history/portfolio 컬렉션 정리 실패: {str(e)}")
+
+    def _get_collection_lock(self, collection_name: str) -> threading.Lock:
+        """컬렉션별 락 반환
+        
+        Args:
+            collection_name (str): 컬렉션 이름
+            
+        Returns:
+            threading.Lock: 해당 컬렉션의 락 객체
+        """
+        lock = self._collection_locks.get(collection_name, threading.Lock())
+        self.logger.debug(f"Thread {threading.current_thread().name} getting lock for {collection_name}")
+        return lock
