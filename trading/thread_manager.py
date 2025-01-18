@@ -342,14 +342,17 @@ class TradingThread(threading.Thread):
                                 # 기존 최저점 조회
                                 existing_lowest = self.db.strategy_data.find_one({'coin': coin})
                                 
-                                # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때만 업데이트
-                                if not existing_lowest or current_signal < existing_lowest.get('lowest_signal', float('inf')):
+                                # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때, 현재 가격이 기존 최저가보다 낮을 때 업데이트
+                                if (not existing_lowest
+                                    ) or (current_signal < existing_lowest.get('lowest_signal', float('inf'))
+                                    ) or (current_price < existing_lowest.get('lowest_price', float('inf'))):
                                     # 최저 신호 정보 업데이트
                                     self.db.strategy_data.update_one(
                                         {'coin': coin},
                                         {
                                             '$set': {
                                                 'lowest_signal': current_signal,
+                                                'lowest_price': current_price,
                                                 'timestamp': datetime.now(timezone(timedelta(hours=9)))
                                             }
                                         },
@@ -362,9 +365,10 @@ class TradingThread(threading.Thread):
                             
                             if lowest_data and 'lowest_signal' in lowest_data:
                                 signal_increase = ((current_signal - lowest_data['lowest_signal']) / abs(lowest_data['lowest_signal'])) * 100 if lowest_data['lowest_signal'] != 0 else 0
+                                price_increase = ((current_price - lowest_data['lowest_price']) / abs(lowest_data['lowest_price'])) * 100 if lowest_data['lowest_price'] != 0 else 0
                                 buy_reason = "반등 매수"
                                 # 최저 신호 대비 15% 이상 개선된 경우
-                                if signal_increase >= 15:
+                                if signal_increase >= 15 and price_increase >= 0.5:
                                     self.logger.info(f"반등 매수 신호 감지: {coin} - 신호 개선률: {signal_increase:.2f}%")
                                     investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
                                     
