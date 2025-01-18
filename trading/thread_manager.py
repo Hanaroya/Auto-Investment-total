@@ -225,12 +225,41 @@ class TradingThread(threading.Thread):
                             # 6. 평균 매수 가격보다 10% 이상 상승한 경우
                             (current_profit_rate > 10 and current_price > active_trade.get('price', 0) * 1.1) or
                             
-                            # 7. sell_threshold 이하
+                            # 7. sell_threshold 이하이고 수익이 있는 경우
                             (signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and current_profit_rate > 0.15) or
 
                             # 8. 사용자 호출
                             (active_trade.get('user_call', False))
                         )
+
+                        # 매도 조건 충족 시 추가 검사
+                        if should_sell:
+                            # 최저 신호로 구매한 경우, buy_threshold까지 대기
+                            if active_trade.get('strategy_data', {}).get('rebound_buy', False):
+                                if signals.get('overall_signal', 0.0) < self.config['strategy']['buy_threshold']:
+                                    should_sell = False
+                                    self.logger.info(f"반등 매수 건으로 buy_threshold 도달 전 매도 보류: {coin}")
+
+                            # 매도 사유 저장
+                            sell_reason = None
+                            if price_trend < -0.7 and volatility > 0.8:
+                                sell_reason = "급격한 하락"
+                            elif price_trend < -0.3 and current_profit_rate < -2:
+                                sell_reason = "지속적 하락"
+                            elif current_profit_rate > 3 and price_trend < -0.2:
+                                sell_reason = "목표 수익 달성 후 하락"
+                            elif current_profit_rate < -3:
+                                sell_reason = "과도한 손실"
+                            elif current_profit_rate > 2 and volatility > 0.9:
+                                sell_reason = "변동성 급증"
+                            elif current_profit_rate > 10:
+                                sell_reason = "고수익 달성"
+                            elif signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold']:
+                                sell_reason = "매도 신호"
+                            elif active_trade.get('user_call', False):
+                                sell_reason = "사용자 호출"
+
+                            signals['sell_reason'] = sell_reason
 
                         # 디버깅 로깅
                         self.logger.debug(f"{coin} - 수익률: {current_profit_rate:.2f}%, "
@@ -246,7 +275,8 @@ class TradingThread(threading.Thread):
                                 thread_id=self.thread_id,
                                 signal_strength=signals.get('overall_signal', 0.0),
                                 price=current_price,
-                                strategy_data=signals
+                                strategy_data=signals,
+                                message=sell_reason
                             ):
                                 self.logger.info(f"매도 신호 처리 완료: {coin}")
                         
@@ -279,6 +309,7 @@ class TradingThread(threading.Thread):
                                     thread_id=self.thread_id,
                                     signal_strength=0.8,  # 물타기용 신호 강도
                                     price=current_price,
+                                    message="물타기",
                                     strategy_data=signals
                                 )
                                 self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
@@ -288,7 +319,7 @@ class TradingThread(threading.Thread):
                         if (signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and current_investment < self.max_investment):
                             self.logger.info(f"매수 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
                             investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
-                            
+                            buy_reason = "일반 매수"
                             # strategy_data에 investment_amount 추가
                             signals['investment_amount'] = investment_amount
                             
@@ -297,7 +328,8 @@ class TradingThread(threading.Thread):
                                 thread_id=self.thread_id,
                                 signal_strength=signals.get('overall_signal', 0.0),
                                 price=current_price,
-                                strategy_data=signals
+                                strategy_data=signals,
+                                message=buy_reason
                             )
                             self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
                         
@@ -330,7 +362,7 @@ class TradingThread(threading.Thread):
                             
                             if lowest_data and 'lowest_signal' in lowest_data:
                                 signal_increase = ((current_signal - lowest_data['lowest_signal']) / abs(lowest_data['lowest_signal'])) * 100 if lowest_data['lowest_signal'] != 0 else 0
-                                
+                                buy_reason = "반등 매수"
                                 # 최저 신호 대비 15% 이상 개선된 경우
                                 if signal_increase >= 15:
                                     self.logger.info(f"반등 매수 신호 감지: {coin} - 신호 개선률: {signal_increase:.2f}%")
@@ -345,7 +377,8 @@ class TradingThread(threading.Thread):
                                         thread_id=self.thread_id,
                                         signal_strength=current_signal,  # 반등 매수용 신호 강도
                                         price=current_price,
-                                        strategy_data=signals
+                                        strategy_data=signals,
+                                        message=buy_reason
                                     )
                                     self.logger.info(f"반등 매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
                                     

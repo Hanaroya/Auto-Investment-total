@@ -37,7 +37,7 @@ class TradingManager:
             return {}
 
     def process_buy_signal(self, coin: str, thread_id: int, signal_strength: float, 
-                               price: float, strategy_data: Dict):
+                               price: float, strategy_data: Dict, buy_message: str = None):
         """매수 신호 처리"""
         try:
             # 투자 가능 금액 확인
@@ -133,6 +133,7 @@ class TradingManager:
                     'signal_strength': signal_strength,
                     'current_price': price,
                     'profit_rate': 0,
+                    'buy_reason': buy_message,
                     'thread_id': thread_id,
                     'strategy_data': strategy_data,
                     'status': 'active',
@@ -152,7 +153,10 @@ class TradingManager:
                 self.db.insert_trade(trade_data)
 
             # 메신저로 매수 알림
-            message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(trade_data)
+            message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(
+                trade_data=trade_data,
+                message=buy_message
+            )
             self.messenger.send_message(message=message, messenger_type="slack")
             
             # 포트폴리오 업데이트
@@ -175,8 +179,8 @@ class TradingManager:
             self.logger.error(f"Error in process_buy_signal: {e}")
             return False
 
-    def process_sell_signal(self, coin: str, thread_id: int, signal_strength: float,
-                                price: float, strategy_data: Dict):
+    def process_sell_signal(self, coin: str, thread_id: int, signal_strength: float, 
+                            price: float, strategy_data: Dict, message: str = None):
         """매도 신호 처리
         
         개선사항:
@@ -320,7 +324,8 @@ class TradingManager:
                 buy_price=active_trade['price'],
                 sell_signal=signal_strength,
                 fee_amount=fee_amount,
-                total_fees=total_fees
+                total_fees=total_fees,
+                message=message
             )
             self.messenger.send_message(message=message, messenger_type="slack")
             
@@ -618,7 +623,7 @@ class TradingManager:
             if os.path.exists(filename):
                 os.remove(filename)
 
-    def create_buy_message(self, trade_data: Dict) -> str:
+    def create_buy_message(self, trade_data: Dict, buy_message: str = None) -> str:
         """매수 메시지 생성
         
         매수 시점의 전략 데이터를 기반으로 메시지를 생성합니다.
@@ -629,7 +634,7 @@ class TradingManager:
             매수 메시지
         """
         strategy_data = trade_data['strategy_data']
-        
+        buy_reason = ""
         # 구매 경로 확인
         if trade_data.get('averaging_down_count', 0) > 0:
             buy_reason = "물타기"
@@ -654,6 +659,7 @@ class TradingManager:
             f" 구매 신호: {trade_data['signal_strength']:.2f}\n"
             f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
             f" 투자 금액: W{trade_data.get('investment_amount', 0):,}\n"
+            f" 거래 사유: {buy_reason}\n"
         )
 
         # 물타기 정보 추가
@@ -680,7 +686,7 @@ class TradingManager:
 
     def create_sell_message(self, trade_data: Dict, sell_price: float, buy_price: float,
                            sell_signal: float, fee_amount: float = 0, 
-                           total_fees: float = 0) -> str:
+                           total_fees: float = 0, sell_message: str = None) -> str:
         """매도 메시지 생성
         
         매도 시점의 전략 데이터를 기반으로 메시지를 생성합니다.
@@ -705,6 +711,7 @@ class TradingManager:
             f" 판매 신호: {sell_signal:.2f}\n"
             f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
             f" 총 투자 금액: W{total_investment:,}\n"
+            f" 거래 사유: {sell_message}\n"
         )
 
         # 전략별 결과 추가 (판매 시점의 지표들)
