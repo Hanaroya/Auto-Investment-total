@@ -91,6 +91,19 @@ class MACDStrategy(StrategyBase):
         macd = market_data.get('macd', 0)
         signal = market_data.get('signal', 0)
         macd_history = market_data.get('macd_history', [])
+        rsi = market_data.get('rsi', 50)
+        
+        # 추가 필요한 변수들
+        macd_hist = macd - signal
+        prev_hist = macd_history[-2] - signal if len(macd_history) >= 2 else 0
+        
+        # 최대/최소 히스토그램 계산
+        if len(macd_history) >= 10:
+            max_hist = max([h - signal for h in macd_history[-10:]])
+            min_hist = min([h - signal for h in macd_history[-10:]])
+        else:
+            max_hist = macd_hist if macd_hist > 0 else 0.1  # 0으로 나누기 방지
+            min_hist = macd_hist if macd_hist < 0 else -0.1  # 0으로 나누기 방지
         
         # 하락세 종료 감지: MACD가 시그널선 상향돌파
         if macd > signal and len(macd_history) >= 2 and macd_history[-2] < signal:
@@ -99,6 +112,14 @@ class MACDStrategy(StrategyBase):
         # 상승세 종료 감지: MACD가 시그널선 하향돌파
         if macd < signal and len(macd_history) >= 2 and macd_history[-2] > signal:
             return max(-2.0, -1.5 - (signal - macd) * 2)  # 높은 변동성 범위
+            
+        # 매우 강한 매수 신호
+        if macd_hist > 0 and macd_hist > prev_hist * 1.5 and rsi < 40:
+            return min(4.0, 2.0 + macd_hist / max_hist * 2.0)
+            
+        # 매우 강한 매도 신호
+        if macd_hist < 0 and macd_hist < prev_hist * 1.5 and rsi > 60:
+            return max(-4.0, -2.0 + macd_hist / min_hist * 2.0)
             
         return 0.5
 
@@ -390,14 +411,32 @@ class StochasticStrategy(StrategyBase):
         k = market_data.get('stoch_k', 50)
         d = market_data.get('stoch_d', 50)
         k_history = market_data.get('stoch_k_history', [])
+        d_history = market_data.get('stoch_d_history', [])
+        volume = market_data.get('volume', 0)
+        volume_ma = market_data.get('volume_ma', 0)
         
-        # 하락세 종료 감지: 과매도 구간에서 골든크로스
-        if k < 20 and d < 20 and k > d and len(k_history) >= 2 and k > k_history[-2]:
-            return min(2.5, 2.0 + (20 - k) / 10)  # 매우 높은 변동성 범위
+        # 이전 값 계산
+        prev_k = k_history[-2] if len(k_history) >= 2 else k
+        prev_d = d_history[-2] if len(d_history) >= 2 else d
+        
+        # 거래량 확인
+        volume_surge = volume / volume_ma if volume_ma > 0 else 1
+        
+        # 매우 강한 매수 신호 (과매도 구간에서 반등)
+        if k < 20 and k > d and prev_k < prev_d and volume_surge > 1.2:
+            return min(4.0, 2.0 + (20 - k) / 20 * 2.0)
+        
+        # 매우 강한 매도 신호 (과매수 구간에서 하락)
+        if k > 80 and k < d and prev_k > prev_d and volume_surge > 1.2:
+            return max(-4.0, -2.0 - (k - 80) / 20 * 2.0)
+        
+        # 일반적인 매수 신호
+        if k < 30 and k > d:
+            return min(2.5, 1.5 + (30 - k) / 30)
             
-        # 상승세 종료 감지: 과매수 구간에서 데드크로스
-        if k > 80 and d > 80 and k < d and len(k_history) >= 2 and k < k_history[-2]:
-            return max(-2.0, -1.5 - (k - 80) / 10)  # 매우 높은 변동성 범위
+        # 일반적인 매도 신호
+        if k > 70 and k < d:
+            return max(-2.5, -1.5 - (k - 70) / 30)
             
         return 0.5
 
@@ -487,80 +526,131 @@ class MarketSentimentStrategy(StrategyBase):
             
         return 0.5
 
+class DivergenceStrategy(StrategyBase):
+    """
+    다이버전스 기반 투자 전략
+    
+    변동성: 매우 높음 (return 범위: -4.0~4.0)
+    리스크: 매우 높음
+    특징:
+        - 가격과 지표의 불일치 감지
+        - MACD, RSI 다이버전스 동시 분석
+        - 강력한 추세 전환 신호 생성
+    """
+    def analyze(self, market_data: Dict[str, Any]) -> float:
+        # 기본 데이터 가져오기
+        price = market_data.get('current_price', 0)
+        price_history = market_data.get('price_history', [])
+        rsi = market_data.get('rsi', 50)
+        rsi_history = market_data.get('rsi_history', [])
+        macd = market_data.get('macd', 0)
+        macd_history = market_data.get('macd_history', [])
+        volume = market_data.get('volume', 0)
+        volume_ma = market_data.get('volume_ma', 0)
+        
+        if len(price_history) < 3 or len(rsi_history) < 3 or len(macd_history) < 3:
+            return 0.5
+            
+        # 가격과 지표의 방향성 확인
+        price_down = price < price_history[-2] < price_history[-3]
+        price_up = price > price_history[-2] > price_history[-3]
+        rsi_down = rsi < rsi_history[-2] < rsi_history[-3]
+        rsi_up = rsi > rsi_history[-2] > rsi_history[-3]
+        macd_down = macd < macd_history[-2] < macd_history[-3]
+        macd_up = macd > macd_history[-2] > macd_history[-3]
+        
+        # 거래량 확인
+        volume_surge = volume / volume_ma if volume_ma > 0 else 1
+        volume_up = volume_surge > 1.2
+        volume_down = volume_surge < 0.8
+        
+        # RSI 강도 계산 (0~1 사이 값)
+        rsi_strength = abs(50 - rsi) / 50
+        
+        # 매우 강한 긍정적 다이버전스 (가격 하락 + 지표 상승)
+        if (price_down and (rsi_up and macd_up) and volume_up and 
+            rsi < 40 and volume_surge > 1.5):
+            return min(4.0, 2.0 + rsi_strength * 2.0)
+        
+        # 매우 강한 부정적 다이버전스 (가격 상승 + 지표 하락)
+        if (price_up and (rsi_down and macd_down) and volume_down and 
+            rsi > 60 and volume_surge < 0.5):
+            return max(-4.0, -2.0 - rsi_strength * 2.0)
+        
+        # 일반적인 긍정적 다이버전스
+        if price_down and (rsi_up or macd_up) and volume_up:
+            return min(2.5, 1.5 + rsi_strength)
+            
+        # 일반적인 부정적 다이버전스
+        if price_up and (rsi_down or macd_down) and volume_down:
+            return max(-2.5, -1.5 - rsi_strength)
+            
+        return 0.5
+
 class DowntrendEndStrategy(StrategyBase):
     """
     하락장 종료 감지 전략
     
-    변동성: 매우 높음 (return 범위: 0.0~1.5)
+    변동성: 매우 높음 (return 범위: -4.0~4.0)
     리스크: 매우 높음
     특징:
-        - 하락 추세 전환점 포착
-        - 반등 시점 예측
-        - 급격한 매수 기회 포착
-    신호 강도:
-        - 1.3~1.5: 매우 강한 매수 신호 (하락 추세 종료 + 반등 확인)
-        - 1.1~1.3: 강한 매수 신호 (하락세 약화 + 거래량 증가)
-        - 0.0~0.2: 매우 강한 매도 신호 (하락 지속)
-        - 0.45~0.55: 중립 구간
+        - 하락 추세의 종료 시점 포착
+        - 여러 지표의 복합적 분석
+        - 반등 매수 기회 포착
     """
     def analyze(self, market_data: Dict[str, Any]) -> float:
-        """
-        하락장 종료 신호 분석
+        # 기본 데이터 가져오기
+        price = market_data.get('current_price', 0)
+        price_history = market_data.get('price_history', [])
+        volume = market_data.get('volume', 0)
+        volume_history = market_data.get('volume_history', [])
+        rsi = market_data.get('rsi', 50)
+        macd = market_data.get('macd', 0)
+        signal = market_data.get('signal', 0)
+        bb_lower = market_data.get('lower_band', price * 0.95)
         
-        Args:
-            market_data (Dict[str, Any]): 시장 데이터
-                필수 키:
-                - price_history: 최근 가격 이력
-                - volume_history: 최근 거래량 이력
-                - trend_strength: 추세 강도 (-1 ~ 1)
-        
-        Returns:
-            float: 0~1 사이의 매수 신호 강도
-                - 1.3~1.5: 매우 강한 반등 신호
-                - 1.1~1.3: 하락세 약화 감지
-                - 0.5: 중립
-                - 0.0~0.2: 하락 지속
-        """
-        try:
-            # 기본 지표 데이터 추출
-            trend_strength = market_data.get('trend_strength', 0)
-            rsi = market_data.get('rsi', 50)
-            current_volume = market_data.get('current_volume', 0)
-            average_volume = market_data.get('average_volume', 1)
-            price_history = market_data.get('price_history', [])
-            volume_history = market_data.get('volume_history', [])
-            
-            if not price_history or not volume_history:
-                return 0.5
-                
-            # 거래량 급증 비율 계산
-            volume_surge = current_volume / average_volume if average_volume > 0 else 1
-            
-            # 최근 가격 변동 계산
-            recent_prices = price_history[-5:] if len(price_history) >= 5 else price_history
-            price_change = ((recent_prices[-1] / recent_prices[0]) - 1) * 100 if len(recent_prices) > 1 else 0
-            
-            # 하락 추세 종료 + 반등 신호 (매우 강한 매수)
-            if (trend_strength > -0.3 and trend_strength < 0) and rsi < 30 and volume_surge > 1.5:
-                return min(2.5, 2.0 + volume_surge * 0.5)  # 매우 높은 변동성 범위
-                
-            # 하락세 약화 + 거래량 증가 (강한 매수)
-            if trend_strength > -0.5 and volume_surge > 1.2 and rsi < 40:
-                return min(1.8, 1.5 + (volume_surge - 1.2) * 0.4)  # 매우 높은 변동성 범위
-                
-            # 기술적 반등 조건 (중간 강도 매수)
-            if rsi < 35 and volume_surge > 1.1 and price_change > -1:
-                return min(1.35, 1.25 + (35 - rsi) / 50)  # 매우 높은 변동성 범위
-                
-            # 하락 지속 (매우 강한 매도)
-            if trend_strength < -0.7 or (rsi < 30 and volume_surge < 0.8):
-                return max(-2.0, -1.5 + trend_strength)  # 매우 높은 변동성 범위
-                
+        if len(price_history) < 3 or len(volume_history) < 3:
             return 0.5
             
-        except Exception as e:
-            logging.error(f"DowntrendEndStrategy 분석 중 오류: {str(e)}")
-            return 0.5
+        # 가격 변화율 계산
+        price_change = (price / price_history[-2] - 1) * 100
+        prev_price_change = (price_history[-2] / price_history[-3] - 1) * 100
+        
+        # 거래량 변화 계산
+        volume_ma = sum(volume_history[-5:]) / 5 if len(volume_history) >= 5 else volume
+        volume_surge = volume / volume_ma if volume_ma > 0 else 1
+        
+        # MACD 히스토그램
+        macd_hist = macd - signal
+        
+        # 매우 강한 반등 신호
+        if (price_change > 0 and prev_price_change < -2 and  # 가격 반등
+            volume_surge > 1.5 and  # 거래량 급증
+            rsi < 35 and  # 과매도
+            price <= bb_lower and  # 볼린저 밴드 하단 터치
+            macd_hist > 0):  # MACD 반등
+            
+            return min(4.0, 2.0 + abs(prev_price_change) / 5)
+        
+        # 매우 강한 하락 지속 신호
+        if (price_change < -2 and prev_price_change < -2 and  # 하락 지속
+            volume_surge > 1.5 and  # 거래량 급증
+            rsi > 65 and  # 과매수
+            macd_hist < 0):  # MACD 하락
+            
+            return max(-4.0, -2.0 - abs(price_change) / 5)
+        
+        # 일반적인 반등 신호
+        if (price_change > 0 and prev_price_change < -1 and 
+            volume_surge > 1.2 and rsi < 40):
+            return min(2.5, 1.5 + volume_surge / 2)
+            
+        # 일반적인 하락 지속 신호
+        if (price_change < -1 and prev_price_change < -1 and 
+            volume_surge > 1.2 and rsi > 60):
+            return max(-2.5, -1.5 - volume_surge / 2)
+            
+        return 0.5
 
 class UptrendEndStrategy(StrategyBase):
     """
@@ -620,62 +710,6 @@ class UptrendEndStrategy(StrategyBase):
         except Exception as e:
             logging.error(f"UptrendEndStrategy 분석 중 오류: {str(e)}")
             return 0.5
-
-class DivergenceStrategy(StrategyBase):
-    """
-    다이버전스 감지 전략
-    
-    가격과 지표 간의 불일치를 통해 추세 전환 시점을 포착합니다.
-    변동성: 매우 높음 (return 범위: -1.0~2.5)
-    리스크: 매우 높음
-    
-    Notes:
-        - 가격과 RSI 다이버전스
-        - 가격과 MACD 다이버전스
-        - 가격과 거래량 다이버전스
-    """
-    
-    def analyze(self, market_data: Dict[str, Any]) -> float:
-        """
-        다이버전스 패턴 분석
-        
-        Args:
-            market_data (Dict[str, Any]): 시장 데이터
-                필수 키:
-                - price_history: 최근 가격 이력
-                - rsi_history: RSI 이력
-                - macd_history: MACD 이력
-                - volume_history: 거래량 이력
-        
-        Returns:
-            float: 0~1 사이의 매수 신호 강도
-                - 0.9: 강한 매수 신호 (긍정적 다이버전스)
-                - 0.2: 강한 매도 신호 (부정적 다이버전스)
-                - 0.5: 다이버전스 없음
-        """
-        price_history = market_data.get('price_history', [])
-        rsi_history = market_data.get('rsi_history', [])
-        volume_history = market_data.get('volume_history', [])
-        
-        # 데이터가 충분하지 않은 경우 중립 신호 반환
-        if len(price_history) < 3 or len(rsi_history) < 3:
-            return 0.5
-            
-        # 하락세 종료 감지: 긍정적 다이버전스
-        # 가격은 하락하는데 RSI는 상승
-        if (price_history[-1] < price_history[-2] and 
-            rsi_history[-1] > rsi_history[-2] and 
-            volume_history[-1] > volume_history[-2]):
-            return min(2.4, 1.8 + (rsi_history[-1] - rsi_history[-2]) / 100)
-            
-        # 상승세 종료 감지: 부정적 다이버전스
-        # 가격은 상승하는데 RSI는 하락
-        if (price_history[-1] > price_history[-2] and 
-            rsi_history[-1] < rsi_history[-2] and 
-            volume_history[-1] < volume_history[-2]):
-            return max(-2.0, -1.5 - (rsi_history[-2] - rsi_history[-1]) / 100)
-            
-        return 0.5
 
 __all__ = [
     'RSIStrategy',
