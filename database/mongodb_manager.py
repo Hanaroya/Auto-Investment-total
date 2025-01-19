@@ -283,10 +283,12 @@ class MongoDBManager:
 
     def _initialize_system_config(self):
         """시스템 설정 초기화
-        시스템 설정이 초기화되지 않은 경우 초기 설정을 삽입합니다.
+        시스템 설정이 초기화되지 않은 경우에만 초기 설정을 삽입합니다.
         """
         try:
-            if not self.system_config.find_one({'_id': 'config'}):
+            # 기존 설정 확인
+            existing_config = self.system_config.find_one({'_id': 'config'})
+            if not existing_config:
                 initial_config = {
                     '_id': 'config',
                     'initial_investment': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
@@ -306,26 +308,37 @@ class MongoDBManager:
                 self.logger.info(f"스레드당 최대 투자금: {initial_config['max_thread_investment']:,}원")
                 self.logger.info(f"예비금: {initial_config['reserve_amount']:,}원")
                 self.logger.info(f"총 최대 투자금: {initial_config['total_max_investment']:,}원")
+            else:
+                self.logger.info("기존 시스템 설정이 존재합니다. 초기화를 건너뜁니다.")
+                
         except Exception as e:
             self.logger.error(f"시스템 설정 초기화 실패: {str(e)}")
             raise
 
     def _initialize_portfolio(self):
-        """포트폴리오 초기 설정"""
+        """포트폴리오 초기 설정
+        포트폴리오가 없는 경우에만 초기화합니다.
+        """
         try:
-            if not self.portfolio.find_one({'_id': 'main'}):
+            # 기존 포트폴리오 확인
+            existing_portfolio = self.portfolio.find_one({'_id': 'main'})
+            if not existing_portfolio:
                 initial_portfolio = {
                     '_id': 'main',
                     'coin_list': {},
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
-                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
-                    'thread_limit': float(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
-                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
-                    'last_updated': datetime.utcnow() + timedelta(hours=9)
+                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'profit_earned': 0,
+                    'created_at': datetime.now(timezone(timedelta(hours=9))),
+                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
                 }
                 self.portfolio.insert_one(initial_portfolio)
                 self.logger.info("포트폴리오 초기화 완료")
+            else:
+                self.logger.info("기존 포트폴리오가 존재합니다. 초기화를 건너뜁니다.")
+                
         except Exception as e:
             self.logger.error(f"포트폴리오 초기화 실패: {str(e)}")
             raise

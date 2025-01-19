@@ -96,16 +96,40 @@ class TradingThread(threading.Thread):
                                f"최대 투자금: {self.max_investment:,}원, "
                                f"코인당 투자금: {self.investment_each:,}원")
                 
-                # portfolio 컬렉션 업데이트
-                self.db.portfolio.update_one(
-                    {'_id': 'main'},
-                    {'$set': {
-                        'investment_amount': floor(total_max_investment),
-                        'available_investment': self.total_max_investment,
-                        'reserve_amount': floor(total_max_investment * 0.2)
-                        }
-                     }
-                )
+                # 현재 활성화된 거래들의 총 투자금액 계산
+                active_trades = self.db.trades.find({"status": "active"})
+                total_invested = sum(trade.get('investment_amount', 0) for trade in active_trades)
+                
+                # 기존 포트폴리오 정보 가져오기
+                existing_portfolio = self.db.portfolio.find_one({'_id': 'main'})
+                if existing_portfolio:
+                    # 기존 profit_earned 값 보존
+                    profit_earned = existing_portfolio.get('profit_earned', 0)
+                    
+                    # portfolio 컬렉션 업데이트 (기존 값 유지하면서 필요한 부분만 업데이트)
+                    self.db.portfolio.update_one(
+                        {'_id': 'main'},
+                        {'$set': {
+                            'current_amount': floor(self.total_max_investment - total_invested),
+                            'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                            }
+                         }
+                    )
+                else:
+                    # 포트폴리오가 없는 경우에만 전체 초기화
+                    self.db.portfolio.update_one(
+                        {'_id': 'main'},
+                        {'$set': {
+                            'investment_amount': floor(total_max_investment),
+                            'available_investment': self.total_max_investment,
+                            'current_amount': floor(self.total_max_investment - total_invested),
+                            'reserve_amount': floor(total_max_investment * 0.2),
+                            'profit_earned': 0
+                            }
+                         },
+                        upsert=True
+                    )
+                
         except Exception as e:
             self.logger.error(f"투자 한도 업데이트 중 오류: {str(e)}")
 
