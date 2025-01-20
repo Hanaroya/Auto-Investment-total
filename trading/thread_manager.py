@@ -142,8 +142,12 @@ class TradingThread(threading.Thread):
                 cycle_start_time = time.time()
                 
                 # 스레드 ID에 따라 다른 대기 시간 설정
-                wait_time = 300  # 모든 스레드는 300초(5분)마다
-                initial_delay = (self.thread_id * 1)  # 1초 간격으로 시작 시간 분배
+                if self.thread_id < 4:  # 0,1,2,3 번 스레드
+                    wait_time = 40  # 40초마다
+                    initial_delay = self.thread_id * 1  # 1초 간격으로 시작 시간 분배
+                else:  # 4번 이상 스레드
+                    wait_time = 300  # 300초(5분)마다
+                    initial_delay = (self.thread_id - 4) * 1  # 1초 간격으로 시작 시간 분배
                 
                 # 초기 지연 적용
                 time.sleep(initial_delay)
@@ -181,12 +185,22 @@ class TradingThread(threading.Thread):
             if (current_time - self.last_config_check).total_seconds() >= 300:  # 5분
                 self.update_investment_limits()
                 self.last_config_check = current_time
-
+            
             # 캔들 데이터 조회 - 락으로 보호
             with self.shared_locks['candle_data']:
                 self.logger.debug(f"Thread {self.thread_id} acquired lock for {coin}")
+                
                 # thread_id에 따라 다른 시간 간격 설정
-                interval = '240'
+                if self.thread_id < 4:  # 0,1,2,3 번 스레드 
+                    initial_delay = self.thread_id * 1  # 1초 간격으로 시작 시간 분배
+                    interval = '1'  # 1분봉
+                else:  # 4번 이상 스레드
+                    initial_delay = (self.thread_id - 4) * 1  # 1초 간격으로 시작 시간 분배
+                    interval = '240'  # 4시간봉
+
+                # 초기 지연 적용
+                time.sleep(initial_delay)
+
                 candles = self.upbit.get_candle(market=coin, interval=interval, count=300)
                 self.logger.debug(f"Thread {self.thread_id} released lock for {coin}")
 
@@ -195,7 +209,7 @@ class TradingThread(threading.Thread):
                 'thread_id': self.thread_id, 
                 'status': 'active'
             })
-            current_investment = sum(trade.get('total_investment', 0) for trade in active_trades)
+            current_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
 
             # 최대 투자금 체크
             if current_investment >= self.total_max_investment:
