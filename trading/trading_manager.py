@@ -738,7 +738,7 @@ class TradingManager:
         message += (
             f"  └ 매도 수수료: ₩{fee_amount:,.0f}\n"
             f"  └ 총 수수료: ₩{total_fees:,.0f}\n"
-            f"  └ 순수익: ₩{profit_amount:+,.0f} (수수료 차감 후)\n"
+            f"  └ 순수익: ₩{(profit_amount - fee_amount):+,.0f} (수수료 차감 후)\n"
         )
 
         message += "\n------------------------------------------------"
