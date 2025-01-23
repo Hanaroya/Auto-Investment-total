@@ -272,12 +272,6 @@ class TradingThread(threading.Thread):
 
                         # 매도 조건 충족 시 추가 검사
                         if should_sell:
-                            # 최저 신호로 구매한 경우, buy_threshold까지 대기
-                            if active_trade.get('strategy_data', {}).get('rebound_buy', False):
-                                if signals.get('overall_signal', 0.0) < self.config['strategy']['buy_threshold']:
-                                    should_sell = False
-                                    self.logger.info(f"반등 매수 건으로 buy_threshold 도달 전 매도 보류: {coin}")
-
                             # 매도 사유 저장
                             sell_reason = None
                             if price_trend < -0.7 and volatility > 0.8:
