@@ -430,6 +430,7 @@ class TradingManager:
                     # 보유 현황 데이터 가공
                     holdings_display = pd.DataFrame({
                         '코인': holdings_df['coin'],
+                        'RANK': holdings_df['thread_id'],
                         '매수시간': holdings_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M'),
                         '매수가': holdings_df['price'].map('{:,.0f}'.format),
                         '현재가': holdings_df['current_price'].map('{:,.0f}'.format),
@@ -797,6 +798,7 @@ class TradingManager:
                 
                 coin_info = (
                     f"• {trade['coin']}\n"
+                    f"  └ RANK: ₩{trade['thread_id']:,}\n"
                     f"  └ 매수가: ₩{trade['price']:,}\n"
                     f"  └ 현재가: ₩{current_price:,}\n"
                     f"  └ 수익률: {profit_rate:+.2f}% (₩{profit_amount:+,.0f})\n"

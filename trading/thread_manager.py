@@ -56,11 +56,11 @@ class TradingThread(threading.Thread):
             self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
             self.max_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))
             self.total_max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000))
-            self.investment_each = self.total_max_investment / 10
+            self.investment_each = self.total_max_investment / 20
         else:
             self.max_investment = system_config.get('max_thread_investment', 80000)
             self.total_max_investment = system_config.get('total_max_investment', 1000000)
-            self.investment_each = (self.total_max_investment * 0.8) / 10
+            self.investment_each = (self.total_max_investment * 0.8) / 20
         
         self.db.portfolio.update_one(
                     {'_id': 'main'},
@@ -89,8 +89,8 @@ class TradingThread(threading.Thread):
                 self.total_max_investment = floor(total_max_investment * 0.8)
                 # 스레드당 최대 투자금은 total_max_investment의 10%로 설정
                 self.max_investment = floor(self.total_max_investment * 0.1)
-                # 코인당 투자금은 total_max_investment를 40으로 나눈 값
-                self.investment_each = floor(self.total_max_investment / 10)
+                # 코인당 투자금은 total_max_investment를 20으로 나눈 값
+                self.investment_each = floor(self.total_max_investment / 20)
                 
                 self.logger.info(f"Thread {self.thread_id} 투자 한도 업데이트: "
                                f"최대 투자금: {self.max_investment:,}원, "
