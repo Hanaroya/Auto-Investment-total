@@ -3,7 +3,7 @@ import pandas as pd
 import logging
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, Tuple
 import re
 import jwt
 import uuid
@@ -15,6 +15,14 @@ from functools import wraps
 import asyncio
 import aiohttp
 import threading
+from bs4 import BeautifulSoup
+from datetime import timezone, timedelta
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
+import os
 
 from trade_market_api.MarketDataConverter import MarketDataConverter
 
@@ -112,6 +120,7 @@ class UpbitCall:
         }
         self.session = None
         self.thread_id = None  # 스레드 식별용
+        self.last_ubmi_fetch_time = None
 
     def _setup_logger(self) -> logging.Logger:
         """로깅 설정
@@ -567,6 +576,140 @@ class UpbitCall:
         if self.session:
             await self.session.close()
             self.session = None
+
+    def should_fetch_ubmi(self) -> bool:
+        """UBMI 데이터를 가져올 시간인지 확인"""
+        current_time = datetime.now()
+        
+        # 마지막 조회 시간 확인
+        if self.last_ubmi_fetch_time is None:
+            return True
+            
+        # 5분 간격으로 조회 (0, 5, 10, 15, ..., 55분)
+        time_diff = (current_time - self.last_ubmi_fetch_time).total_seconds()
+        return (current_time.minute % 5 == 0 and time_diff >= 300)
+
+    @with_thread_lock("ubmi")
+    async def fetch_ubmi_data(self) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+        """UBMI 데이터 크롤링"""
+        url = 'https://ubcindex.com/home'
+        options = Options()
+        
+        # 완전한 백그라운드 실행을 위한 옵션들
+        options.add_argument("--headless=new")  # 새로운 헤드리스 모드
+        options.add_argument("--disable-gpu")   # GPU 하드웨어 가속 비활성화
+        options.add_argument("--no-sandbox")    # 샌드박스 비활성화
+        options.add_argument("--disable-dev-shm-usage")  # 공유 메모리 사용 비활성화
+        options.add_argument("--disable-extensions")     # 확장 프로그램 비활성화
+        options.add_argument("--disable-browser-side-navigation")  # 브라우저 측 탐색 비활성화
+        options.add_argument("--disable-infobars")      # 정보 표시줄 비활성화
+        options.add_argument("--disable-notifications")  # 알림 비활성화
+        options.add_argument("--disable-popup-blocking") # 팝업 차단
+        options.add_argument("--window-position=-32000,-32000")  # 화면 밖으로 이동
+        options.add_argument("--log-level=3")  # 로그 레벨 최소화
+        options.add_argument("--silent")       # 불필요한 출력 억제
+        options.add_argument("--window-size=1,1")  # 최소 창 크기
+        
+        driver = None
+        try:
+            # 임시 디렉토리 사용 설정
+            service = ChromeService(
+                ChromeDriverManager().install(),
+                log_output=os.devnull  # 로그 출력 억제
+            )
+            
+            driver = webdriver.Chrome(service=service, options=options)
+            driver.set_window_position(-32000, -32000)  # 추가적인 창 위치 설정
+            
+            driver.get(url)
+            await asyncio.sleep(10)  # 비동기 대기
+            html = BeautifulSoup(driver.page_source, features="html.parser")
+            
+            p = re.compile('(?<=\">)(.*?)(?=<\/div>)')
+            price_ko_divs = html.find_all("div", {"class": "item active"})
+            total_ubmi = 0
+            change_ubmi = 0
+            fear_greed = float(p.findall(str(html.find("div", {"class": "score"})))[0].replace(',',""))
+            
+            for price_ko_div in price_ko_divs:
+                minus_chk = False
+                price_status_div = price_ko_div.find("div", class_="price rise") or price_ko_div.find("div", class_="price fall")
+                if price_ko_div.find("div", class_="price fall"): 
+                    minus_chk = True
+                if price_status_div:
+                    item_price = price_status_div.find("div", {"class": "item Price"})
+                    item_change_rate = price_status_div.find("div", {"class": "item changePrice"})
+                    if item_price and item_change_rate:
+                        total_ubmi = float(item_price.text.strip().replace(',',""))
+                        change_ubmi = float(item_change_rate.text.strip().replace(',',""))
+                        if minus_chk:
+                            change_ubmi *= -1
+            
+            self.last_ubmi_fetch_time = datetime.now()
+            return total_ubmi, change_ubmi, fear_greed
+            
+        except Exception as e:
+            self.logger.error(f"UBMI 데이터 크롤링 실패: {str(e)}")
+            return None, None, None
+            
+        finally:
+            if driver:
+                try:
+                    driver.quit()  # 드라이버 종료
+                    await asyncio.sleep(1)  # 완전한 종료를 위한 대기
+                except Exception as e:
+                    self.logger.error(f"드라이버 종료 중 오류: {str(e)}")
+
+    async def update_market_data(self, db_manager) -> bool:
+        """UBMI 데이터 업데이트 및 DB 저장"""
+        try:
+            if not self.should_fetch_ubmi():
+                return False
+                
+            total_ubmi, change_ubmi, fear_greed = await self.fetch_ubmi_data()
+            if all(v is not None for v in [total_ubmi, change_ubmi, fear_greed]):
+                market_data = {
+                    'exchange': 'upbit',
+                    'timestamp': datetime.now(timezone(timedelta(hours=9))),
+                    'AFR': total_ubmi,
+                    'current_change': change_ubmi,
+                    'fear_and_greed': fear_greed
+                }
+                
+                success = db_manager.update_market_index(market_data)
+                if success:
+                    self.logger.info(f"UBMI 데이터 업데이트 완료: AFR={total_ubmi}, Change={change_ubmi}, F&G={fear_greed}")
+                return success
+                
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"UBMI 데이터 업데이트 중 오류: {str(e)}")
+            return False
+
+    async def get_AFR_value(self) -> Dict:
+        """
+        거래소별 AFR 데이터 조회
+        Returns:
+            Dict: {
+                'AFR': float,
+                'current_change': float,
+                'fear_and_greed': float
+            }
+        """
+        try:
+            total_ubmi, change_ubmi, fear_greed = await self.fetch_ubmi_data()
+            if all(v is not None for v in [total_ubmi, change_ubmi, fear_greed]):
+                return {
+                    'AFR': total_ubmi,
+                    'current_change': change_ubmi,
+                    'fear_and_greed': fear_greed
+                }
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"AFR 데이터 조회 중 오류: {str(e)}")
+            return None
 
 if __name__ == "__main__":
     # 사용 예시

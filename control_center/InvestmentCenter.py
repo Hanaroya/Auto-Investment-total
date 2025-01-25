@@ -70,13 +70,14 @@ class InvestmentCenter:
         self.trading_manager = TradingManager()
         
         # 스레드 매니저 초기화
-        self.thread_manager = ThreadManager(self.config)
+        self.thread_manager = ThreadManager(self.config, self)
 
         # 데이터베이스 초기화
         self.db = MongoDBManager()
         
         # 기타 속성 초기화
         self.is_running = False
+        self.exchange_name = exchange_name  # 거래소 이름 저장
 
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
@@ -163,17 +164,16 @@ class InvestmentCenter:
             # 시스템 상태 초기화
             self._initialize_system_state()
             
-            # 코인 시장 정보 수집 및 정렬
-            markets = await self.market_analyzer.get_sorted_markets()
+            # 거래소별 마켓 정보 조회
+            markets = await self.exchange.get_krw_markets()  # 비동기로 변경
             if not markets:
-                self.messenger.send_message(message="마켓 정보를 가져오는데 실패했습니다.", messenger_type="slack")
-                return
+                raise Exception("마켓 정보 조회 실패")
             
             self.logger.info(f"총 {len(markets)}개의 마켓 분석을 시작합니다.")
             self.messenger.send_message(message=f"총 {len(markets)}개의 마켓 분석을 시작합니다.", messenger_type="slack")
             
-            # 스레드 매니저 시작
-            await self.thread_manager.start_threads(markets)
+            # 스레드 시작
+            self.thread_manager.start_threads(markets)
             
             # 메인 루프
             while self.is_running:

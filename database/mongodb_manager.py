@@ -838,3 +838,58 @@ class MongoDBManager:
         lock = self._collection_locks.get(collection_name, threading.Lock())
         self.logger.debug(f"Thread {threading.current_thread().name} getting lock for {collection_name}")
         return lock
+
+    def update_market_index(self, market_data: Dict[str, Any]) -> bool:
+        """거래소별 시장 지표 데이터 업데이트
+        
+        Args:
+            market_data: 시장 지표 데이터
+                - exchange: 거래소명
+                - timestamp: 타임스탬프
+                - AFR: 통합 자금 비율
+                - current_change: 현재 변화율
+                - fear_and_greed: 공포/탐욕 지수
+        """
+        try:
+            exchange = market_data['exchange']
+            
+            # 최신 20개 데이터만 유지
+            update_query = {
+                '$push': {
+                    'AFR': {
+                        '$each': [market_data['AFR']],
+                        '$slice': -20
+                    },
+                    'current_change': {
+                        '$each': [market_data['current_change']],
+                        '$slice': -20
+                    },
+                    'fear_and_greed': {
+                        '$each': [market_data['fear_and_greed']],
+                        '$slice': -20
+                    }
+                },
+                '$set': {
+                    'last_updated': market_data['timestamp']
+                }
+            }
+            
+            result = self.db.market_indices.update_one(
+                {'exchange': exchange},
+                update_query,
+                upsert=True
+            )
+            
+            return bool(result.modified_count > 0 or result.upserted_id)
+            
+        except Exception as e:
+            self.logger.error(f"시장 지표 데이터 업데이트 실패: {str(e)}")
+            return False
+
+    def get_market_index(self, exchange: str) -> Dict[str, Any]:
+        """거래소별 시장 지표 데이터 조회"""
+        try:
+            return self.db.market_indices.find_one({'exchange': exchange}) or {}
+        except Exception as e:
+            self.logger.error(f"시장 지표 데이터 조회 실패: {str(e)}")
+            return {}
