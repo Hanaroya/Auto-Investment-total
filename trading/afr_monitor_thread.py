@@ -41,11 +41,18 @@ class AFRMonitorThread(threading.Thread):
                 )
                 
                 if market_data:
+                    # market_index 컬렉션에 데이터 업데이트
                     market_data['exchange'] = exchange
                     market_data['timestamp'] = current_time
-                    self.db.update_market_index(market_data)
-                    self.last_check[exchange] = current_time
-                    self.logger.info(f"{exchange} AFR 데이터 업데이트: {market_data.get('AFR', 0):.2f}")
+                    
+                    if self.db.update_market_index(market_data):
+                        self.last_check[exchange] = current_time
+                        self.logger.info(
+                            f"{exchange} AFR 데이터 업데이트 - "
+                            f"AFR: {market_data.get('AFR', 0):.2f}, "
+                            f"변화율: {market_data.get('current_change', 0):.2f}%, "
+                            f"공포/탐욕: {market_data.get('fear_and_greed', 50):.1f}"
+                        )
                 
                 time.sleep(60)  # 1분마다 체크
                 

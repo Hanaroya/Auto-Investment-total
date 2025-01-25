@@ -165,7 +165,7 @@ class InvestmentCenter:
             self._initialize_system_state()
             
             # 거래소별 마켓 정보 조회
-            markets = await self.exchange.get_krw_markets()  # 비동기로 변경
+            markets = self.exchange.get_krw_markets()  # 비동기로 변경
             if not markets:
                 raise Exception("마켓 정보 조회 실패")
             

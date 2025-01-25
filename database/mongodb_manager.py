@@ -25,7 +25,8 @@ class MongoDBManager:
         'strategy_data': threading.Lock(),
         'market_data': threading.Lock(),
         'thread_status': threading.Lock(),
-        'system_config': threading.Lock()
+        'system_config': threading.Lock(),
+        'market_index': threading.Lock()
     }
 
     def __new__(cls, *args, **kwargs):
@@ -266,6 +267,7 @@ class MongoDBManager:
             self.trading_history = self.db['trading_history']
             self.daily_profit = self.db['daily_profit']
             self.portfolio = self.db['portfolio']
+            self.market_index = self.db['market_index']  # AFR 데이터를 위한 컬렉션 추가
             
             # 인덱스 생성
             self.trades.create_index([("coin", 1), ("thread_id", 1), ("status", 1)])
@@ -274,6 +276,11 @@ class MongoDBManager:
             self.thread_status.create_index([("thread_id", 1)])
             self.daily_profit.create_index([("timestamp", -1)])
             self.portfolio.create_index([("_id", 1)])
+            self.market_index.create_index([
+                ("exchange", 1),
+                ("timestamp", -1)
+            ])
+            self.market_index.create_index([("timestamp", -1)])
             
             self.logger.info("컬렉션 및 인덱스 설정 완료")
             
@@ -839,57 +846,98 @@ class MongoDBManager:
         self.logger.debug(f"Thread {threading.current_thread().name} getting lock for {collection_name}")
         return lock
 
-    def update_market_index(self, market_data: Dict[str, Any]) -> bool:
-        """거래소별 시장 지표 데이터 업데이트
+    def update_market_index(self, market_data: Dict) -> bool:
+        """
+        시장 지표(AFR 등) 데이터 업데이트
         
         Args:
-            market_data: 시장 지표 데이터
-                - exchange: 거래소명
-                - timestamp: 타임스탬프
-                - AFR: 통합 자금 비율
-                - current_change: 현재 변화율
-                - fear_and_greed: 공포/탐욕 지수
+            market_data (Dict): 업데이트할 시장 지표 데이터
+                {
+                    'exchange': str,          # 거래소 이름
+                    'timestamp': datetime,    # 타임스탬프
+                    'AFR': float,            # AFR 값
+                    'current_change': float,  # 현재 변화율
+                    'fear_and_greed': float,  # 공포/탐욕 지수
+                }
+        
+        Returns:
+            bool: 업데이트 성공 여부
         """
         try:
-            exchange = market_data['exchange']
-            
-            # 최신 20개 데이터만 유지
-            update_query = {
-                '$push': {
-                    'AFR': {
-                        '$each': [market_data['AFR']],
-                        '$slice': -20
+            with self._get_collection_lock('market_index'):
+                exchange = market_data['exchange']
+                
+                # 최신 20개 데이터만 유지하도록 업데이트
+                update_query = {
+                    '$push': {
+                        'AFR': {
+                            '$each': [market_data['AFR']],
+                            '$slice': -20
+                        },
+                        'current_change': {
+                            '$each': [market_data['current_change']],
+                            '$slice': -20
+                        },
+                        'fear_and_greed': {
+                            '$each': [market_data['fear_and_greed']],
+                            '$slice': -20
+                        }
                     },
-                    'current_change': {
-                        '$each': [market_data['current_change']],
-                        '$slice': -20
-                    },
-                    'fear_and_greed': {
-                        '$each': [market_data['fear_and_greed']],
-                        '$slice': -20
+                    '$set': {
+                        'last_updated': market_data['timestamp'],
+                        'exchange': exchange
                     }
-                },
-                '$set': {
-                    'last_updated': market_data['timestamp']
                 }
-            }
-            
-            result = self.db.market_indices.update_one(
-                {'exchange': exchange},
-                update_query,
-                upsert=True
-            )
-            
-            return bool(result.modified_count > 0 or result.upserted_id)
-            
+                
+                # 추가 지표가 있다면 업데이트 쿼리에 포함
+                additional_metrics = {
+                    k: v for k, v in market_data.items() 
+                    if k not in ['exchange', 'timestamp', 'AFR', 'current_change', 'fear_and_greed']
+                }
+                if additional_metrics:
+                    for key, value in additional_metrics.items():
+                        update_query['$push'][key] = {
+                            '$each': [value],
+                            '$slice': -20
+                        }
+                
+                result = self.market_index.update_one(
+                    {'exchange': exchange},
+                    update_query,
+                    upsert=True
+                )
+                
+                success = bool(result.modified_count > 0 or result.upserted_id)
+                if success:
+                    self.logger.debug(f"시장 지표 업데이트 성공 - 거래소: {exchange}")
+                else:
+                    self.logger.warning(f"시장 지표 업데이트 실패 - 거래소: {exchange}")
+                
+                return success
+                
         except Exception as e:
             self.logger.error(f"시장 지표 데이터 업데이트 실패: {str(e)}")
             return False
 
-    def get_market_index(self, exchange: str) -> Dict[str, Any]:
-        """거래소별 시장 지표 데이터 조회"""
+    def get_market_index(self, exchange: str, limit: int = 100) -> List[Dict]:
+        """
+        시장 지표 데이터 조회
+        
+        Args:
+            exchange (str): 거래소 이름
+            limit (int, optional): 조회할 데이터 개수. Defaults to 100.
+            
+        Returns:
+            List[Dict]: 시장 지표 데이터 리스트
+        """
         try:
-            return self.db.market_indices.find_one({'exchange': exchange}) or {}
+            with self._get_collection_lock('market_index'):
+                cursor = self.market_index.find(
+                    {'exchange': exchange}
+                ).sort('timestamp', -1).limit(limit)
+                
+                return list(cursor)
+                
         except Exception as e:
             self.logger.error(f"시장 지표 데이터 조회 실패: {str(e)}")
-            return {}
+            return []
