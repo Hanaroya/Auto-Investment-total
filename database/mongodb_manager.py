@@ -43,34 +43,39 @@ class MongoDBManager:
         if not getattr(self, '_initialized', False):
             with self._instance_lock:
                 if not getattr(self, '_initialized', False):
-                    # InvestmentCenter의 logger 사용
                     self.logger = logging.getLogger('investment_center')
                     
                     try:
                         # Docker 컨테이너 상태 확인 및 실행
-                        self._check_docker_container()
+                        container_status = self._check_docker_container()
                         
                         # MongoDB 설정 가져오기
                         config = MONGODB_CONFIG
+                        
+                        # 새로 생성된 컨테이너인 경우에만 사용자 생성 시도
+                        if container_status == 'new':
+                            self.logger.info("새 컨테이너 감지: 사용자 생성 시도")
+                            self._create_mongodb_user()
+                        elif container_status == 'running':
+                            self.logger.info("기존 컨테이너 감지: 사용자 생성 건너뜀")
                         
                         # 연결 문자열 로깅 (비밀번호는 가림)
                         safe_connection_string = f'mongodb://{config["username"]}:****@{config["host"]}:{config["port"]}/{config["db_name"]}?authSource=admin'
                         self.logger.info(f"MongoDB 연결 시도: {safe_connection_string}")
                         
-                        # 사용자 생성 시도
-                        self._create_mongodb_user()  # 여기서 명시적으로 호출
-                        
                         # 동기식 클라이언트로 연결
                         self.client = MongoClient(
                             host=config['host'],
                             port=config['port'],
-                            username=config['username'],
-                            password=config['password'],
+                            username=os.getenv('MONGO_ROOT_USERNAME'),
+                            password=os.getenv('MONGO_ROOT_PASSWORD'),
                             authSource='admin'
                         )
                         
                         # 데이터베이스와 컬렉션 설정
                         self.db = self.client[config['db_name']]
+
+                        # 컬렉션 설정
                         self._setup_collections()
                         
                         # 시스템 설정 초기화 (추가)
@@ -180,11 +185,9 @@ class MongoDBManager:
                     self.logger.info("기존 auto_trading_db 컨테이너 시작")
                     container.start()
                     time.sleep(5)  # 컨테이너 시작 대기
-                else:
-                    self.logger.info("기존 auto_trading_db 컨테이너가 이미 실행 중입니다")
-                    
-                # MongoDB 사용자 생성 시도
-                self._create_mongodb_user()
+                
+                self.logger.info("기존 auto_trading_db 컨테이너가 실행 중입니다")
+                return 'running'
                     
             except docker.errors.NotFound:
                 # MongoDB 설정 가져오기
@@ -197,18 +200,25 @@ class MongoDBManager:
                     name='auto_trading_db',
                     ports={'27017/tcp': config['port']},
                     environment={
-                        'MONGO_INITDB_ROOT_USERNAME': config['username'],
-                        'MONGO_INITDB_ROOT_PASSWORD': config['password'],
+                        'MONGO_INITDB_ROOT_USERNAME': os.getenv('MONGO_ROOT_USERNAME'),
+                        'MONGO_INITDB_ROOT_PASSWORD': os.getenv('MONGO_ROOT_PASSWORD'),
                         'MONGO_INITDB_DATABASE': config['db_name']
                     },
                     detach=True
                 )
                 
                 # 새 컨테이너 시작 대기
+                self.logger.info("MongoDB 컨테이너 시작 대기 중...")
                 time.sleep(10)
                 
-                # MongoDB 사용자 생성
-                self._create_mongodb_user()
+                # 컨테이너 상태 확인
+                container.reload()
+                if container.status == 'running':
+                    self.logger.info("새 MongoDB 컨테이너가 정상적으로 실행 중입니다")
+                    return 'new'
+                
+                self.logger.error("MongoDB 컨테이너가 실행되지 않았습니다")
+                return 'failed'
             
         except Exception as e:
             self.logger.error(f"도커 컨테이너 확인 중 오류 발생: {str(e)}")
@@ -218,30 +228,62 @@ class MongoDBManager:
         """MongoDB 사용자 생성"""
         try:
             config = MONGODB_CONFIG
-            client = MongoClient(
+            
+            # 환경 변수 값 직접 확인
+            root_username = os.getenv('MONGO_ROOT_USERNAME')
+            root_password = os.getenv('MONGO_ROOT_PASSWORD')
+            self.logger.debug(f"Root 계정으로 연결 시도 - username: {root_username}")
+            
+            # root 계정으로 연결
+            admin_client = MongoClient(
                 host=config['host'],
                 port=config['port'],
-                username=config['username'],
-                password=config['password'],
+                username=root_username,
+                password=root_password,
                 authSource='admin'
             )
             
-            db = client[config['db_name']]
+            admin_db = admin_client['admin']
             
-            # 사용자가 이미 존재하는지 확인
             try:
-                db.command('usersInfo', config['username'])
-            except Exception:
-                # 사용자가 없으면 생성
-                db.command('createUser', config['username'],
-                          pwd=config['password'],
-                          roles=[{'role': 'readWrite', 'db': config['db_name']}])
+                # 먼저 사용자 존재 여부 확인
+                try:
+                    user_info = admin_db.command('usersInfo', {
+                        'user': config['username'],
+                        'db': config['db_name']
+                    })
+                    
+                    if user_info.get('users'):
+                        self.logger.info(f"사용자 '{config['username']}'가 이미 존재합니다. 사용자 생성을 건너뜁니다.")
+                        return
+                        
+                except Exception as e:
+                    self.logger.error(f"사용자 정보 확인 중 오류: {str(e)}")
+                    # 사용자 정보 확인 실패 시에도 계속 진행 (사용자가 없을 수 있음)
+                
+                # 사용자가 없는 경우에만 생성
+                self.logger.info(f"새 사용자 '{config['username']}' 생성 시도")
+                admin_db.command(
+                    'createUser',
+                    config['username'],
+                    pwd=config['password'],
+                    roles=[{'role': 'readWrite', 'db': config['db_name']}]
+                )
                 self.logger.info("MongoDB 사용자 생성 완료")
+                
+            except Exception as e:
+                if 'already exists' in str(e):
+                    self.logger.info(f"사용자 '{config['username']}'가 이미 존재합니다.")
+                else:
+                    self.logger.error(f"사용자 생성 중 오류: {str(e)}")
+                    raise
             
-            client.close()
+            finally:
+                admin_client.close()
             
         except Exception as e:
             self.logger.error(f"MongoDB 사용자 생성 실패: {str(e)}")
+            raise
 
     def __del__(self):
         """소멸자에서 연결 종료
@@ -919,25 +961,39 @@ class MongoDBManager:
             self.logger.error(f"시장 지표 데이터 업데이트 실패: {str(e)}")
             return False
 
-    def get_market_index(self, exchange: str, limit: int = 100) -> List[Dict]:
+    def get_market_index(self, exchange: str) -> Dict:
         """
         시장 지표 데이터 조회
         
         Args:
             exchange (str): 거래소 이름
-            limit (int, optional): 조회할 데이터 개수. Defaults to 100.
             
         Returns:
-            List[Dict]: 시장 지표 데이터 리스트
+            Dict: 시장 지표 데이터
+            {
+                'exchange': str,
+                'AFR': [최근 20개 값],
+                'current_change': [최근 20개 값],
+                'fear_and_greed': [최근 20개 값],
+                'last_updated': datetime
+            }
         """
         try:
             with self._get_collection_lock('market_index'):
-                cursor = self.market_index.find(
-                    {'exchange': exchange}
-                ).sort('timestamp', -1).limit(limit)
-                
-                return list(cursor)
+                return self.market_index.find_one({'exchange': exchange}) or {
+                    'exchange': exchange,
+                    'AFR': [],
+                    'current_change': [],
+                    'fear_and_greed': [],
+                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                }
                 
         except Exception as e:
             self.logger.error(f"시장 지표 데이터 조회 실패: {str(e)}")
-            return []
+            return {
+                'exchange': exchange,
+                'AFR': [],
+                'current_change': [],
+                'fear_and_greed': [],
+                'last_updated': datetime.now(timezone(timedelta(hours=9)))
+            }

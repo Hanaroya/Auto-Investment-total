@@ -1,16 +1,31 @@
+import os
+import sys
+import yaml
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from control_center.InvestmentCenter import InvestmentCenter
 from database.mongodb_manager import MongoDBManager
 from dotenv import load_dotenv
 from utils.scheduler import SimpleScheduler
+from utils.logger_config import setup_logger
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger('investment-center')
 
+# .env 파일의 절대 경로 설정
+env_path = Path(__file__).parent / '.env'
+
 # .env 파일 로드
-load_dotenv()
+load_dotenv(dotenv_path=env_path)
+
+# 환경 변수 로드 확인
+print("MongoDB 설정 확인:")
+print(f"MONGO_ROOT_USERNAME: {os.getenv('MONGO_ROOT_USERNAME')}")
+print(f"MONGO_HOST: {os.getenv('MONGO_HOST')}")
+print(f"MONGO_PORT: {os.getenv('MONGO_PORT')}")
+print(f"MONGO_DB_NAME: {os.getenv('MONGO_DB_NAME')}")
 
 class CryptoTradingBot:
     def __init__(self):
@@ -19,7 +34,6 @@ class CryptoTradingBot:
         
         # config 로드
         with open('resource/application.yml', 'r', encoding='utf-8') as f:
-            import yaml
             self.config = yaml.safe_load(f)
         
         # 이벤트 루프 생성
