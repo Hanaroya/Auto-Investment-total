@@ -264,7 +264,7 @@ class TradingThread(threading.Thread):
                         # 3. 목표 수익 달성 후 하락 추세
                         profit_goal_sell_condition = (current_profit_rate > 3 and price_trend < -0.2)
                         # 4. 과도한 손실 방지
-                        loss_limit_sell_condition = (current_profit_rate < -3)
+                        loss_limit_sell_condition = (current_profit_rate < -3 and price_trend < -0.2)
                         # 5. 변동성 급증 시 이익 실현
                         volatility_sell_condition = (current_profit_rate > 2 and volatility > 0.9)
                         # 6. 평균 매수 가격보다 10% 이상 상승한 경우
