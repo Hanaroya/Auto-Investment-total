@@ -247,60 +247,90 @@ class TradingThread(threading.Thread):
                     self.logger.debug(f"Signals: {signals}")
                     self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.total_max_investment}")
 
+                    
+                    
                     if active_trade:
                         current_profit_rate = active_trade.get('profit_rate', 0)
                         price_trend = signals.get('price_trend', 0)  # 가격 추세 (-1 ~ 1)
                         volatility = signals.get('volatility', 0)    # 변동성 지표
                         current_investment = active_trade.get('investment_amount', 0)
                         averaging_down_count = active_trade.get('averaging_down_count', 0)
-
+                        
+                        # 매도 조건 감지
+                        # 1. 급격한 하락 감지
+                        radical_sell_condition = (price_trend < -0.7 and volatility > 0.8)
+                        # 2. 지속적인 하락 추세
+                        price_down_condition = (price_trend < -0.3 and current_profit_rate < -2)
+                        # 3. 목표 수익 달성 후 하락 추세
+                        profit_goal_sell_condition = (current_profit_rate > 3 and price_trend < -0.2)
+                        # 4. 과도한 손실 방지
+                        loss_limit_sell_condition = (current_profit_rate < -3)
+                        # 5. 변동성 급증 시 이익 실현
+                        volatility_sell_condition = (current_profit_rate > 2 and volatility > 0.9)
+                        # 6. 평균 매수 가격보다 10% 이상 상승한 경우
+                        price_increase_sell_condition = (current_profit_rate > 10 and current_price > active_trade.get('price', 0) * 1.1)
+                        # 7. sell_threshold 이하이고 수익이 있는 경우
+                        sell_threshold_sell_condition = (signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and current_profit_rate > 0.15)
+                        # 8. 사용자 호출
+                        user_call_sell_condition = (active_trade.get('user_call', False))
+                        
+                        # 물타기 조건 확인
+                        should_average_down = (
+                            (current_profit_rate <= -2 and (
+                                signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.2))
+                             ) and  # 수익률이 -2% 이하
+                            current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
+                            averaging_down_count < 3  # 최대 3회까지만 물타기
+                        )
+                        
                         # 매도 조건 확인
                         should_sell = (
-                            # 1. 급격한 하락 감지
-                            (price_trend < -0.7 and volatility > 0.8) or
-                            
-                            # 2. 지속적인 하락 추세
-                            (price_trend < -0.3 and current_profit_rate < -2) or
-                            
-                            # 3. 목표 수익 달성 후 하락 추세
-                            (current_profit_rate > 3 and price_trend < -0.2) or
-                            
-                            # 4. 과도한 손실 방지
-                            (current_profit_rate < -3 and (signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.2))) or
-                            
-                            # 5. 변동성 급증 시 이익 실현
-                            (current_profit_rate > 2 and volatility > 0.9) or
-                            
-                            # 6. 평균 매수 가격보다 10% 이상 상승한 경우
-                            (current_profit_rate > 10 and current_price > active_trade.get('price', 0) * 1.1) or
-                            
-                            # 7. sell_threshold 이하이고 수익이 있는 경우
-                            (signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and current_profit_rate > 0.15) or
-
-                            # 8. 사용자 호출
-                            (active_trade.get('user_call', False))
+                            radical_sell_condition or
+                            price_down_condition or
+                            profit_goal_sell_condition or
+                            loss_limit_sell_condition or
+                            volatility_sell_condition or
+                            price_increase_sell_condition or
+                            sell_threshold_sell_condition or
+                            user_call_sell_condition
                         )
 
                         # 매도 조건 충족 시 추가 검사
                         if should_sell:
                             # 매도 사유 저장
-                            sell_reason = None
-                            if price_trend < -0.7 and volatility > 0.8:
-                                sell_reason = "급격한 하락"
-                            elif price_trend < -0.3 and current_profit_rate < -2:
-                                sell_reason = "지속적 하락"
-                            elif current_profit_rate > 3 and price_trend < -0.2:
-                                sell_reason = "목표 수익 달성 후 하락"
-                            elif current_profit_rate < -3:
-                                sell_reason = "과도한 손실"
-                            elif current_profit_rate > 2 and volatility > 0.9:
-                                sell_reason = "변동성 급증"
-                            elif current_profit_rate > 10:
-                                sell_reason = "고수익 달성"
-                            elif signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold']:
-                                sell_reason = "매도 신호"
-                            elif active_trade.get('user_call', False):
-                                sell_reason = "사용자 호출"
+                            sell_reason = ""
+                            if radical_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "급격한 하락"
+                            if price_down_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "지속적 하락"
+                            if profit_goal_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "목표 수익 달성 후 하락"
+                            if loss_limit_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "과도한 손실"
+                            if volatility_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "변동성 급증"
+                            if price_increase_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "고수익 달성"
+                            if sell_threshold_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "매도 신호"
+                            if user_call_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "사용자 호출"
 
                             signals['sell_reason'] = sell_reason
 
@@ -310,7 +340,7 @@ class TradingThread(threading.Thread):
                                          f"투자금: {current_investment:,}원, "
                                          f"물타기 횟수: {averaging_down_count}")
                         
-                        if should_sell:
+                        if should_sell and should_average_down == False:
                             self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
                                         f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
                             if self.trading_manager.process_sell_signal(
@@ -323,22 +353,13 @@ class TradingThread(threading.Thread):
                             ):
                                 self.logger.info(f"매도 신호 처리 완료: {coin}")
                         
-                        # 물타기 조건 확인
-                        should_average_down = (
-                            (current_profit_rate <= -2 and (
-                                signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.2))
-                             ) and  # 수익률이 -2% 이하
-                            current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
-                            averaging_down_count < 3  # 최대 3회까지만 물타기
-                        )
-                        if should_average_down and should_sell == False:
+                        if should_average_down:
                             # 물타기 투자금 계산 (기존 투자금의 50%)
                             averaging_down_amount = min(
                                 floor(current_investment * 0.5),
                                 self.total_max_investment - current_investment
                             )
-                            # self.logger.warning(f"물타기 투자금 계산: {averaging_down_amount:,}원")
-
+                            
                             if signals.get('overall_signal', 0.0) >= self.config['strategy']['sell_threshold'] and averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
                                 self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
                                 
