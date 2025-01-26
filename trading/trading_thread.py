@@ -277,7 +277,8 @@ class TradingThread(threading.Thread):
                         # 물타기 조건 확인
                         should_average_down = (
                             (current_profit_rate <= -2 and (
-                                signals.get('overall_signal', 0.0) <= (self.config['strategy']['sell_threshold'] * 0.2))
+                                (self.config['strategy']['sell_threshold']) > signals.get('overall_signal', 0.0) >= (
+                                    self.config['strategy']['sell_threshold'] * 0.2))
                              ) and  # 수익률이 -2% 이하
                             current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
                             averaging_down_count < 3  # 최대 3회까지만 물타기
