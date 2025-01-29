@@ -112,7 +112,7 @@ class TradingManager:
                     'last_averaging_down': {
                         'price': price,
                         'amount': investment_amount,
-                        'timestamp': kst_now.strftime('%Y-%m-%d %H:%M:%S %Z')
+                        'timestamp': kst_now
                     }
                 }
                 
@@ -144,7 +144,7 @@ class TradingManager:
                     'order_id': order_result.get('uuid'),
                     'executed_volume': order_result.get('executed_volume', 0),
                     'test_mode': is_test,
-                    'timestamp': kst_now.strftime('%Y-%m-%d %H:%M:%S %Z'),
+                    'timestamp': kst_now,
                     'averaging_down_count': 0,
                     'user_call': False
                 }
@@ -519,6 +519,7 @@ class TradingManager:
             # system_config에서 초기 투자금 가져오기
             system_config = self.db.get_sync_collection('system_config').find_one({})
             initial_investment = system_config.get('initial_investment', 1000000)
+            total_max_investment = system_config.get('total_max_investment', 1000000)
             
             # 누적 수익 계산
             total_profit_earned = portfolio.get('profit_earned', 0)
@@ -550,7 +551,7 @@ class TradingManager:
                 {},
                 {
                     '$set': {
-                        'total_max_investment': initial_investment + total_profit_amount,
+                        'total_max_investment': total_max_investment + total_profit_amount,
                         'last_updated': datetime.now(timezone(timedelta(hours=9)))
                     }
                 }
@@ -560,6 +561,7 @@ class TradingManager:
                 f"📈 포트폴리오 요약\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 초기 투자금: ₩{initial_investment:,}\n"
+                f"💰 현재 투자금: ₩{total_max_investment:,}\n"
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
                 f"📊 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
                 f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
@@ -574,7 +576,7 @@ class TradingManager:
             # 포트폴리오 정보 업데이트
             portfolio_update = {
                 'current_amount': floor(total_current_value),
-                'investment_amount': initial_investment + total_profit_amount,
+                'investment_amount': total_max_investment + total_profit_amount,
                 'profit_earned': 0,
                 'last_updated': datetime.now(timezone(timedelta(hours=9))),
                 'coin_list': {
@@ -798,7 +800,7 @@ class TradingManager:
                 
                 coin_info = (
                     f"• {trade['coin']}\n"
-                    f"  └ RANK: ₩{trade['thread_id']:,}\n"
+                    f"  └ RANK: {trade['thread_id']:,}\n"
                     f"  └ 매수가: ₩{trade['price']:,}\n"
                     f"  └ 현재가: ₩{current_price:,}\n"
                     f"  └ 수익률: {profit_rate:+.2f}% (₩{profit_amount:+,.0f})\n"
@@ -817,6 +819,7 @@ class TradingManager:
             # system_config에서 초기 투자금 가져오기
             system_config = self.db.get_sync_collection('system_config').find_one({})
             initial_investment = system_config.get('initial_investment', 1000000)
+            total_max_investment = system_config.get('total_max_investment', 1000000)
             
             # 누적 수익 계산
             total_profit_earned = portfolio.get('profit_earned', 0)
@@ -831,6 +834,7 @@ class TradingManager:
                 f"📈 포트폴리오 요약\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 초기 투자금: ₩{initial_investment:,}\n"
+                f"💰 현재 투자금: ₩{total_max_investment:,}\n"
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
                 f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
                 f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
