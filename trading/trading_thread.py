@@ -8,6 +8,7 @@ from math import floor
 from trading.market_analyzer import MarketAnalyzer
 from trading.trading_manager import TradingManager
 from database.mongodb_manager import MongoDBManager
+from trading.trading_strategy import TradingStrategy
 import asyncio
 
 class TradingError(Exception):
@@ -76,6 +77,7 @@ class TradingThread(threading.Thread):
         self.stop_flag = stop_flag
         self.logger = logging.getLogger(f"InvestmentCenter.Thread-{thread_id}")
         self.loop = None
+        self.trading_strategy = TradingStrategy(config)
         
         # 각 인스턴스 생성
         self.market_analyzer = MarketAnalyzer(config=self.config)
@@ -279,6 +281,9 @@ class TradingThread(threading.Thread):
             # 시간대별 추세 분석
             trends = self._analyze_multi_timeframe_trends(candles_1m, candles_15m, candles_240m)
             
+            # 동적 임계값 조정
+            thresholds = self.trading_strategy.adjust_thresholds(market_condition, trends)
+            
             # 현재 투자 상태 확인
             active_trades = self.db.trades.find({
                 'thread_id': self.thread_id, 
@@ -371,7 +376,7 @@ class TradingThread(threading.Thread):
                         
                         # 7. 매도 신호와 수익이 있는 경우 (시장 상태 고려)
                         sell_threshold_sell_condition = (
-                            signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and 
+                            signals.get('overall_signal', 0.0) <= thresholds['sell_threshold'] and 
                             current_profit_rate > 0.15 and
                             market_condition['risk_level'] > 0.5
                         )
@@ -481,7 +486,7 @@ class TradingThread(threading.Thread):
                             
                             # 신호 강도 확인
                             (
-                                signals.get('overall_signal', 0.0) >= (self.config['strategy']['sell_threshold'] * 0.3)  # 매도 임계값의 30% 이상
+                                signals.get('overall_signal', 0.0) >= (thresholds['sell_threshold'] * 0.3)  # 매도 임계값의 30% 이상
                             )
                         )
 
@@ -514,7 +519,7 @@ class TradingThread(threading.Thread):
                                 self.total_max_investment - current_investment
                             )
                             
-                            if signals.get('overall_signal', 0.0) >= self.config['strategy']['sell_threshold'] and averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
+                            if signals.get('overall_signal', 0.0) >= thresholds['sell_threshold'] and averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
                                 self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
                                 
                                 # 물타기용 전략 데이터 업데이트
@@ -535,7 +540,7 @@ class TradingThread(threading.Thread):
                     else:
                         # 1. 일반 매수 신호 처리 (상승세)
                         normal_buy_condition = (
-                            signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and 
+                            signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] and 
                             current_investment < self.max_investment and
                             coin_fear_greed > 30 and  # 코인별 극도의 공포가 아닐 때
                             (
@@ -570,7 +575,9 @@ class TradingThread(threading.Thread):
                         
                         # 매수 신호 처리
                         if normal_buy_condition or extreme_fear_buy_condition:
-                            investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
+                            investment_amount = self.trading_strategy.calculate_position_size(
+                                coin, market_condition, trends
+                            )
                             buy_reason = "일반 매수" if normal_buy_condition else "공포 지수 반등 매수"
                             
                             # strategy_data에 investment_amount 추가
@@ -619,7 +626,9 @@ class TradingThread(threading.Thread):
                             # 최저 신호 대비 15% 이상 개선된 경우
                             if signal_increase >= 15 and price_increase >= 0.5:
                                 self.logger.info(f"반등 매수 신호 감지: {coin} - 신호 개선률: {signal_increase:.2f}%")
-                                investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
+                                investment_amount = self.trading_strategy.calculate_position_size(
+                                    coin, market_condition, trends
+                                )
                                 
                                 signals['investment_amount'] = investment_amount
                                 signals['rebound_buy'] = True
@@ -799,3 +808,4 @@ class TradingThread(threading.Thread):
             'trend': max(min(trend * 10, 1), -1),  # -1 ~ 1 범위로 정규화
             'volatility': min(volatility * 10, 1)  # 0 ~ 1 범위로 정규화
         }
+        
