@@ -8,6 +8,48 @@ from math import floor
 from trading.market_analyzer import MarketAnalyzer
 from trading.trading_manager import TradingManager
 from database.mongodb_manager import MongoDBManager
+import asyncio
+
+class TradingError(Exception):
+    """거래 관련 기본 예외 클래스"""
+    pass
+
+class DataFetchError(TradingError):
+    """데이터 조회 실패"""
+    pass
+
+class OrderExecutionError(TradingError):
+    """주문 실행 실패"""
+    pass
+
+class RecoveryManager:
+    def __init__(self):
+        self.retry_count = 0
+        self.max_retries = 3
+        self.recovery_delay = 5  # 초
+        
+    async def execute_with_recovery(self, func, *args, **kwargs):
+        """재시도 메커니즘이 포함된 실행"""
+        while self.retry_count < self.max_retries:
+            try:
+                result = await func(*args, **kwargs)
+                self.retry_count = 0  # 성공 시 카운트 리셋
+                return result
+            except DataFetchError as e:
+                self.retry_count += 1
+                await asyncio.sleep(self.recovery_delay)
+                if self.retry_count >= self.max_retries:
+                    raise
+            except OrderExecutionError as e:
+                # 주문 실패는 즉시 상위로 전파
+                raise
+                
+    async def recover_trade_state(self, trade_id: str):
+        """거래 상태 복구"""
+        # 미완료 거래 상태 확인
+        # 부분 체결 확인
+        # 주문 취소 필요 시 취소 처리
+        pass
 
 class TradingThread(threading.Thread):
     """
@@ -168,7 +210,7 @@ class TradingThread(threading.Thread):
         finally:
             self.logger.info(f"Thread {self.thread_id} 정리 작업 완료")
 
-    def process_single_coin(self, coin: str):
+    async def process_single_coin(self, coin: str):
         """단일 코인 처리"""
         try:
             # 5분마다 투자 한도 업데이트 체크
@@ -183,10 +225,16 @@ class TradingThread(threading.Thread):
                 self.logger.warning(f"시장 지표 데이터를 찾을 수 없음")
                 return
                 
+            # AFR 데이터가 없는 경우 처리 중단
+            if 'AFR' not in market_index or not market_index['AFR']:
+                self.logger.warning(f"{self.investment_center.exchange_name}의 AFR 데이터가 없음")
+                return
+                
             # 시장 지표 분석
             afr_list = market_index.get('AFR', [])
             change_list = market_index.get('current_change', [])
             fear_greed_list = market_index.get('fear_and_greed', [])
+            market_feargreed = market_index.get('market_feargreed', [])
             
             if not all([afr_list, change_list, fear_greed_list]):
                 self.logger.warning(f"일부 시장 지표 데이터 누락")
@@ -197,21 +245,40 @@ class TradingThread(threading.Thread):
             current_change = change_list[-1] if change_list else 0
             current_fear_greed = fear_greed_list[-1] if fear_greed_list else 50
             
+            # 코인별 Fear & Greed 값 찾기
+            coin_fear_greed = 50  # 기본값
+            if market_feargreed:
+                for data in market_feargreed:
+                    if data.get('market') == coin:
+                        coin_fear_greed = data.get('feargreed', 50)
+                        break
+            
             # 시장 상태 분석
             market_condition = self._analyze_market_condition(
                 current_afr, current_change, current_fear_greed,
                 afr_list, change_list, fear_greed_list
             )
             
-            # 캔들 데이터 조회 - 거래소 API 사용
+            # 여러 시간대의 캔들 데이터 조회
             with self.shared_locks['candle_data']:
-                interval = '1' if self.thread_id < 4 else '240'
-                candles = self.investment_center.exchange.get_candle(
-                    market=coin,
-                    interval=interval,
-                    count=300
-                )
+                candles_1m = None
+                candles_15m = None
+                candles_240m = None
+                
+                if self.thread_id < 4:  # 0~3번 스레드
+                    candles_1m = self.investment_center.exchange.get_candle(
+                        market=coin, interval='1', count=300)
+                    candles_15m = self.investment_center.exchange.get_candle(
+                        market=coin, interval='15', count=300)
+                else:  # 4~9번 스레드
+                    candles_15m = self.investment_center.exchange.get_candle(
+                        market=coin, interval='15', count=300)
+                    candles_240m = self.investment_center.exchange.get_candle(
+                        market=coin, interval='240', count=300)
 
+            # 시간대별 추세 분석
+            trends = self._analyze_multi_timeframe_trends(candles_1m, candles_15m, candles_240m)
+            
             # 현재 투자 상태 확인
             active_trades = self.db.trades.find({
                 'thread_id': self.thread_id, 
@@ -227,11 +294,11 @@ class TradingThread(threading.Thread):
                 return
 
             # 마켓 분석 수행 시 시장 상태 정보 추가
-            signals = self.market_analyzer.analyze_market(coin, candles)
+            signals = self.market_analyzer.analyze_market(coin, candles_1m)
             signals.update(market_condition)
             
             # 전략 데이터 저장
-            current_price = candles[-1]['close']
+            current_price = candles_1m[-1]['close']
             self.trading_manager.update_strategy_data(coin, self.thread_id, current_price, signals)
 
             # 분석 결과 저장 및 거래 신호 처리
@@ -251,39 +318,82 @@ class TradingThread(threading.Thread):
                     
                     if active_trade:
                         current_profit_rate = active_trade.get('profit_rate', 0)
-                        price_trend = signals.get('price_trend', 0)  # 가격 추세 (-1 ~ 1)
-                        volatility = signals.get('volatility', 0)    # 변동성 지표
-                        current_investment = active_trade.get('investment_amount', 0)
-                        averaging_down_count = active_trade.get('averaging_down_count', 0)
+                        price_trend = signals.get('price_trend', 0)
+                        volatility = signals.get('volatility', 0)
                         
-                        # 매도 조건 감지
-                        # 1. 급격한 하락 감지
-                        radical_sell_condition = (price_trend < -0.7 and volatility > 0.8)
-                        # 2. 지속적인 하락 추세
-                        price_down_condition = (price_trend < -0.3 and current_profit_rate < -2)
-                        # 3. 목표 수익 달성 후 하락 추세
-                        profit_goal_sell_condition = (current_profit_rate > 3 and price_trend < -0.2)
-                        # 4. 과도한 손실 방지
-                        loss_limit_sell_condition = (current_profit_rate < -3 and price_trend < -0.2)
-                        # 5. 변동성 급증 시 이익 실현
-                        volatility_sell_condition = (current_profit_rate > 2 and volatility > 0.9)
-                        # 6. 평균 매수 가격보다 10% 이상 상승한 경우
-                        price_increase_sell_condition = (current_profit_rate > 10 and current_price > active_trade.get('price', 0) * 1.1)
-                        # 7. sell_threshold 이하이고 수익이 있는 경우
-                        sell_threshold_sell_condition = (signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and current_profit_rate > 0.15)
-                        # 8. 사용자 호출
-                        user_call_sell_condition = (active_trade.get('user_call', False))
-                        
-                        # 물타기 조건 확인
-                        should_average_down = (
-                            (current_profit_rate <= -2 and (
-                                (self.config['strategy']['sell_threshold']) > signals.get('overall_signal', 0.0) >= (
-                                    self.config['strategy']['sell_threshold'] * 0.2))
-                             ) and  # 수익률이 -2% 이하
-                            current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
-                            averaging_down_count < 3  # 최대 3회까지만 물타기
+                        # 매도 조건 감지 (시간대별 분석 추가)
+                        # 1. 급격한 하락 감지 (여러 시간대 확인)
+                        radical_sell_condition = (
+                            (price_trend < -0.7 and volatility > 0.8) or
+                            (trends['15m']['trend'] < -0.5 and trends['15m']['volatility'] > 0.7) or
+                            (self.thread_id >= 4 and trends['240m']['trend'] < -0.4 and trends['240m']['volatility'] > 0.6)
                         )
                         
+                        # 2. 지속적인 하락 추세 (시간대별 확인)
+                        price_down_condition = (
+                            (current_profit_rate < -2 and (
+                                (self.thread_id < 4 and trends['1m']['trend'] < -0.3 and trends['15m']['trend'] < -0.2) or
+                                (self.thread_id >= 4 and trends['15m']['trend'] < -0.3 and trends['240m']['trend'] < -0.2)
+                            ))
+                        )
+                        
+                        # 3. 목표 수익 달성 후 하락 추세
+                        profit_goal_sell_condition = (
+                            current_profit_rate > 3 and (
+                                (self.thread_id < 4 and (trends['1m']['trend'] < -0.2 or trends['15m']['trend'] < -0.15)) or
+                                (self.thread_id >= 4 and (trends['15m']['trend'] < -0.2 or trends['240m']['trend'] < -0.15))
+                            )
+                        )
+                        
+                        # 4. 과도한 손실 방지 (시장 상태 고려)
+                        loss_limit_sell_condition = (
+                            current_profit_rate < -3 and (
+                                market_condition['risk_level'] > 0.6 or
+                                (self.thread_id < 4 and (trends['1m']['trend'] < -0.2 and trends['15m']['trend'] < -0.15)) or
+                                (self.thread_id >= 4 and (trends['15m']['trend'] < -0.2 and trends['240m']['trend'] < -0.15))
+                            )
+                        )
+                        
+                        # 5. 변동성 급증 시 이익 실현
+                        volatility_sell_condition = (
+                            current_profit_rate > 2 and (
+                                (self.thread_id < 4 and (trends['1m']['volatility'] > 0.9 or trends['15m']['volatility'] > 0.8)) or
+                                (self.thread_id >= 4 and (trends['15m']['volatility'] > 0.8 or trends['240m']['volatility'] > 0.7))
+                            )
+                        )
+                        
+                        # 6. 평균 매수 가격보다 상승한 경우 (시장 상태 고려)
+                        price_increase_sell_condition = (
+                            current_profit_rate > 10 and 
+                            current_price > active_trade.get('price', 0) * 1.1 and
+                            market_condition['market_trend'] <= 0  # 시장이 하락 또는 중립일 때
+                        )
+                        
+                        # 7. 매도 신호와 수익이 있는 경우 (시장 상태 고려)
+                        sell_threshold_sell_condition = (
+                            signals.get('overall_signal', 0.0) <= self.config['strategy']['sell_threshold'] and 
+                            current_profit_rate > 0.15 and
+                            market_condition['risk_level'] > 0.5
+                        )
+                        
+                        # 8. 공포 지수 기반 매도 (전체 및 코인별)
+                        fear_greed_sell_condition = (
+                            (current_fear_greed < 30 or coin_fear_greed < 30) and  # 전체 또는 코인별 극도의 공포
+                            current_profit_rate > 1  # 수익이 있는 경우
+                        )
+
+                        # 9. AFR 지표 기반 매도
+                        afr_sell_condition = (
+                            current_afr < -0.5 and  # AFR이 크게 하락
+                            current_profit_rate > 0.5 and
+                            coin_fear_greed < 40  # 코인별 공포 지수도 낮을 때
+                        )
+                        
+                        # 10. 사용자 호출 매도
+                        user_call_sell_condition = (
+                            signals.get('user_call_sell', False)
+                        )
+
                         # 매도 조건 확인
                         should_sell = (
                             radical_sell_condition or
@@ -293,6 +403,8 @@ class TradingThread(threading.Thread):
                             volatility_sell_condition or
                             price_increase_sell_condition or
                             sell_threshold_sell_condition or
+                            fear_greed_sell_condition or
+                            afr_sell_condition or
                             user_call_sell_condition
                         )
 
@@ -328,20 +440,61 @@ class TradingThread(threading.Thread):
                                 if sell_reason != "":
                                     sell_reason += ", "
                                 sell_reason += "매도 신호"
-                            if user_call_sell_condition:
+                            if fear_greed_sell_condition:
                                 if sell_reason != "":
                                     sell_reason += ", "
-                                sell_reason += "사용자 호출"
+                                sell_reason += "공포 지수 기반 매도"
+                            if afr_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "AFR 지표 기반 매도"
 
                             signals['sell_reason'] = sell_reason
 
+                        averaging_down_count = active_trade.get('averaging_down_count', 0)
+                        # 물타기 조건 확인
+                        should_average_down = (
+                            # 기본 조건
+                            current_profit_rate <= -2 and  # 수익률이 -2% 이하
+                            current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
+                            averaging_down_count < 3 and  # 최대 3회까지만 물타기
+                            
+                            # 시장 상태 확인
+                            market_condition['risk_level'] < 0.7 and  # 시장 위험도가 높지 않을 때
+                            coin_fear_greed > 20 and  # 극도의 공포 상태가 아닐 때
+                            
+                            # 시간대별 추세 확인
+                            (
+                                # 0~3번 스레드: 1분봉과 15분봉 기준
+                                (self.thread_id < 4 and (
+                                    trends['1m']['trend'] > -0.5 and  # 1분봉 급락이 아님
+                                    trends['1m']['volatility'] < 0.8 and  # 변동성 안정화
+                                    trends['15m']['trend'] > -0.3  # 15분봉 하락세 완화
+                                )) or
+                                # 4~9번 스레드: 15분봉과 240분봉 기준
+                                (self.thread_id >= 4 and (
+                                    trends['15m']['trend'] > -0.5 and  # 15분봉 급락이 아님
+                                    trends['15m']['volatility'] < 0.8 and  # 변동성 안정화
+                                    trends['240m']['trend'] > -0.3  # 240분봉 하락세 완화
+                                ))
+                            ) and
+                            
+                            # 신호 강도 확인
+                            (
+                                signals.get('overall_signal', 0.0) >= (self.config['strategy']['sell_threshold'] * 0.3)  # 매도 임계값의 30% 이상
+                            )
+                        )
+
                         # 디버깅 로깅
                         self.logger.debug(f"{coin} - 수익률: {current_profit_rate:.2f}%, "
-                                          f"should_sell: {should_sell}, "
-                                         f"투자금: {current_investment:,}원, "
-                                         f"물타기 횟수: {averaging_down_count}")
+                                        f"should_sell: {should_sell}, "
+                                        f"should_average_down: {should_average_down}, "
+                                        f"투자금: {current_investment:,}원, "
+                                        f"물타기 횟수: {averaging_down_count}, "
+                                        f"시장 위험도: {market_condition['risk_level']}, "
+                                        f"코인 공포지수: {coin_fear_greed}")
                         
-                        if should_sell and should_average_down == False:
+                        if should_sell and not should_average_down:
                             self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
                                         f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
                             if self.trading_manager.process_sell_signal(
@@ -380,11 +533,46 @@ class TradingThread(threading.Thread):
                                 self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
                     
                     else:
-                        # 일반 매수 신호 처리 (기존 로직)
-                        if (signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and current_investment < self.max_investment):
-                            self.logger.info(f"매수 신호 감지: {coin} - Signal strength: {signals.get('overall_signal')}")
+                        # 1. 일반 매수 신호 처리 (상승세)
+                        normal_buy_condition = (
+                            signals.get('overall_signal', 0.0) >= self.config['strategy']['buy_threshold'] and 
+                            current_investment < self.max_investment and
+                            coin_fear_greed > 30 and  # 코인별 극도의 공포가 아닐 때
+                            (
+                                # 0~3번 스레드: 1분봉과 15분봉 모두 상승세
+                                (self.thread_id < 4 and 
+                                 trends['1m']['trend'] > 0.2 and 
+                                 trends['15m']['trend'] > 0.15) or
+                                # 4~9번 스레드: 15분봉과 240분봉 모두 상승세
+                                (self.thread_id >= 4 and 
+                                 trends['15m']['trend'] > 0.2 and 
+                                 trends['240m']['trend'] > 0.15)
+                            )
+                        )
+                        
+                        # 2. 극도의 공포 상태에서의 반등 매수
+                        extreme_fear_buy_condition = (
+                            current_investment < self.max_investment and
+                            (coin_fear_greed <= 20 or current_fear_greed <= 20) and  # 극도의 공포 상태
+                            (
+                                # 0~3번 스레드: 1분봉 반등 확인
+                                (self.thread_id < 4 and 
+                                 trends['1m']['trend'] > 0 and  # 상승 전환
+                                 trends['1m']['volatility'] < 0.7 and  # 변동성 안정화
+                                 trends['15m']['trend'] > -0.3) or  # 15분봉 하락세 완화
+                                # 4~9번 스레드: 15분봉 반등 확인
+                                (self.thread_id >= 4 and 
+                                 trends['15m']['trend'] > 0 and  # 상승 전환
+                                 trends['15m']['volatility'] < 0.7 and  # 변동성 안정화
+                                 trends['240m']['trend'] > -0.3)  # 240분봉 하락세 완화
+                            )
+                        )
+                        
+                        # 매수 신호 처리
+                        if normal_buy_condition or extreme_fear_buy_condition:
                             investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
-                            buy_reason = "일반 매수"
+                            buy_reason = "일반 매수" if normal_buy_condition else "공포 지수 반등 매수"
+                            
                             # strategy_data에 investment_amount 추가
                             signals['investment_amount'] = investment_amount
                             
@@ -396,63 +584,59 @@ class TradingThread(threading.Thread):
                                 strategy_data=signals,
                                 buy_message=buy_reason
                             )
-                            self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
+                            self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원 ({buy_reason})")
                         
-                        # 최저 신호 대비 반등 매수 전략
+                        # 최저 신호 대비 반등 매수 전략 (기존 코드 유지)
                         elif current_investment < self.max_investment:
-                            current_signal = signals.get('overall_signal', 0.0)
+                            # 기존 최저점 조회
+                            existing_lowest = self.db.strategy_data.find_one({'coin': coin})
                             
-                            # 현재 신호가 매도 기준치의 30% 이하일 때 최저점 검사
-                            if current_signal < self.config['strategy']['sell_threshold'] * 0.3:
-                                # 기존 최저점 조회
-                                existing_lowest = self.db.strategy_data.find_one({'coin': coin})
+                            # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때, 현재 가격이 기존 최저가보다 낮을 때 업데이트
+                            if (not existing_lowest
+                                ) or (signals.get('overall_signal', 0.0) < existing_lowest.get('lowest_signal', float('inf'))
+                                ) or (current_price < existing_lowest.get('lowest_price', float('inf'))):
+                                # 최저 신호 정보 업데이트
+                                self.db.strategy_data.update_one(
+                                    {'coin': coin},
+                                    {
+                                        '$set': {
+                                            'lowest_signal': signals.get('overall_signal', 0.0),
+                                            'lowest_price': current_price,
+                                            'timestamp': datetime.now(timezone(timedelta(hours=9)))
+                                        }
+                                    },
+                                    upsert=True
+                                )
+                                self.logger.debug(f"{coin} - 새로운 최저 신호 기록: {signals.get('overall_signal', 0.0):.4f}")
+                        
+                        # 최저 신호 정보 조회
+                        lowest_data = self.db.strategy_data.find_one({'coin': coin})
+                        
+                        if lowest_data and 'lowest_signal' in lowest_data:
+                            signal_increase = ((signals.get('overall_signal', 0.0) - lowest_data['lowest_signal']) / abs(lowest_data['lowest_signal'])) * 100 if lowest_data['lowest_signal'] != 0 else 0
+                            price_increase = ((current_price - lowest_data['lowest_price']) / abs(lowest_data['lowest_price'])) * 100 if lowest_data['lowest_price'] != 0 else 0
+                            buy_reason = "반등 매수"
+                            # 최저 신호 대비 15% 이상 개선된 경우
+                            if signal_increase >= 15 and price_increase >= 0.5:
+                                self.logger.info(f"반등 매수 신호 감지: {coin} - 신호 개선률: {signal_increase:.2f}%")
+                                investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
                                 
-                                # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때, 현재 가격이 기존 최저가보다 낮을 때 업데이트
-                                if (not existing_lowest
-                                    ) or (current_signal < existing_lowest.get('lowest_signal', float('inf'))
-                                    ) or (current_price < existing_lowest.get('lowest_price', float('inf'))):
-                                    # 최저 신호 정보 업데이트
-                                    self.db.strategy_data.update_one(
-                                        {'coin': coin},
-                                        {
-                                            '$set': {
-                                                'lowest_signal': current_signal,
-                                                'lowest_price': current_price,
-                                                'timestamp': datetime.now(timezone(timedelta(hours=9)))
-                                            }
-                                        },
-                                        upsert=True
-                                    )
-                                    self.logger.debug(f"{coin} - 새로운 최저 신호 기록: {current_signal:.4f}")
-                            
-                            # 최저 신호 정보 조회
-                            lowest_data = self.db.strategy_data.find_one({'coin': coin})
-                            
-                            if lowest_data and 'lowest_signal' in lowest_data:
-                                signal_increase = ((current_signal - lowest_data['lowest_signal']) / abs(lowest_data['lowest_signal'])) * 100 if lowest_data['lowest_signal'] != 0 else 0
-                                price_increase = ((current_price - lowest_data['lowest_price']) / abs(lowest_data['lowest_price'])) * 100 if lowest_data['lowest_price'] != 0 else 0
-                                buy_reason = "반등 매수"
-                                # 최저 신호 대비 15% 이상 개선된 경우
-                                if signal_increase >= 15 and price_increase >= 0.5:
-                                    self.logger.info(f"반등 매수 신호 감지: {coin} - 신호 개선률: {signal_increase:.2f}%")
-                                    investment_amount = min(floor((self.investment_each)), self.max_investment - current_investment)
-                                    
-                                    signals['investment_amount'] = investment_amount
-                                    signals['rebound_buy'] = True
-                                    signals['signal_increase'] = signal_increase
-                                    
-                                    self.trading_manager.process_buy_signal(
-                                        coin=coin,
-                                        thread_id=self.thread_id,
-                                        signal_strength=current_signal,  # 반등 매수용 신호 강도
-                                        price=current_price,
-                                        strategy_data=signals,
-                                        buy_message=buy_reason
-                                    )
-                                    self.logger.info(f"반등 매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
-                                    
-                                    # 최저 신호 정보 초기화
-                                    self.db.strategy_data.delete_one({'coin': coin})
+                                signals['investment_amount'] = investment_amount
+                                signals['rebound_buy'] = True
+                                signals['signal_increase'] = signal_increase
+                                
+                                self.trading_manager.process_buy_signal(
+                                    coin=coin,
+                                    thread_id=self.thread_id,
+                                    signal_strength=signals.get('overall_signal', 0.0),  # 반등 매수용 신호 강도
+                                    price=current_price,
+                                    strategy_data=signals,
+                                    buy_message=buy_reason
+                                )
+                                self.logger.info(f"반등 매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
+                                
+                                # 최저 신호 정보 초기화
+                                self.db.strategy_data.delete_one({'coin': coin})
                         else:
                             self.logger.debug(f"매수 조건 미충족: {coin} - Signal: {signals.get('overall_signal')}, Investment: {current_investment}/{self.max_investment}")
 
@@ -565,3 +749,53 @@ class TradingThread(threading.Thread):
                 'risk_level': 1.0,
                 'message': "분석 오류"
             }
+
+    def _analyze_multi_timeframe_trends(self, candles_1m, candles_15m, candles_240m):
+        """여러 시간대의 추세를 분석"""
+        trends = {
+            '1m': {'trend': 0, 'volatility': 0},
+            '15m': {'trend': 0, 'volatility': 0},
+            '240m': {'trend': 0, 'volatility': 0}
+        }
+        
+        # 1분봉 분석
+        if candles_1m:
+            trends['1m'] = self._calculate_trend_and_volatility(candles_1m)
+            
+        # 15분봉 분석
+        if candles_15m:
+            trends['15m'] = self._calculate_trend_and_volatility(candles_15m)
+            
+        # 240분봉 분석
+        if candles_240m:
+            trends['240m'] = self._calculate_trend_and_volatility(candles_240m)
+            
+        return trends
+        
+    def _calculate_trend_and_volatility(self, candles):
+        """단일 시간대의 추세와 변동성 계산"""
+        if not candles or len(candles) < 2:
+            return {'trend': 0, 'volatility': 0}
+            
+        prices = [float(candle['close']) for candle in candles]
+        
+        # 추세 계산 (최근 가격 변화율의 가중 평균)
+        changes = []
+        weights = []
+        for i in range(1, min(20, len(prices))):
+            change = (prices[-i] - prices[-i-1]) / prices[-i-1]
+            changes.append(change)
+            weights.append(1 / i)  # 최근 데이터에 더 높은 가중치
+            
+        trend = sum(c * w for c, w in zip(changes, weights)) / sum(weights)
+        
+        # 변동성 계산 (최근 가격 변동의 표준편차)
+        recent_prices = prices[-20:]
+        mean_price = sum(recent_prices) / len(recent_prices)
+        variance = sum((p - mean_price) ** 2 for p in recent_prices) / len(recent_prices)
+        volatility = (variance ** 0.5) / mean_price
+        
+        return {
+            'trend': max(min(trend * 10, 1), -1),  # -1 ~ 1 범위로 정규화
+            'volatility': min(volatility * 10, 1)  # 0 ~ 1 범위로 정규화
+        }
