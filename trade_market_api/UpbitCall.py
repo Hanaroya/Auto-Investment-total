@@ -23,6 +23,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 import os
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from trade_market_api.MarketDataConverter import MarketDataConverter
 
@@ -699,17 +703,183 @@ class UpbitCall:
         """
         try:
             total_ubmi, change_ubmi, fear_greed = await self.fetch_ubmi_data()
-            if all(v is not None for v in [total_ubmi, change_ubmi, fear_greed]):
+            market_feargreed = await self.get_feargreed_data()
+            if all(v is not None for v in [total_ubmi, change_ubmi, fear_greed, market_feargreed]):
                 return {
                     'AFR': total_ubmi,
                     'current_change': change_ubmi,
-                    'fear_and_greed': fear_greed
+                    'fear_and_greed': fear_greed,
+                    'market_feargreed': market_feargreed
                 }
             return None
             
         except Exception as e:
             self.logger.error(f"AFR 데이터 조회 중 오류: {str(e)}")
             return None
+
+    @with_thread_lock("feargreed")
+    async def get_feargreed_data(self, url: str = "https://www.ubcindex.com/feargreed") -> List[Dict[str, Any]]:
+        """Fear & Greed 데이터 크롤링
+        
+        Args:
+            url (str): 크롤링할 URL
+            
+        Returns:
+            List[Dict[str, Any]]: 크롤링된 데이터 리스트
+                [
+                    {
+                        'market': str,  # 마켓 코드 (예: 'KRW-BTC')
+                        'feargreed': float,  # Fear & Greed 값
+                        'timestamp': datetime  # 데이터 수집 시각 (KST)
+                    },
+                    ...
+                ]
+        """
+        options = Options()
+        
+        # 완전한 백그라운드 실행을 위한 옵션들
+        options.add_argument("--headless=new")  # 새로운 헤드리스 모드
+        options.add_argument("--disable-gpu")   # GPU 하드웨어 가속 비활성화
+        options.add_argument("--no-sandbox")    # 샌드박스 비활성화
+        options.add_argument("--disable-dev-shm-usage")  # 공유 메모리 사용 비활성화
+        options.add_argument("--disable-extensions")     # 확장 프로그램 비활성화
+        options.add_argument("--disable-browser-side-navigation")  # 브라우저 측 탐색 비활성화
+        options.add_argument("--disable-infobars")      # 정보 표시줄 비활성화
+        options.add_argument("--disable-notifications")  # 알림 비활성화
+        options.add_argument("--disable-popup-blocking") # 팝업 차단
+        options.add_argument("--window-position=-32000,-32000")  # 화면 밖으로 이동
+        options.add_argument("--log-level=3")  # 로그 레벨 최소화
+        options.add_argument("--silent")       # 불필요한 출력 억제
+        options.add_argument("--window-size=1,1")  # 최소 창 크기
+        
+        driver = None
+        result_data = []
+        
+        try:
+            service = ChromeService(
+                ChromeDriverManager().install(),
+                log_output=os.devnull
+            )
+            
+            driver = webdriver.Chrome(service=service, options=options)
+            driver.get(url)
+            await asyncio.sleep(5)  # 페이지 로딩 대기
+            
+            page_num = 1
+            while True:
+                try:
+                    # 테이블 데이터 처리
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "table.pairsTbl"))
+                    )
+                    
+                    table = driver.find_element(By.CSS_SELECTOR, "table.pairsTbl")
+                    rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
+                    
+                    if not rows:
+                        self.logger.debug("테이블 행을 찾을 수 없음")
+                        break
+                    
+                    rows_processed = 0
+                    for row in rows:
+                        try:
+                            # 코인 코드 (div.code의 부모 div.currency 내부에서 찾기)
+                            currency_div = row.find_element(By.CSS_SELECTOR, "div.currency")
+                            code_div = currency_div.find_element(By.CSS_SELECTOR, "div.code")
+                            name_div = currency_div.find_element(By.CSS_SELECTOR, "div.name")
+                            
+                            if not code_div or not name_div:
+                                continue
+                            
+                            symbol = code_div.get_attribute('innerHTML').strip().split('/')
+                            coin_name = name_div.get_attribute('innerHTML').strip()
+                            
+                            if len(symbol) != 2 or symbol[1] != 'KRW':
+                                continue
+                            
+                            market_code = f"KRW-{symbol[0]}"
+                            
+                            # 컬럼 데이터
+                            columns = row.find_elements(By.CSS_SELECTOR, "td")
+                            if len(columns) < 6:
+                                continue
+                            
+                            # 상태 (td.state)
+                            state = columns[1].get_attribute('innerHTML').strip()
+                            # Fear & Greed 값
+                            feargreed = columns[2].get_attribute('innerHTML').strip()
+                            # 날짜
+                            date_str = columns[5].get_attribute('innerHTML').strip()
+                            
+                            result_data.append({
+                                'market': market_code,
+                                'name': coin_name,
+                                'feargreed': float(feargreed),
+                                'state': state,
+                                'date': date_str,
+                                'timestamp': datetime.now(timezone(timedelta(hours=9)))
+                            })
+                            
+                            rows_processed += 1
+                            
+                        except Exception as e:
+                            self.logger.error(f"행 처리 중 오류: {str(e)}")
+                            continue
+                    
+                    self.logger.debug(f"페이지 {page_num}: {rows_processed}개 데이터 처리")
+                    
+                    # 다음 페이지 버튼 처리
+                    try:
+                        # 다음 페이지 버튼 찾기
+                        next_button = driver.find_element(By.CSS_SELECTOR, "span.btn.next")
+                        
+                        # 버튼이 활성화되어 있는지 확인
+                        if next_button.get_attribute("class").find("disabled") == -1:
+                            # JavaScript로 클릭 실행
+                            driver.execute_script("arguments[0].click();", next_button)
+                            page_num += 1
+                            await asyncio.sleep(3)  # 페이지 전환 대기
+                            
+                            # 페이지 전환 확인
+                            WebDriverWait(driver, 10).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, "table.pairsTbl"))
+                            )
+                            
+                            # 데이터 로딩 대기
+                            await asyncio.sleep(2)
+                        else:
+                            self.logger.debug("마지막 페이지 도달")
+                            break
+                        
+                    except NoSuchElementException:
+                        self.logger.debug("다음 페이지 버튼을 찾을 수 없음")
+                        break
+                    except Exception as e:
+                        self.logger.error(f"다음 페이지 이동 실패: {str(e)}")
+                        break
+                    
+                except Exception as e:
+                    self.logger.error(f"페이지 처리 중 오류: {str(e)}")
+                    break
+            
+            if not result_data:
+                self.logger.error("수집된 데이터가 없습니다")
+            else:
+                self.logger.info(f"총 {len(result_data)}개의 데이터 수집 완료")
+            
+            return result_data
+            
+        except Exception as e:
+            self.logger.error(f"Fear & Greed 데이터 크롤링 실패: {str(e)}")
+            return []
+            
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    self.logger.error(f"드라이버 종료 중 오류: {str(e)}")
 
 if __name__ == "__main__":
     # 사용 예시
