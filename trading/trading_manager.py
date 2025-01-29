@@ -451,23 +451,12 @@ class TradingManager:
                     workbook = writer.book
                     worksheet = writer.sheets['보유현황']
                     
-                    # 차트 데이터 준비
-                    chart_data = {
-                        'coin': holdings_df['coin'].tolist(),
-                        'amount': holdings_df['investment_amount'].tolist()
-                    }
-                    
-                    # 차트 데이터를 시트에 쓰기 (숨겨진 영역에)
-                    chart_row_offset = len(holdings_df) + 5
-                    worksheet.write_column(chart_row_offset, 0, chart_data['coin'])
-                    worksheet.write_column(chart_row_offset, 1, chart_data['amount'])
-                    
-                    # 원형 차트 생성
+                    # 기존 데이터를 활용한 원형 차트 생성
                     pie_chart = workbook.add_chart({'type': 'pie'})
                     pie_chart.add_series({
                         'name': '투자 비중',
-                        'categories': f'=보유현황!$A${chart_row_offset+1}:$A${chart_row_offset+len(chart_data["coin"])}',
-                        'values': f'=보유현황!$B${chart_row_offset+1}:$B${chart_row_offset+len(chart_data["amount"])}',
+                        'categories': f'=보유현황!$A$2:$A${len(holdings_display) + 1}',  # '코인' 컬럼
+                        'values': f'=보유현황!$G$2:$G${len(holdings_display) + 1}',      # '투자금액' 컬럼
                         'data_labels': {'percentage': True, 'category': True},
                     })
                     
@@ -476,8 +465,8 @@ class TradingManager:
                     pie_chart.set_style(10)
                     pie_chart.set_size({'width': 500, 'height': 300})
                     
-                    # 차트를 시트에 삽입
-                    worksheet.insert_chart('H2', pie_chart)
+                    # 차트를 시트에 삽입 (H2에서 K2로 변경)
+                    worksheet.insert_chart('K2', pie_chart)
                     
                     # 열 너비 자동 조정
                     for idx, col in enumerate(holdings_display.columns):
@@ -779,10 +768,9 @@ class TradingManager:
             # 각 코인별 상세 정보
             for trade in active_trades:
                 # timestamp를 KST로 변환
+                # 이미 KST로 저장된 timestamp 사용
                 trade_time = trade['timestamp']
-                if trade_time.tzinfo is None:
-                    trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))
-                
+                now = datetime.now(timezone(timedelta(hours=9)))  # 현재 시간 KST
                 hold_time = now - trade_time
                 hours = hold_time.total_seconds() / 3600
                 
@@ -810,7 +798,7 @@ class TradingManager:
                     f"  └ 투자금액: ₩{investment_amount:,}\n"
                 )
                 message += coin_info + "\n"
-                time.sleep(0.07)
+                time.sleep(0.2)
             
             # 전체 포트폴리오 수익률
             total_profit_rate = ((total_current_value - total_investment) / total_investment * 100) if total_investment > 0 else 0
