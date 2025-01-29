@@ -77,7 +77,6 @@ class TradingThread(threading.Thread):
         self.stop_flag = stop_flag
         self.logger = logging.getLogger(f"InvestmentCenter.Thread-{thread_id}")
         self.loop = None
-        self.trading_strategy = TradingStrategy(config)
         
         # 각 인스턴스 생성
         self.market_analyzer = MarketAnalyzer(config=self.config)
@@ -94,6 +93,9 @@ class TradingThread(threading.Thread):
             self.max_investment = system_config.get('max_thread_investment', 80000)
             self.total_max_investment = system_config.get('total_max_investment', 1000000)
             self.investment_each = (self.total_max_investment * 0.8) / 20
+        
+        # 동적 임계값 조정을 위한 전략 초기화
+        self.trading_strategy = TradingStrategy(config, self.total_max_investment)
         
         self.db.portfolio.update_one(
                     {'_id': 'main'},
