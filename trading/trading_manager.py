@@ -768,9 +768,15 @@ class TradingManager:
             # 각 코인별 상세 정보
             for trade in active_trades:
                 # timestamp를 KST로 변환
-                # 이미 KST로 저장된 timestamp 사용
                 trade_time = trade['timestamp']
+                if trade_time.tzinfo is None:  # naive datetime인 경우
+                    trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))
+                    
                 now = datetime.now(timezone(timedelta(hours=9)))  # 현재 시간 KST
+                
+                self.logger.warning(f"시간 정보 비교 - trade_time: {trade_time} ({type(trade_time)}, tz: {trade_time.tzinfo})")
+                self.logger.warning(f"시간 정보 비교 - now: {now} ({type(now)}, tz: {now.tzinfo})")
+                
                 hold_time = now - trade_time
                 hours = hold_time.total_seconds() / 3600
                 
