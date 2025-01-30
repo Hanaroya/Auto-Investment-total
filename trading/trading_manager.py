@@ -365,7 +365,8 @@ class TradingManager:
                 # 1. 거래 내역 시트
                 if trading_history:
                     history_df = pd.DataFrame(trading_history)
-                    history_df['거래일자'] = history_df['sell_timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+                    history_df['거래일자'] = TimeUtils.from_mongo_date(history_df['sell_timestamp']).dt.strftime('%Y-%m-%d %H:%M')
+                    history_df['매수일자'] = TimeUtils.from_mongo_date(history_df['buy_timestamp']).dt.strftime('%Y-%m-%d %H:%M')
                     history_df['매수가'] = history_df['buy_price'].map('{:,.0f}'.format)
                     history_df['매도가'] = history_df['sell_price'].map('{:,.0f}'.format)
                     history_df['수익률'] = history_df['profit_rate'].map('{:+.2f}%'.format)
@@ -374,7 +375,7 @@ class TradingManager:
                     
                     # 필요한 컬럼만 선택하여 저장
                     display_columns = [
-                        'coin', '거래일자', '매수가', '매도가', '수익률', 
+                        'coin', '거래일자', '매수일자', '매수가', '매도가', '수익률', 
                         '투자금액', '수익금액', 'test_mode'
                     ]
                     history_df[display_columns].to_excel(
@@ -429,7 +430,7 @@ class TradingManager:
                     holdings_display = pd.DataFrame({
                         '코인': holdings_df['coin'],
                         'RANK': holdings_df['thread_id'],
-                        '매수시간': holdings_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M'),
+                        '매수시간': TimeUtils.from_mongo_date(holdings_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M'),
                         '매수가': holdings_df['price'].map('{:,.0f}'.format),
                         '현재가': holdings_df['current_price'].map('{:,.0f}'.format),
                         '수익률': holdings_df['profit_rate'].map('{:+.2f}%'.format),
@@ -766,7 +767,7 @@ class TradingManager:
             # 각 코인별 상세 정보
             for trade in active_trades:
                 # timestamp를 KST로 변환
-                trade_time = trade['timestamp']
+                trade_time = TimeUtils.from_mongo_date(trade['timestamp'])
                 if trade_time.tzinfo is None:  # naive datetime인 경우
                     trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))
                     

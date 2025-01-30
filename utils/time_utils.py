@@ -52,4 +52,18 @@ class TimeUtils:
         """
         kst_dt1 = cls.convert_to_kst(dt1)
         kst_dt2 = cls.convert_to_kst(dt2)
-        return kst_dt1.date() == kst_dt2.date() 
+        return kst_dt1.date() == kst_dt2.date()
+    
+    @classmethod
+    def to_mongo_date(cls, dt: datetime) -> datetime:
+        """KST datetime을 MongoDB용 UTC datetime으로 변환"""
+        if dt.tzinfo is None:
+            dt = cls.KST.localize(dt)
+        return dt.astimezone(pytz.UTC)
+    
+    @classmethod
+    def from_mongo_date(cls, dt: datetime) -> datetime:
+        """MongoDB의 UTC datetime을 KST datetime으로 변환"""
+        if dt.tzinfo is None:
+            dt = pytz.utc.localize(dt)
+        return dt.astimezone(cls.KST) 

@@ -478,12 +478,22 @@ class MongoDBManager:
         """
         with self._get_collection_lock('trades'):
             try:
-                trade_data['timestamp'] = TimeUtils.get_current_kst()
+                # KST 시간을 MongoDB용 UTC로 변환
+                kst_time = TimeUtils.get_current_kst()
+                trade_data['timestamp'] = TimeUtils.to_mongo_date(kst_time)
                 result = self.trades.insert_one(trade_data)
                 return str(result.inserted_id)
             except Exception as e:
                 self.logger.error(f"거래 기록 추가 실패: {str(e)}")
                 return None
+                
+    def get_trade(self, query: Dict) -> Dict:
+        """거래 기록 조회"""
+        trade = self.trades.find_one(query)
+        if trade and 'timestamp' in trade:
+            # MongoDB의 UTC를 KST로 변환
+            trade['timestamp'] = TimeUtils.from_mongo_date(trade['timestamp'])
+        return trade
 
     def update_trade(self, trade_id: str, update_data: Dict[str, Any]) -> bool:
         """
