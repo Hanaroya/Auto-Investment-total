@@ -3,13 +3,13 @@ import sys
 import yaml
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from control_center.InvestmentCenter import InvestmentCenter
 from database.mongodb_manager import MongoDBManager
 from dotenv import load_dotenv
 from utils.scheduler import SimpleScheduler
 from utils.logger_config import setup_logger
+from utils.time_utils import TimeUtils
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger('investment-center')
@@ -52,13 +52,10 @@ class CryptoTradingBot:
         """초기화"""
         try:
             self.logger.info("초기화 시작...")
-            
-            # KST 시간대 설정
-            KST = timezone(timedelta(hours=9))
-            
+                        
             # 초기화 정보 저장
             init_info = {
-                'last_start_time': datetime.now(KST),  # 한국 시간으로 설정
+                'last_start_time': TimeUtils.get_current_kst(),  # KST 시간으로 설정
                 'status': 'initializing'
             }
             

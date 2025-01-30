@@ -1,6 +1,6 @@
 from typing import Dict, Any
 import time
-from datetime import datetime, timedelta, timezone
+from utils.time_utils import TimeUtils
 import yaml
 import logging
 from pathlib import Path
@@ -252,7 +252,7 @@ class InvestmentCenter:
                 {
                     '$set': {
                         'total_max_investment': new_total_investment,
-                        'last_updated': datetime.now(timezone(timedelta(hours=9))),
+                        'last_updated': TimeUtils.get_current_kst(),
                         'reserve_amount': new_total_investment * 0.2
                     }
                 },
@@ -261,7 +261,7 @@ class InvestmentCenter:
             
             # daily_profit 기록
             self.db.daily_profit.insert_one({
-                'timestamp': datetime.now(timezone(timedelta(hours=9))),
+                'timestamp': TimeUtils.get_current_kst(),
                 'profit_earned': total_profit,
                 'total_max_investment': new_total_investment,
                 'reserve_amount': current_config.get('reserve_amount', 200000),

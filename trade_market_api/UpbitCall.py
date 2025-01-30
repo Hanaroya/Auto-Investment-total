@@ -2,7 +2,6 @@ import requests
 import pandas as pd
 import logging
 import time
-from datetime import datetime
 from typing import Dict, List, Optional, Union, Any, Tuple
 import re
 import jwt
@@ -16,7 +15,7 @@ import asyncio
 import aiohttp
 import threading
 from bs4 import BeautifulSoup
-from datetime import timezone, timedelta
+from utils.time_utils import TimeUtils
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -147,7 +146,7 @@ class UpbitCall:
         log_dir = Path('log')
         log_dir.mkdir(exist_ok=True)
         
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = TimeUtils.get_current_kst().strftime('%Y-%m-%d')
         handler = logging.FileHandler(f'{log_dir}/{today}-trade.log', encoding='utf-8')
         
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -583,7 +582,7 @@ class UpbitCall:
 
     def should_fetch_ubmi(self) -> bool:
         """UBMI 데이터를 가져올 시간인지 확인"""
-        current_time = datetime.now()
+        current_time = TimeUtils.get_current_kst()
         
         # 마지막 조회 시간 확인
         if self.last_ubmi_fetch_time is None:
@@ -649,7 +648,7 @@ class UpbitCall:
                         if minus_chk:
                             change_ubmi *= -1
             
-            self.last_ubmi_fetch_time = datetime.now()
+            self.last_ubmi_fetch_time = TimeUtils.get_current_kst()  
             return total_ubmi, change_ubmi, fear_greed
             
         except Exception as e:
@@ -674,7 +673,7 @@ class UpbitCall:
             if all(v is not None for v in [total_ubmi, change_ubmi, fear_greed]):
                 market_data = {
                     'exchange': 'upbit',
-                    'timestamp': datetime.now(timezone(timedelta(hours=9))),
+                    'timestamp': TimeUtils.get_current_kst(),
                     'AFR': total_ubmi,
                     'current_change': change_ubmi,
                     'fear_and_greed': fear_greed
@@ -819,7 +818,7 @@ class UpbitCall:
                                 'feargreed': float(feargreed),
                                 'state': state,
                                 'date': date_str,
-                                'timestamp': datetime.now(timezone(timedelta(hours=9)))
+                                'timestamp': TimeUtils.get_current_kst()
                             })
                             
                             rows_processed += 1

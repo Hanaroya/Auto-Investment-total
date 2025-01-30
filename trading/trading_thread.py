@@ -4,6 +4,7 @@ import logging
 import time
 from typing import List, Dict
 import os
+from utils.time_utils import TimeUtils
 from datetime import datetime, timezone, timedelta
 from math import floor
 from trading.market_analyzer import MarketAnalyzer
@@ -149,7 +150,7 @@ class TradingThread(threading.Thread):
                         {'_id': 'main'},
                         {'$set': {
                             'current_amount': floor(self.total_max_investment - total_invested),
-                            'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                            'last_updated': TimeUtils.get_current_kst()  
                             }
                          }
                     )
@@ -702,7 +703,7 @@ class TradingThread(threading.Thread):
                                         '$set': {
                                             'lowest_signal': signals.get('overall_signal', 0.0),
                                             'lowest_price': current_price,
-                                            'timestamp': datetime.now(timezone(timedelta(hours=9)))
+                                            'timestamp': TimeUtils.get_current_kst() 
                                         }
                                     },
                                     upsert=True
@@ -750,7 +751,7 @@ class TradingThread(threading.Thread):
                 {'thread_id': self.thread_id},
                 {'$set': {
                     'last_coin': coin,
-                    'last_update': datetime.now(timezone(timedelta(hours=9))),
+                    'last_update': TimeUtils.get_current_kst(),  
                     'status': 'running',
                     'is_active': True
                 }},

@@ -1,7 +1,7 @@
 import schedule
 import time
 import logging
-from datetime import datetime
+from utils.time_utils import TimeUtils
 import asyncio
 from typing import Callable, Dict, Any
 from database.mongodb_manager import MongoDBManager
@@ -67,7 +67,7 @@ class SimpleScheduler:
                         'type': 'hourly' if hour == -1 else 'daily',
                         'hour': hour,
                         'minute': minute,
-                        'last_updated': datetime.now(),
+                        'last_updated': TimeUtils.get_current_kst(), 
                         'status': 'active'
                     }
                 },

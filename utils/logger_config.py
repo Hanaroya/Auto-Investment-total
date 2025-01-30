@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 import yaml
-from datetime import datetime
+from utils.time_utils import TimeUtils
 
 def setup_logger(logger_name: str = 'investment_center') -> logging.Logger:
     """로깅 설정
@@ -49,7 +49,7 @@ def setup_logger(logger_name: str = 'investment_center') -> logging.Logger:
             # 파일명 패턴 설정
             filename_pattern = config.get('logging', {}).get('file', {}).get(
                 'filename', '{date}-investment.log')
-            today = datetime.now().strftime('%Y-%m-%d')
+            today = TimeUtils.get_current_kst().strftime('%Y-%m-%d') 
             filename = filename_pattern.format(date=today)
             
             file_handler = logging.FileHandler(
@@ -76,7 +76,7 @@ def setup_logger(logger_name: str = 'investment_center') -> logging.Logger:
         
         # 파일 핸들러 추가 (기본 설정)
         file_handler = logging.FileHandler(
-            f'log/{datetime.now().strftime("%Y-%m-%d")}-investment.log',
+            f'log/{TimeUtils.get_current_kst().strftime("%Y-%m-%d")}-investment.log',    
             encoding='utf-8'  # UTF-8 인코딩 명시
         )
         file_handler.setFormatter(formatter)

@@ -10,6 +10,7 @@ from strategy.StrategyBase import StrategyManager
 from trade_market_api.UpbitCall import UpbitCall
 import os
 from math import floor
+from utils.time_utils import TimeUtils
 
 class TradingManager:
     """
@@ -40,18 +41,15 @@ class TradingManager:
                                price: float, strategy_data: Dict, buy_message: str = None):
         """매수 신호 처리"""
         try:
+            # KST 시간 가져오기
+            kst_now = TimeUtils.get_current_kst()
+            self.logger.debug(f"현재 KST 시간: {TimeUtils.format_kst(kst_now)}")
+            
             # 투자 가능 금액 확인
             if not self.check_investment_limit(thread_id):
                 self.logger.warning(f"투자 한도 초과: thread_id={thread_id}")
                 return False
 
-            # KST 시간대 설정
-            KST = timezone(timedelta(hours=9))
-            kst_now = datetime.now(KST)
-            
-            # 시간대 확인 로깅
-            self.logger.debug(f"현재 KST 시간: {kst_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-            
             # 테스트 모드 확인
             is_test = (
                 self.config.get('mode') == 'test' or 
@@ -199,7 +197,7 @@ class TradingManager:
                 return False
 
             # KST 시간으로 통일
-            kst_now = datetime.now(timezone(timedelta(hours=9)))
+            kst_now = TimeUtils.get_current_kst()
             
             # 수익률 계산
             profit_rate = ((price - active_trade['price']) / active_trade['price']) * 100
@@ -344,7 +342,7 @@ class TradingManager:
         """
         try:
             # 오늘 날짜 기준으로 거래 내역 조회
-            kst_today = datetime.now(timezone(timedelta(hours=9))).replace(
+            kst_today = TimeUtils.get_current_kst().replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
             kst_tomorrow = kst_today + timedelta(days=1)
@@ -541,7 +539,7 @@ class TradingManager:
                 {
                     '$set': {
                         'total_max_investment': total_max_investment + total_profit_amount,
-                        'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                        'last_updated': TimeUtils.get_current_kst()
                     }
                 }
             )
@@ -567,7 +565,7 @@ class TradingManager:
                 'current_amount': floor(total_current_value),
                 'investment_amount': total_max_investment + total_profit_amount,
                 'profit_earned': 0,
-                'last_updated': datetime.now(timezone(timedelta(hours=9))),
+                'last_updated': TimeUtils.get_current_kst(),
                 'coin_list': {
                     trade['coin']: {
                         'amount': trade.get('executed_volume', 0),
@@ -641,12 +639,12 @@ class TradingManager:
             buy_reason = "상승세 감지" if strategy_data.get('uptrend_signal', 0) > 0.5 else "하락세 종료"
             additional_info = ""
 
-        kst_now = datetime.now(timezone(timedelta(hours=9)))
+        kst_now = TimeUtils.get_current_kst()
 
         message = (
             f"------------------------------------------------\n"
             f"Coin: {trade_data['coin']}, 구매 ({buy_reason})\n"
-            f" 구매 시간: {kst_now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f" 구매 시간: {TimeUtils.format_kst(kst_now)}\n"
             f" 구매 가격: {trade_data['price']:,}\n"
             f" 구매 신호: {trade_data['signal_strength']:.2f}\n"
             f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
@@ -692,12 +690,12 @@ class TradingManager:
         """
         profit_amount = floor((sell_price - trade_data['price']) * trade_data.get('executed_volume', 0))
         total_investment = trade_data.get('investment_amount', 0) + profit_amount
-        kst_now = datetime.now(timezone(timedelta(hours=9)))
+        kst_now = TimeUtils.get_current_kst()
 
         message = (
             f"------------------------------------------------\n"
             f"Coin: {trade_data['coin']}, 판매\n"
-            f" 판매 시간: {kst_now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f" 판매 시간: {TimeUtils.format_kst(kst_now)}\n"
             f" 구매 가격: {buy_price:,}\n"
             f" 판매 가격: {sell_price:,}\n"
             f" 판매 신호: {sell_signal:.2f}\n"
@@ -746,7 +744,7 @@ class TradingManager:
         """
         try:
             self.logger.info("시간별 리포트 생성 시작")
-            now = datetime.now(timezone(timedelta(hours=9)))
+            now = TimeUtils.get_current_kst()
             current_time = now.strftime('%Y-%m-%d %H:00')
             message = ""
             
@@ -772,7 +770,7 @@ class TradingManager:
                 if trade_time.tzinfo is None:  # naive datetime인 경우
                     trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))
                     
-                now = datetime.now(timezone(timedelta(hours=9)))  # 현재 시간 KST
+                now = TimeUtils.get_current_kst()  # 현재 시간 KST
                 
                 self.logger.warning(f"시간 정보 비교 - trade_time: {trade_time} ({type(trade_time)}, tz: {trade_time.tzinfo})")
                 self.logger.warning(f"시간 정보 비교 - now: {now} ({type(now)}, tz: {now.tzinfo})")
@@ -883,7 +881,7 @@ class TradingManager:
             # 전략 데이터 구성
             strategy_data = {
                 'current_price': strategy_results.get('price', price),
-                'timestamp': datetime.now(timezone(timedelta(hours=9))),  # KST 시간
+                'timestamp': TimeUtils.get_current_kst(),  # KST 시간
                 'coin': coin,
                 'price': strategy_results.get('price', price),
                 'action': strategy_results.get('action', 'hold'),
@@ -940,7 +938,7 @@ class TradingManager:
                                 'current_value': current_price * active_trade.get('executed_volume', 0),
                                 'signal_strength': strategy_results.get('overall_signal', 0),
                                 'profit_rate': profit_rate,
-                                'last_updated': datetime.now(timezone(timedelta(hours=9))),
+                                'last_updated': TimeUtils.get_current_kst(),
                                 'user_call': active_trade.get('user_call', False)
                             }
                         }
@@ -1049,8 +1047,8 @@ class TradingManager:
                 'price': price,
                 'status': 'pending',
                 'immediate': immediate,
-                'created_at': datetime.now(timezone(timedelta(hours=9))),
-                'updated_at': datetime.now(timezone(timedelta(hours=9))),
+                'created_at': TimeUtils.get_current_kst(),
+                'updated_at': TimeUtils.get_current_kst(),
                 'is_test': is_test,
                 'strategy_data': strategy_data
             }
@@ -1110,8 +1108,8 @@ class TradingManager:
                 'price': price,
                 'status': 'pending',
                 'immediate': immediate,
-                'created_at': datetime.now(timezone(timedelta(hours=9))),
-                'updated_at': datetime.now(timezone(timedelta(hours=9))),
+                'created_at': TimeUtils.get_current_kst(),
+                'updated_at': TimeUtils.get_current_kst(),
                 'is_test': is_test,
                 'trade_data': active_trade
             }

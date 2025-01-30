@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from typing import Dict, Any, List
 import logging
-from datetime import datetime, timedelta, timezone
+from utils.time_utils import TimeUtils
 import sys
 from config.mongodb_config import MONGODB_CONFIG, INITIAL_SYSTEM_CONFIG
 import os
@@ -346,7 +346,7 @@ class MongoDBManager:
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
                     'total_max_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'emergency_stop': False,
-                    'created_at': datetime.now(timezone(timedelta(hours=9)))
+                    'created_at': TimeUtils.get_current_kst()
                 }
                 self.system_config.insert_one(initial_config)
                 self.logger.info("시스템 설정 초기화 완료")
@@ -380,8 +380,8 @@ class MongoDBManager:
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
                     'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'profit_earned': 0,
-                    'created_at': datetime.now(timezone(timedelta(hours=9))),
-                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                        'created_at': TimeUtils.get_current_kst(),
+                    'last_updated': TimeUtils.get_current_kst()
                 }
                 self.portfolio.insert_one(initial_portfolio)
                 self.logger.info("포트폴리오 초기화 완료")
@@ -395,7 +395,7 @@ class MongoDBManager:
     def update_daily_profit_report_status(self, reported: bool = True) -> bool:
         """일일 수익 리포트 상태 업데이트"""
         try:
-            today = datetime.now(timezone(timedelta(hours=9))).replace(hour=0, minute=0, second=0, microsecond=0)
+            today = TimeUtils.get_current_kst().replace(hour=0, minute=0, second=0, microsecond=0)
             result = self.daily_profit.update_one(
                 {'date': today},
                 {'$set': {'reported': reported}}
@@ -409,7 +409,7 @@ class MongoDBManager:
         """일일 수익 업데이트"""
         with self._get_collection_lock('daily_profit'):
             try:
-                profit_data['timestamp'] = datetime.utcnow()
+                profit_data['timestamp'] = TimeUtils.get_current_kst()
                 result = self.daily_profit.insert_one(profit_data)
                 return bool(result.inserted_id)
             except Exception as e:
@@ -420,7 +420,7 @@ class MongoDBManager:
         """포트폴리오 업데이트"""
         with self._get_collection_lock('portfolio'):
             try:
-                update_data['last_updated'] = datetime.utcnow()
+                update_data['last_updated'] = TimeUtils.get_current_kst()
                 result = self.portfolio.update_one(
                     {'_id': 'main'},
                     {'$set': update_data},
@@ -447,8 +447,8 @@ class MongoDBManager:
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
                     'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'profit_earned': 0,
-                    'created_at': datetime.now(timezone(timedelta(hours=9))),
-                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                    'created_at': TimeUtils.get_current_kst(),
+                    'last_updated': TimeUtils.get_current_kst()
                 }
                 
                 # 새 포트폴리오 저장
@@ -478,7 +478,7 @@ class MongoDBManager:
         """
         with self._get_collection_lock('trades'):
             try:
-                trade_data['timestamp'] = datetime.utcnow()
+                trade_data['timestamp'] = TimeUtils.get_current_kst()
                 result = self.trades.insert_one(trade_data)
                 return str(result.inserted_id)
             except Exception as e:
@@ -544,7 +544,7 @@ class MongoDBManager:
             bool: 업데이트 성공 여부
         """
         with self._get_collection_lock('thread_status'):
-            status_data['last_updated'] = datetime.utcnow()
+            status_data['last_updated'] = TimeUtils.get_current_kst()
             result = self.db.thread_status.update_one(
                 {'thread_id': thread_id},
                 {'$set': status_data},
@@ -580,7 +580,7 @@ class MongoDBManager:
                 # 컬렉션 생성 및 기본 문서 삽입
                 self.db[name].insert_one({
                     '_id': 'init',
-                    'created_at': datetime.now(timezone(timedelta(hours=9))),
+                    'created_at': TimeUtils.get_current_kst(),
                     'status': 'initialized'
                 })
                 
@@ -622,7 +622,7 @@ class MongoDBManager:
             try:
                 document = {
                     'coin': coin,
-                    'timestamp': datetime.utcnow(),
+                    'timestamp': TimeUtils.get_current_kst(), 
                     'current_price': strategy_data.get('current_price', 0),
                     'strategies': {
                         'rsi': {
@@ -728,40 +728,6 @@ class MongoDBManager:
                 self.logger.error(f"전략 데이터 저장 실패 - 코인: {coin}, 오류: {str(e)}")
                 return False
 
-    def get_strategy_history(self, coin: str, 
-                                 start_time: datetime = None, 
-                                 end_time: datetime = None,
-                                 limit: int = 100) -> List[Dict]:
-        """특정 코인의 전략 데이터 히스토리 조회
-
-        Args:
-            coin: 코인 심볼
-            start_time: 시작 시간 (선택)
-            end_time: 종료 시간 (선택)
-            limit: 조회할 최대 데이터 수
-
-        Returns:
-            List[Dict]: 전략 데이터 히스토리
-        """
-        try:
-            query = {'coin': coin}
-            if start_time or end_time:
-                query['timestamp'] = {}
-                if start_time:
-                    query['timestamp']['$gte'] = start_time
-                if end_time:
-                    query['timestamp']['$lte'] = end_time
-
-            cursor = self.strategy_data.find(query)
-            cursor.sort('timestamp', -1)
-            cursor.limit(limit)
-
-            return cursor.to_list(length=limit)
-
-        except Exception as e:
-            logging.error(f"전략 데이터 조회 실패 - 코인: {coin}, 오류: {str(e)}")
-            return []
-
     def get_latest_strategy_data(self, coin: str) -> Dict:
         """특정 코인의 최신 전략 데이터 조회
 
@@ -821,8 +787,8 @@ class MongoDBManager:
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
                     'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'profit_earned': 0,
-                    'created_at': datetime.now(timezone(timedelta(hours=9))),
-                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                    'created_at': TimeUtils.get_current_kst(),
+                    'last_updated': TimeUtils.get_current_kst()
                 }
                 self.portfolio.insert_one(initial_portfolio)
                 self.portfolio.create_index([("_id", 1)])
@@ -847,7 +813,7 @@ class MongoDBManager:
                 self.logger.info("trades 컬렉션 재설정 완료")
                 
                 # 오늘 날짜의 daily_profit 문서 확인
-                kst_now = datetime.now(timezone(timedelta(hours=9)))
+                kst_now = TimeUtils.get_current_kst()
                 today = kst_now.replace(hour=0, minute=0, second=0, microsecond=0)
                 daily_profit_doc = self.daily_profit.find_one({'date': today})
                 
@@ -909,7 +875,7 @@ class MongoDBManager:
         try:
             # timestamp를 datetime 객체로 변환
             if isinstance(data.get('last_updated'), str):
-                data['last_updated'] = datetime.fromisoformat(data['last_updated'].replace('Z', '+00:00'))
+                data['last_updated'] = TimeUtils.get_current_kst()
             
             result = self.market_index.update_one(
                 {'exchange': data['exchange']},
@@ -952,7 +918,7 @@ class MongoDBManager:
                     'AFR': [],
                     'current_change': [],
                     'fear_and_greed': [],
-                    'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                    'last_updated': TimeUtils.get_current_kst()
                 }
                 
         except Exception as e:
@@ -962,5 +928,5 @@ class MongoDBManager:
                 'AFR': [],
                 'current_change': [],
                 'fear_and_greed': [],
-                'last_updated': datetime.now(timezone(timedelta(hours=9)))
+                'last_updated': TimeUtils.get_current_kst()
             }

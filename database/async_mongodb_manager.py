@@ -1,4 +1,4 @@
-from datetime import datetime
+from utils.time_utils import TimeUtils
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Dict, Any
 import logging
@@ -85,7 +85,7 @@ class AsyncMongoDBManager:
         try:
             document = {
                 'coin': coin,
-                'timestamp': datetime.utcnow(),
+                'timestamp': TimeUtils.get_current_kst(),
                 'current_price': strategy_data.get('current_price', 0),
                 'strategies': {
                     'rsi': {

@@ -7,6 +7,7 @@ from math import floor
 from database.mongodb_manager import MongoDBManager
 from trading.trading_manager import TradingManager
 from datetime import datetime, timedelta, timezone
+from utils.time_utils import TimeUtils
 import time
 import signal
 from trade_market_api.UpbitCall import UpbitCall
@@ -364,7 +365,7 @@ class ThreadManager:
         """4시간마다 코인 목록을 재조회하고 스레드에 재분배"""
         try:
             # 현재 시간이 4시간 간격인지 확인
-            current_hour = datetime.now(timezone(timedelta(hours=9))).hour
+            current_hour = TimeUtils.get_current_kst().hour
             if current_hour % 4 != 0:
                 return
                 
@@ -428,7 +429,7 @@ class ThreadManager:
                                 {'$set': {
                                     'status': 'completed',
                                     'executed_price': current_price,
-                                    'updated_at': datetime.now(timezone(timedelta(hours=9)))
+                                    'updated_at': TimeUtils.get_current_kst()    
                                 }}
                             )
                     
@@ -449,7 +450,7 @@ class ThreadManager:
                                 {'$set': {
                                     'status': 'completed',
                                     'executed_price': current_price,
-                                    'updated_at': datetime.now(timezone(timedelta(hours=9)))
+                                    'updated_at': TimeUtils.get_current_kst()
                                 }}
                             )
                 
