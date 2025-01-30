@@ -440,46 +440,79 @@ class TradingManager:
                         '매수가': holdings_df['price'].map('{:,.0f}'.format),
                         '현재가': holdings_df['current_price'].map('{:,.0f}'.format),
                         '수익률': holdings_df['profit_rate'].map('{:+.2f}%'.format),
-                        '투자금액': holdings_df['investment_amount'].map('{:,.0f}'.format)
+                        '투자금액': holdings_df['investment_amount']  # 숫자 형태 유지
                     })
                     
                     # 보유 현황 시트에 데이터 저장
                     holdings_display.to_excel(
                         writer,
                         sheet_name='보유현황',
-                        startrow=1,  # 그래프를 위한 공간 확보
+                        startrow=1,
                         startcol=0,
                         index=False
                     )
 
-                    # 원형 그래프 생성
+                    # 숫자 형식 설정
                     workbook = writer.book
                     worksheet = writer.sheets['보유현황']
+                    number_format = workbook.add_format({'num_format': '#,##0'})
+                    worksheet.set_column('G:G', 15, number_format)  # 투자금액 열 서식 설정
                     
-                    # 기존 데이터를 활용한 원형 차트 생성
-                    pie_chart = workbook.add_chart({'type': 'pie'})
+                    # 차트 색상 정의 (더 많은 색상 추가)
+                    chart_colors = [
+                        '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD',  # 밝은 계열
+                        '#D4A5A5', '#9B59B6', '#3498DB', '#E67E22', '#2ECC71',  # 중간 계열
+                        '#FF8C42', '#7FB069', '#D65DB1', '#6C5B7B', '#C06C84',  # 진한 계열
+                        '#F8B195', '#355C7D', '#99B898', '#E84A5F', '#2A363B',  # 파스텔 계열
+                        '#084C61', '#DB504A', '#56A3A6', '#FF4B3E', '#4A90E2'   # 추가 색상
+                    ]
+                    
+                    # 원형 그래프 생성
+                    chart_format = {'type': 'pie', 'subtype': 'pie'}
+                    pie_chart = workbook.add_chart(chart_format)
+                    
                     pie_chart.add_series({
                         'name': '투자 비중',
-                        'categories': f'=보유현황!$A$2:$A${len(holdings_display) + 1}',  # '코인' 컬럼
-                        'values': f'=보유현황!$G$2:$G${len(holdings_display) + 1}',      # '투자금액' 컬럼
-                        'data_labels': {'percentage': True, 'category': True},
+                        'categories': f'=보유현황!$A$3:$A${len(holdings_display) + 2}',
+                        'values': f'=보유현황!$G$3:$G${len(holdings_display) + 2}',
+                        'data_labels': {
+                            'percentage': True,
+                            'category': True,
+                            'position': 'best_fit',  # 자동으로 최적의 위치 선정
+                            'leader_lines': True,
+                            'font': {'size': 9},
+                            'separator': '\n',  # 줄바꿈으로 레이블 구분
+                            'format': {
+                                'border': {'color': 'white', 'width': 1},
+                                'fill': {'color': 'white'},
+                                'font': {'color': 'black', 'bold': True}
+                            }
+                        },
+                        'points': [
+                            {
+                                'fill': {'color': chart_colors[i % len(chart_colors)]},
+                                'border': {'color': 'white', 'width': 1}
+                            }
+                            for i in range(len(holdings_display))
+                        ]
                     })
                     
-                    # 차트 제목 및 스타일 설정
-                    pie_chart.set_title({'name': '코인별 투자 비중'})
-                    pie_chart.set_style(10)
-                    pie_chart.set_size({'width': 500, 'height': 300})
+                    # 차트 크기와 위치 조정
+                    pie_chart.set_title({
+                        'name': '코인별 투자 비중',
+                        'name_font': {'size': 12, 'bold': True},
+                        'overlay': False
+                    })
                     
-                    # 차트를 시트에 삽입 (H2에서 K2로 변경)
-                    worksheet.insert_chart('K2', pie_chart)
+                    pie_chart.set_size({'width': 600, 'height': 400})  # 크기 증가
+                    pie_chart.set_legend({
+                        'position': 'right',  # 범례 위치 변경
+                        'font': {'size': 9},
+                        'layout': {'x': 1.1, 'y': 0.25}  # 범례 위치 미세 조정
+                    })
                     
-                    # 열 너비 자동 조정
-                    for idx, col in enumerate(holdings_display.columns):
-                        max_length = max(
-                            holdings_display[col].astype(str).apply(len).max(),
-                            len(col)
-                        )
-                        worksheet.set_column(idx, idx, max_length + 2)
+                    # 차트 삽입 위치 조정
+                    worksheet.insert_chart('I2', pie_chart, {'x_offset': 25, 'y_offset': 10})
 
                 # 워크북 서식 설정
                 for sheet in writer.sheets.values():
