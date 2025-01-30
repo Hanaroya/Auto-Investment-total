@@ -365,8 +365,12 @@ class TradingManager:
                 # 1. 거래 내역 시트
                 if trading_history:
                     history_df = pd.DataFrame(trading_history)
-                    history_df['거래일자'] = TimeUtils.from_mongo_date(history_df['sell_timestamp']).dt.strftime('%Y-%m-%d %H:%M')
-                    history_df['매수일자'] = TimeUtils.from_mongo_date(history_df['buy_timestamp']).dt.strftime('%Y-%m-%d %H:%M')
+                    history_df['거래일자'] = pd.to_datetime(history_df['sell_timestamp']).apply(
+                        lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
+                    )
+                    history_df['매수일자'] = pd.to_datetime(history_df['buy_timestamp']).apply(
+                        lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
+                    )
                     history_df['매수가'] = history_df['buy_price'].map('{:,.0f}'.format)
                     history_df['매도가'] = history_df['sell_price'].map('{:,.0f}'.format)
                     history_df['수익률'] = history_df['profit_rate'].map('{:+.2f}%'.format)
@@ -430,7 +434,9 @@ class TradingManager:
                     holdings_display = pd.DataFrame({
                         '코인': holdings_df['coin'],
                         'RANK': holdings_df['thread_id'],
-                        '매수시간': TimeUtils.from_mongo_date(holdings_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M'),
+                        '매수시간': pd.to_datetime(holdings_df['timestamp']).apply(
+                            lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
+                        ),
                         '매수가': holdings_df['price'].map('{:,.0f}'.format),
                         '현재가': holdings_df['current_price'].map('{:,.0f}'.format),
                         '수익률': holdings_df['profit_rate'].map('{:+.2f}%'.format),
