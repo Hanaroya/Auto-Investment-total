@@ -413,7 +413,7 @@ class TradingThread(threading.Thread):
                         market_trend = market_condition['market_trend']
                         
                         # 위험도가 높을수록 더 보수적인 임계값 적용
-                        profit_threshold = 1.5 if market_risk > 0.7 else 2.5
+                        profit_threshold = 0.5 if market_risk > 0.7 else 1.2
                         loss_threshold = -2 if market_risk > 0.7 else -3
                         
                         # 매도 조건 감지 (동적 임계값 적용)
