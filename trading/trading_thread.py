@@ -485,7 +485,7 @@ class TradingThread(threading.Thread):
                         
                         # 10. 사용자 호출 매도
                         user_call_sell_condition = (
-                            active_trade.get('user_call_sell', False)
+                            active_trade.get('user_call', False)
                         )
 
                         # 매도 조건 확인
@@ -542,6 +542,10 @@ class TradingThread(threading.Thread):
                                 if sell_reason != "":
                                     sell_reason += ", "
                                 sell_reason += "AFR 지표 기반 매도"
+                            if user_call_sell_condition:
+                                if sell_reason != "":
+                                    sell_reason += ", "
+                                sell_reason += "사용자 호출 매도"
 
                             signals['sell_reason'] = sell_reason
 
