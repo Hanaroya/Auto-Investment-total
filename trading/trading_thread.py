@@ -1,3 +1,4 @@
+import sys
 import threading
 import logging
 import time
@@ -173,20 +174,23 @@ class TradingThread(threading.Thread):
     def run(self):
         """스레드 실행"""
         try:
+            # 비동기 이벤트 루프 생성
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            
             self.logger.info(f"Thread {self.thread_id}: 마켓 분석 시작 - {len(self.coins)} 개의 코인")
             
             while not self.stop_flag.is_set():
                 cycle_start_time = time.time()
                 
                 # 스레드 ID에 따라 다른 대기 시간 설정
-                if self.thread_id < 4:  # 0,1,2,3 번 스레드
-                    wait_time = 40  # 40초마다
-                    initial_delay = self.thread_id * 1  # 1초 간격으로 시작 시간 분배
-                else:  # 4번 이상 스레드
-                    wait_time = 300  # 300초(5분)마다
-                    initial_delay = (self.thread_id - 4) * 1  # 1초 간격으로 시작 시간 분배
+                if self.thread_id < 4:
+                    wait_time = 40
+                    initial_delay = self.thread_id * 1
+                else:
+                    wait_time = 300
+                    initial_delay = (self.thread_id - 4) * 1
                 
-                # 초기 지연 적용
                 time.sleep(initial_delay)
                 
                 for coin in self.coins:
@@ -194,15 +198,16 @@ class TradingThread(threading.Thread):
                         break
                         
                     try:
-                        self.process_single_coin(coin)
+                        # 비동기 함수를 동기적으로 실행
+                        self.loop.run_until_complete(self.process_single_coin(coin))
                     except Exception as e:
-                        self.logger.error(f"Error processing {coin}: {str(e)}")
+                        import traceback
+                        tb = traceback.extract_tb(sys.exc_info()[2])[-1]
+                        error_statement = tb.line  # 실제 에러가 발생한 코드 라인의 내용
+                        self.logger.error(f"Error processing {coin}: {str(e)} in statement: '{error_statement}' at {tb.filename}:{tb.lineno}")
                         continue
                 
-                # 사이클 완료 시간 계산
                 cycle_duration = time.time() - cycle_start_time
-                
-                # 설정된 대기 시간에서 실제 소요 시간과 초기 지연 시간을 뺀 만큼 대기
                 remaining_time = wait_time - cycle_duration - initial_delay
                 if remaining_time > 0:
                     time.sleep(remaining_time)
@@ -212,76 +217,144 @@ class TradingThread(threading.Thread):
         except Exception as e:
             self.logger.error(f"Thread {self.thread_id} error: {str(e)}")
         finally:
+            if self.loop and self.loop.is_running():
+                self.loop.close()
             self.logger.info(f"Thread {self.thread_id} 정리 작업 완료")
 
     async def process_single_coin(self, coin: str):
         """단일 코인 처리"""
         try:
-            # 5분마다 투자 한도 업데이트 체크
-            current_time = datetime.now()
-            if (current_time - self.last_config_check).total_seconds() >= 300:  # 5분
-                self.update_investment_limits()
-                self.last_config_check = current_time
-            
-            # 시장 지표 데이터 조회 - 거래소별 데이터 사용
-            market_index = self.db.get_market_index(self.investment_center.exchange_name)
-            if not market_index:
-                self.logger.warning(f"시장 지표 데이터를 찾을 수 없음")
+            # 시장 상태 조회 
+            market_condition = self._get_market_condition(exchange=self.investment_center.exchange_name, coin= coin)
+            if not market_condition:
+                self.logger.debug(f"{coin}: 시장 상태 데이터 없음")
                 return
-                
-            # AFR 데이터가 없는 경우 처리 중단
-            if 'AFR' not in market_index or not market_index['AFR']:
-                self.logger.warning(f"{self.investment_center.exchange_name}의 AFR 데이터가 없음")
-                return
-                
-            # 시장 지표 분석
-            afr_list = market_index.get('AFR', [])
-            change_list = market_index.get('current_change', [])
-            fear_greed_list = market_index.get('fear_and_greed', [])
-            market_feargreed = market_index.get('market_feargreed', [])
             
-            if not all([afr_list, change_list, fear_greed_list]):
-                self.logger.warning(f"일부 시장 지표 데이터 누락")
+            # AFR 데이터 유효성 검사
+            if any(market_condition.get(key) is None for key in ['AFR', 'current_change', 'market_fear_and_greed']):
+                self.logger.debug(f"{coin}: AFR 데이터 누락")
                 return
-                
-            # 최신 지표값 가져오기
-            current_afr = afr_list[-1] if afr_list else 0
-            current_change = change_list[-1] if change_list else 0
-            current_fear_greed = fear_greed_list[-1] if fear_greed_list else 50
-            
-            # 코인별 Fear & Greed 값 찾기
-            coin_fear_greed = 50  # 기본값
-            if market_feargreed:
-                for data in market_feargreed:
-                    if data.get('market') == coin:
-                        coin_fear_greed = data.get('feargreed', 50)
-                        break
             
             # 시장 상태 분석
-            market_condition = self._analyze_market_condition(
-                current_afr, current_change, current_fear_greed,
-                afr_list, change_list, fear_greed_list
+            self.logger.warning(f"{coin}: 시장 상태 분석 시작 - AFR: {market_condition['AFR']}, change: {market_condition['current_change']}, fear_greed: {market_condition['market_fear_and_greed']}")
+            analyzed_market = self._analyze_market_condition(
+                current_afr=market_condition['AFR'],
+                current_change=market_condition['current_change'],
+                current_fear_greed=market_condition['market_fear_and_greed'],
+                afr_history=market_condition.get('AFR_history', []),
+                change_history=market_condition.get('change_history', []),
+                fear_greed_history=market_condition.get('fear_greed_history', [])
             )
+            self.logger.warning(f"{coin}: 시장 상태 분석 결과 - {analyzed_market}")
             
+            current_fear_greed = market_condition['market_fear_and_greed']
+            coin_fear_greed = market_condition['feargreed']
+            
+            # 시장 상태 분석
+            try:
+                analyzed_market = self._analyze_market_condition(
+                    current_afr=market_condition['AFR'],
+                    current_change=market_condition['current_change'],
+                    current_fear_greed=market_condition['market_fear_and_greed'],
+                    afr_history=market_condition.get('AFR_history', []),
+                    change_history=market_condition.get('change_history', []),
+                    fear_greed_history=market_condition.get('fear_greed_history', [])
+                )
+                
+                if not analyzed_market:
+                    self.logger.debug(f"{coin}: 시장 분석 실패")
+                    return
+                    
+                market_condition.update(analyzed_market)
+            except Exception as e:
+                self.logger.error(f"{coin}: 시장 분석 중 오류 - {str(e)}")
+                return
+
             # 여러 시간대의 캔들 데이터 조회
             with self.shared_locks['candle_data']:
                 candles_1m = None
                 candles_15m = None
                 candles_240m = None
                 
-                if self.thread_id < 4:  # 0~3번 스레드
-                    candles_1m = self.investment_center.exchange.get_candle(
-                        market=coin, interval='1', count=300)
-                    candles_15m = self.investment_center.exchange.get_candle(
-                        market=coin, interval='15', count=300)
-                else:  # 4~9번 스레드
-                    candles_15m = self.investment_center.exchange.get_candle(
-                        market=coin, interval='15', count=300)
-                    candles_240m = self.investment_center.exchange.get_candle(
-                        market=coin, interval='240', count=300)
+                try:
+                    if self.thread_id < 4:  # 0~3번 스레드
+                        candles_1m = self.investment_center.exchange.get_candle(
+                            market=coin, interval='1', count=300)
+                        if not candles_1m:
+                            self.logger.warning(f"{coin}: 1분봉 데이터 없음")
+                            return
+                        
+                        candles_15m = self.investment_center.exchange.get_candle(
+                            market=coin, interval='15', count=300)
+                        if not candles_15m:
+                            self.logger.warning(f"{coin}: 15분봉 데이터 없음")
+                            return
+                        
+                    else:  # 4~9번 스레드
+                        candles_15m = self.investment_center.exchange.get_candle(
+                            market=coin, interval='15', count=300)
+                        if not candles_15m:
+                            self.logger.warning(f"{coin}: 15분봉 데이터 없음")
+                            return
+                        
+                        candles_240m = self.investment_center.exchange.get_candle(
+                            market=coin, interval='240', count=300)
+                        if not candles_240m:
+                            self.logger.warning(f"{coin}: 4시간봉 데이터 없음")
+                            return
+                        
+                    # 캔들 데이터 길이 검증
+                    if self.thread_id < 4:
+                        if len(candles_1m) < 2:
+                            self.logger.warning(f"{coin}: 1분봉 데이터 부족 (개수: {len(candles_1m)})")
+                            return
+                        if len(candles_15m) < 2:
+                            self.logger.warning(f"{coin}: 15분봉 데이터 부족 (개수: {len(candles_15m)})")
+                            return
+                    else:
+                        if len(candles_15m) < 2:
+                            self.logger.warning(f"{coin}: 15분봉 데이터 부족 (개수: {len(candles_15m)})")
+                            return
+                        if len(candles_240m) < 2:
+                            self.logger.warning(f"{coin}: 4시간봉 데이터 부족 (개수: {len(candles_240m)})")
+                            return
+                        
+                    # 마지막 캔들 데이터 검증
+                    if self.thread_id < 4:
+                        if not candles_1m[-1] or not candles_15m[-1]:
+                            self.logger.warning(f"{coin}: 최근 캔들 데이터 누락")
+                            return
+                    else:
+                        if not candles_15m[-1] or not candles_240m[-1]:
+                            self.logger.warning(f"{coin}: 최근 캔들 데이터 누락")
+                            return
+                    
+                except Exception as e:
+                    self.logger.error(f"{coin}: 캔들 데이터 조회 실패 - {str(e)}")
+                    return
+
+            # 시간대별 추세 분석 전 데이터 검증
+            if self.thread_id < 4 and (not isinstance(candles_1m, list) or not isinstance(candles_15m, list)):
+                self.logger.error(f"{coin}: 잘못된 캔들 데이터 형식")
+                return
+            elif self.thread_id >= 4 and (not isinstance(candles_15m, list) or not isinstance(candles_240m, list)):
+                self.logger.error(f"{coin}: 잘못된 캔들 데이터 형식")
+                return
 
             # 시간대별 추세 분석
-            trends = self._analyze_multi_timeframe_trends(candles_1m, candles_15m, candles_240m)
+            try:
+                trends = self._analyze_multi_timeframe_trends(candles_1m, candles_15m, candles_240m)
+                if not trends:
+                    self.logger.warning(f"{coin}: 추세 분석 실패")
+                    return
+            except Exception as e:
+                self.logger.error(f"{coin}: 추세 분석 중 오류 - {str(e)}")
+                return
+            
+            # 거래 가능 여부 확인
+            if not market_condition['is_tradeable']:
+                self.logger.debug(f"{coin}: 거래 중지 - {market_condition['message']}")
+                return
             
             # 동적 임계값 조정
             thresholds = self.trading_strategy.adjust_thresholds(market_condition, trends)
@@ -303,9 +376,15 @@ class TradingThread(threading.Thread):
             # 마켓 분석 수행 시 시장 상태 정보 추가
             signals = self.market_analyzer.analyze_market(coin, candles_1m)
             signals.update(market_condition)
-            
-            # 전략 데이터 저장
-            current_price = candles_1m[-1]['close']
+                
+            if self.thread_id < 4:
+                current_price = candles_1m[-1]['close']
+                self.logger.warning(f"{coin}: candles_1m 상태 - 길이: {len(candles_1m)}")
+            else:
+                current_price = candles_15m[-1]['close']
+                self.logger.warning(f"{coin}: candles_15m 상태 - 길이: {len(candles_15m)}")
+
+            self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
             self.trading_manager.update_strategy_data(coin, self.thread_id, current_price, signals)
 
             # 분석 결과 저장 및 거래 신호 처리
@@ -391,7 +470,7 @@ class TradingThread(threading.Thread):
 
                         # 9. AFR 지표 기반 매도
                         afr_sell_condition = (
-                            current_afr < -0.5 and  # AFR이 크게 하락
+                            market_condition['AFR'] < -0.5 and  # AFR이 크게 하락
                             current_profit_rate > 0.5 and
                             coin_fear_greed < 40  # 코인별 공포 지수도 낮을 때
                         )
@@ -669,7 +748,9 @@ class TradingThread(threading.Thread):
             self.logger.debug(f"Thread {self.thread_id}: {coin} - 처리 완료")
 
         except Exception as e:
-            self.logger.error(f"Error processing {coin}: {str(e)}")
+            import traceback
+            error_location = traceback.extract_tb(sys.exc_info()[2])[-1]
+            self.logger.error(f"Error processing {coin}: {str(e)} at {error_location.filename}:{error_location.lineno} in {error_location.name}")
 
     def _analyze_market_condition(self, current_afr: float, current_change: float, 
                                 current_fear_greed: float, afr_history: list,
@@ -763,51 +844,118 @@ class TradingThread(threading.Thread):
 
     def _analyze_multi_timeframe_trends(self, candles_1m, candles_15m, candles_240m):
         """여러 시간대의 추세를 분석"""
-        trends = {
-            '1m': {'trend': 0, 'volatility': 0},
-            '15m': {'trend': 0, 'volatility': 0},
-            '240m': {'trend': 0, 'volatility': 0}
-        }
-        
-        # 1분봉 분석
-        if candles_1m:
-            trends['1m'] = self._calculate_trend_and_volatility(candles_1m)
+        try:
+            trends = {
+                '1m': {'trend': 0, 'volatility': 0},
+                '15m': {'trend': 0, 'volatility': 0},
+                '240m': {'trend': 0, 'volatility': 0}
+            }
             
-        # 15분봉 분석
-        if candles_15m:
-            trends['15m'] = self._calculate_trend_and_volatility(candles_15m)
+            # 1분봉 분석
+            if candles_1m:
+                trends['1m'] = self._calculate_trend_and_volatility(candles_1m)
+                self.logger.warning(f"1분봉 분석 결과: {trends['1m']}")
             
-        # 240분봉 분석
-        if candles_240m:
-            trends['240m'] = self._calculate_trend_and_volatility(candles_240m)
+            # 15분봉 분석
+            if candles_15m:
+                trends['15m'] = self._calculate_trend_and_volatility(candles_15m)
+                self.logger.warning(f"15분봉 분석 결과: {trends['15m']}")
             
-        return trends
+            # 240분봉 분석
+            if candles_240m:
+                trends['240m'] = self._calculate_trend_and_volatility(candles_240m)
+                self.logger.warning(f"4시간봉 분석 결과: {trends['240m']}")
+            
+            return trends
+            
+        except Exception as e:
+            self.logger.error(f"추세 분석 중 오류: {str(e)}")
+            return None
         
     def _calculate_trend_and_volatility(self, candles):
         """단일 시간대의 추세와 변동성 계산"""
-        if not candles or len(candles) < 2:
+        try:
+            if not candles or len(candles) < 2:
+                self.logger.warning(f"캔들 데이터 부족: {len(candles) if candles else 0}개")
+                return {'trend': 0, 'volatility': 0}
+            
+            prices = [float(candle['close']) for candle in candles]
+            self.logger.debug(f"가격 데이터: 개수={len(prices)}, 최근={prices[-3:]}")
+            
+            # 추세 계산 (최근 가격 변화율의 가중 평균)
+            changes = []
+            weights = []
+            for i in range(1, min(20, len(prices))):
+                change = (prices[-i] - prices[-i-1]) / prices[-i-1]
+                changes.append(change)
+                weights.append(1 / i)  # 최근 데이터에 더 높은 가중치
+            
+            trend = sum(c * w for c, w in zip(changes, weights)) / sum(weights)
+            
+            # 변동성 계산 (최근 가격 변동의 표준편차)
+            recent_prices = prices[-20:]
+            mean_price = sum(recent_prices) / len(recent_prices)
+            variance = sum((p - mean_price) ** 2 for p in recent_prices) / len(recent_prices)
+            volatility = (variance ** 0.5) / mean_price
+            
+            result = {
+                'trend': max(min(trend * 10, 1), -1),  # -1 ~ 1 범위로 정규화
+                'volatility': min(volatility * 10, 1)  # 0 ~ 1 범위로 정규화
+            }
+            self.logger.warning(f"계산 결과: {result}")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"추세/변동성 계산 중 오류: {str(e)}")
             return {'trend': 0, 'volatility': 0}
+        
+    def _get_market_condition(self, exchange: str, coin: str) -> dict:
+        """시장 상태 조회"""
+        try:
+            # 최신 AFR 데이터 조회
+            market_index = self.db.market_index.find_one(
+                {'exchange': exchange},
+                sort=[('last_updated', -1)]
+            )
             
-        prices = [float(candle['close']) for candle in candles]
-        
-        # 추세 계산 (최근 가격 변화율의 가중 평균)
-        changes = []
-        weights = []
-        for i in range(1, min(20, len(prices))):
-            change = (prices[-i] - prices[-i-1]) / prices[-i-1]
-            changes.append(change)
-            weights.append(1 / i)  # 최근 데이터에 더 높은 가중치
+            if not market_index:
+                self.logger.warning(f"{coin}: market_index 데이터 없음")
+                return None
             
-        trend = sum(c * w for c, w in zip(changes, weights)) / sum(weights)
-        
-        # 변동성 계산 (최근 가격 변동의 표준편차)
-        recent_prices = prices[-20:]
-        mean_price = sum(recent_prices) / len(recent_prices)
-        variance = sum((p - mean_price) ** 2 for p in recent_prices) / len(recent_prices)
-        volatility = (variance ** 0.5) / mean_price
-        
-        return {
-            'trend': max(min(trend * 10, 1), -1),  # -1 ~ 1 범위로 정규화
-            'volatility': min(volatility * 10, 1)  # 0 ~ 1 범위로 정규화
-        }
+            # 필수 필드 존재 확인
+            required_fields = ['market_feargreed', 'AFR', 'current_change', 'fear_and_greed']
+            if not all(field in market_index for field in required_fields):
+                self.logger.warning(f"{coin}: 필수 필드 누락 - {[f for f in required_fields if f not in market_index]}")
+                return None
+            
+            # market_feargreed 리스트에서 해당 코인 데이터 찾기
+            coin_fear_greed = None
+            market_feargreed = market_index.get('market_feargreed', [])
+            
+            if isinstance(market_feargreed, list):
+                for item in market_feargreed:
+                    if isinstance(item, dict) and item.get('market') == coin:
+                        coin_fear_greed = item
+                        break
+                
+            if not coin_fear_greed:
+                self.logger.warning(f"{coin}: fear_greed 데이터 없음")
+                return None
+            
+            try:
+                return {
+                    'feargreed': float(coin_fear_greed.get('feargreed', 50)),
+                    'state': str(coin_fear_greed.get('state', '중립')),
+                    'timestamp': coin_fear_greed.get('timestamp'),
+                    'AFR': float(market_index['AFR'][-1]) if market_index.get('AFR') else None,
+                    'current_change': float(market_index['current_change'][-1]) if market_index.get('current_change') else None,
+                    'market_fear_and_greed': float(market_index['fear_and_greed'][-1]) if market_index.get('fear_and_greed') else 50
+                }
+            except (IndexError, ValueError, TypeError) as e:
+                self.logger.warning(f"{coin}: 데이터 변환 중 오류 - {str(e)}")
+                return None
+            
+        except Exception as e:
+            self.logger.error(f"시장 상태 조회 중 오류 ({coin}): {str(e)}")
+            return None
         

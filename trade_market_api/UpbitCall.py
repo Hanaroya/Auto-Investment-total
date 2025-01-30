@@ -696,14 +696,16 @@ class UpbitCall:
         거래소별 AFR 데이터 조회
         Returns:
             Dict: {
-                'AFR': float,
-                'current_change': float,
-                'fear_and_greed': float
+                'AFR': float,  # 현재 AFR 값
+                'current_change': float,  # 현재 변화율
+                'fear_and_greed': float,  # 현재 공포/탐욕 지수
+                'market_feargreed': List[Dict[str, Any]]  # 코인별 공포/탐욕 데이터
             }
         """
         try:
             total_ubmi, change_ubmi, fear_greed = await self.fetch_ubmi_data()
             market_feargreed = await self.get_feargreed_data()
+            
             if all(v is not None for v in [total_ubmi, change_ubmi, fear_greed, market_feargreed]):
                 return {
                     'AFR': total_ubmi,

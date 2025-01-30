@@ -888,7 +888,7 @@ class MongoDBManager:
         self.logger.debug(f"Thread {threading.current_thread().name} getting lock for {collection_name}")
         return lock
 
-    def update_market_index(self, market_data: Dict) -> bool:
+    def update_market_index(self, data: Dict) -> bool:
         """
         시장 지표(AFR 등) 데이터 업데이트
         
@@ -900,65 +900,32 @@ class MongoDBManager:
                     'AFR': float,            # AFR 값
                     'current_change': float,  # 현재 변화율
                     'fear_and_greed': float,  # 공포/탐욕 지수
+                    'market_feargreed': List[Dict[str, Any]]  # 마켓별 공포/탐욕 데이터
                 }
         
         Returns:
             bool: 업데이트 성공 여부
         """
         try:
-            with self._get_collection_lock('market_index'):
-                exchange = market_data['exchange']
-                
-                # 최신 20개 데이터만 유지하도록 업데이트
-                update_query = {
-                    '$push': {
-                        'AFR': {
-                            '$each': [market_data['AFR']],
-                            '$slice': -20
-                        },
-                        'current_change': {
-                            '$each': [market_data['current_change']],
-                            '$slice': -20
-                        },
-                        'fear_and_greed': {
-                            '$each': [market_data['fear_and_greed']],
-                            '$slice': -20
-                        }
-                    },
-                    '$set': {
-                        'last_updated': market_data['timestamp'],
-                        'exchange': exchange
-                    }
-                }
-                
-                # 추가 지표가 있다면 업데이트 쿼리에 포함
-                additional_metrics = {
-                    k: v for k, v in market_data.items() 
-                    if k not in ['exchange', 'timestamp', 'AFR', 'current_change', 'fear_and_greed']
-                }
-                if additional_metrics:
-                    for key, value in additional_metrics.items():
-                        update_query['$push'][key] = {
-                            '$each': [value],
-                            '$slice': -20
-                        }
-                
-                result = self.market_index.update_one(
-                    {'exchange': exchange},
-                    update_query,
-                    upsert=True
-                )
-                
-                success = bool(result.modified_count > 0 or result.upserted_id)
-                if success:
-                    self.logger.debug(f"시장 지표 업데이트 성공 - 거래소: {exchange}")
-                else:
-                    self.logger.warning(f"시장 지표 업데이트 실패 - 거래소: {exchange}")
-                
-                return success
-                
+            # timestamp를 datetime 객체로 변환
+            if isinstance(data.get('last_updated'), str):
+                data['last_updated'] = datetime.fromisoformat(data['last_updated'].replace('Z', '+00:00'))
+            
+            result = self.market_index.update_one(
+                {'exchange': data['exchange']},
+                {'$set': {
+                    'AFR': data['AFR'],
+                    'current_change': data['current_change'],
+                    'fear_and_greed': data['fear_and_greed'],
+                    'market_feargreed': data['market_feargreed'],
+                    'last_updated': data['last_updated']
+                }},
+                upsert=True
+            )
+            return bool(result.modified_count > 0 or result.upserted_id)
+            
         except Exception as e:
-            self.logger.error(f"시장 지표 데이터 업데이트 실패: {str(e)}")
+            logging.getLogger('investment_center').error(f"시장 지표 데이터 업데이트 실패: {str(e)}")
             return False
 
     def get_market_index(self, exchange: str) -> Dict:

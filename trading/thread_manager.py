@@ -70,6 +70,7 @@ class ThreadManager:
 
         self.scheduler_thread = None
         self.afr_monitor_thread = None
+        self.afr_ready = threading.Event()  # AFR 데이터 준비 상태를 위한 이벤트 추가
 
     def signal_handler(self, signum, frame):
         """시그널 핸들러"""
@@ -206,18 +207,28 @@ class ThreadManager:
         try:
             self.running = True
             
-            # AFR 모니터링 스레드 시작 (investment_center 사용)
+            # AFR 모니터링 스레드 먼저 시작
             if self.investment_center:
                 self.afr_monitor_thread = AFRMonitorThread(
                     investment_center=self.investment_center,
                     stop_flag=self.stop_flag,
-                    db_manager=self.db
+                    db_manager=self.db,
+                    afr_ready=self.afr_ready  # AFR 준비 이벤트 전달
                 )
                 self.afr_monitor_thread.start()
+                
+                # AFR 데이터가 준비될 때까지 대기
+                self.logger.info("AFR 데이터 초기화 대기 중...")
+                if not self.afr_ready.wait(timeout=300):  # 5분 타임아웃
+                    self.logger.error("AFR 데이터 초기화 타임아웃")
+                    self.stop_all_threads()
+                    return
+                self.logger.info("AFR 데이터 초기화 완료")
             
             # 마켓 분배
             market_groups = self.split_markets(markets)
             
+            # AFR 데이터가 준비된 후 거래 스레드 시작
             for i, market_group in enumerate(market_groups):
                 if not market_group:
                     continue
@@ -229,7 +240,7 @@ class ThreadManager:
                     shared_locks=self.shared_locks,
                     stop_flag=self.stop_flag,
                     db=self.db,
-                    investment_center=self.investment_center  # TradingThread에도 전달
+                    investment_center=self.investment_center
                 )
                 thread.start()
                 self.threads.append(thread)
