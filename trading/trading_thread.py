@@ -377,14 +377,8 @@ class TradingThread(threading.Thread):
             # 마켓 분석 수행 시 시장 상태 정보 추가
             signals = self.market_analyzer.analyze_market(coin, candles_1m)
             signals.update(market_condition)
-                
-            if self.thread_id < 4:
-                current_price = candles_1m[-1]['close']
-                self.logger.warning(f"{coin}: candles_1m 상태 - 길이: {len(candles_1m)}")
-            else:
-                current_price = candles_15m[-1]['close']
-                self.logger.warning(f"{coin}: candles_15m 상태 - 길이: {len(candles_15m)}")
-
+            current_price = candles_1m[-1]['close'] if self.thread_id < 4 else candles_15m[-1]['close']
+            self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
             self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
             self.trading_manager.update_strategy_data(coin, self.thread_id, current_price, signals)
 
