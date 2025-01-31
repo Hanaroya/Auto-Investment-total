@@ -412,59 +412,77 @@ class TradingThread(threading.Thread):
                         market_risk = market_condition['risk_level']
                         market_trend = market_condition['market_trend']
                         
-                        # 위험도가 높을수록 더 보수적인 임계값 적용
-                        profit_threshold = 0.5 if market_risk > 0.7 else 1.2
-                        loss_threshold = -2 if market_risk > 0.7 else -3
-                        
-                        # 매도 조건 감지 (단순화 및 통합)
-                        # 1. 수익 실현 조건 (기존 3, 5, 6, 11번 조건 통합)
+                        # 시장 상황별 동적 임계값 설정
+                        if market_risk > 0.7:  # 고위험 시장
+                            profit_threshold = 0.5  # 0.5% 수익
+                            loss_threshold = -2
+                            volatility_threshold = 0.4
+                            trend_threshold = 0.3
+                        elif market_risk > 0.5:  # 중위험 시장
+                            profit_threshold = 0.8  # 0.8% 수익
+                            loss_threshold = -2.5
+                            volatility_threshold = 0.5
+                            trend_threshold = 0.4
+                        else:  # 저위험 시장
+                            profit_threshold = 1.2  # 1.2% 수익
+                            loss_threshold = -3
+                            volatility_threshold = 0.6
+                            trend_threshold = 0.5
+
+                        # 1. 수익 실현 조건 (시장 상황 반영)
                         profit_take_condition = (
-                            (current_profit_rate >= 5.0) or  # 5% 이상 수익 즉시 매도
-                            (current_profit_rate >= 3.0 and (  # 3% 이상 수익시 추가 조건 확인
+                            (current_profit_rate >= 5.0) or  # 5% 이상은 무조건 매도
+                            (current_profit_rate >= profit_threshold * 6) or  # profit_threshold의 6배 수익 달성
+                            (current_profit_rate >= profit_threshold * 3 and (  # profit_threshold의 3배 수익에서 추가 조건 확인
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] > 0.4 or  # 급격한 상승
-                                    trends['1m']['trend'] < -0.15 or  # 하락 전환
-                                    trends['15m']['volatility'] > 0.5  # 변동성 감지
+                                    trends['1m']['trend'] > trend_threshold or
+                                    trends['1m']['trend'] < -trend_threshold * 0.5 or
+                                    trends['15m']['volatility'] > volatility_threshold
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] > 0.3 or  # 급격한 상승
-                                    trends['15m']['trend'] < -0.15 or  # 하락 전환
-                                    trends['240m']['volatility'] > 0.4  # 변동성 감지
+                                    trends['15m']['trend'] > trend_threshold or
+                                    trends['15m']['trend'] < -trend_threshold * 0.5 or
+                                    trends['240m']['volatility'] > volatility_threshold
                                 ))
                             ))
                         )
 
-                        # 2. 손실 방지 조건 (기존 1, 2, 4번 조건 통합)
+                        # 2. 손실 방지 조건 (시장 상황 반영)
                         loss_prevention_condition = (
-                            (current_profit_rate < loss_threshold and (  # 기본 손실 제한
+                            (current_profit_rate < loss_threshold * (1.2 if market_risk > 0.6 else 1.0) and (
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] < -0.2 or
-                                    (trends['1m']['volatility'] > 0.6 and trends['15m']['trend'] < -0.1)
+                                    trends['1m']['trend'] < -trend_threshold or
+                                    (trends['1m']['volatility'] > volatility_threshold and trends['15m']['trend'] < -trend_threshold * 0.5)
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] < -0.2 or
-                                    (trends['15m']['volatility'] > 0.5 and trends['240m']['trend'] < -0.1)
+                                    trends['15m']['trend'] < -trend_threshold or
+                                    (trends['15m']['volatility'] > volatility_threshold and trends['240m']['trend'] < -trend_threshold * 0.5)
                                 ))
                             )) or
-                            (current_profit_rate < (loss_threshold * 1.2) and market_risk > 0.7)  # 높은 위험도
+                            (current_profit_rate < loss_threshold * 1.5 and market_risk > 0.7)  # 극도의 위험 상황
                         )
 
-                        # 3. 시장 상태 기반 매도 (기존 8, 9번 조건 통합)
+                        # 3. 시장 상태 기반 매도 (시장 상황 반영)
                         market_condition_sell = (
-                            (current_profit_rate > 0.5) and (  # 수익이 있는 상태에서
-                                (current_fear_greed < 30 and coin_fear_greed < 35) or  # 공포 지수
-                                (market_condition['AFR'] < -0.5 and market_risk > 0.6)  # AFR 지표
+                            (current_profit_rate > (0.3 if market_risk > 0.6 else 0.5)) and (
+                                (current_fear_greed < (25 if market_risk > 0.7 else 30) and 
+                                 coin_fear_greed < (30 if market_risk > 0.7 else 35)) or
+                                (market_condition['AFR'] < (-0.4 if market_risk > 0.7 else -0.5) and 
+                                 market_risk > (0.5 if market_trend > 0 else 0.6))
                             )
                         )
 
-                        # 4. 기술적 지표 기반 매도 (기존 7번 조건 수정)
+                        # 4. 기술적 지표 기반 매도 (시장 상황 반영)
                         technical_sell_condition = (
-                            signals.get('overall_signal', 0.0) <= thresholds['sell_threshold'] and
-                            current_profit_rate > 0.5 and  # 수익이 있는 경우
-                            (market_risk > 0.5 or trends['15m']['volatility'] > 0.4)  # 위험도 또는 변동성
+                            signals.get('overall_signal', 0.0) <= (
+                                thresholds['sell_threshold'] * (0.8 if market_risk > 0.7 else 1.0)
+                            ) and
+                            current_profit_rate > (0.3 if market_risk > 0.7 else 0.5) and
+                            (market_risk > (0.4 if market_trend > 0 else 0.5) or 
+                             trends['15m']['volatility'] > volatility_threshold)
                         )
 
-                        # 5. 사용자 호출 매도 (기존 10번 조건 유지)
+                        # 5. 사용자 호출 매도 (유지)
                         user_call_sell_condition = active_trade.get('user_call', False)
 
                         # 매도 조건 통합
