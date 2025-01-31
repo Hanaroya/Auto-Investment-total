@@ -414,17 +414,17 @@ class TradingThread(threading.Thread):
                         
                         # 시장 상황별 동적 임계값 설정
                         if market_risk > 0.7:  # 고위험 시장
-                            profit_threshold = 0.5  # 0.5% 수익
+                            profit_threshold = 0.2  # 0.2% 수익
                             loss_threshold = -2
                             volatility_threshold = 0.4
                             trend_threshold = 0.3
                         elif market_risk > 0.5:  # 중위험 시장
-                            profit_threshold = 0.8  # 0.8% 수익
+                            profit_threshold = 0.4  # 0.4% 수익
                             loss_threshold = -2.5
                             volatility_threshold = 0.5
                             trend_threshold = 0.4
                         else:  # 저위험 시장
-                            profit_threshold = 1.2  # 1.2% 수익
+                            profit_threshold = 0.5  # 0.4% 수익
                             loss_threshold = -3
                             volatility_threshold = 0.6
                             trend_threshold = 0.5
