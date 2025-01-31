@@ -920,10 +920,10 @@ class TradingManager:
             
             # 전략 데이터 구성
             strategy_data = {
-                'current_price': strategy_results.get('price', price),
+                'current_price': price,
                 'timestamp': TimeUtils.get_current_kst(),  # KST 시간
                 'coin': coin,
-                'price': strategy_results.get('price', price),
+                'price':  price,
                 'action': strategy_results.get('action', 'hold'),
                 'signal_strength': strategy_results.get('overall_signal', 0),
                 'market_data': strategy_results.get('market_data', {}),  # 시장 데이터
@@ -957,7 +957,7 @@ class TradingManager:
                         'status': 'active'
                     }
                 )
-                current_price = strategy_results.get('price', price)
+                current_price = price
                 
                 for active_trade in active_trades:
                     # 수익률 계산 시 0으로 나누기 방지
