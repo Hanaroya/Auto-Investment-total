@@ -416,171 +416,83 @@ class TradingThread(threading.Thread):
                         profit_threshold = 0.5 if market_risk > 0.7 else 1.2
                         loss_threshold = -2 if market_risk > 0.7 else -3
                         
-                        # 매도 조건 감지 (동적 임계값 적용)
-                        # 1. 급격한 하락 감지 (여러 시간대 확인)
-                        radical_sell_condition = (
-                            (price_trend < -0.5 and volatility > 0.7) or
-                            (trends['1m']['trend'] < -0.4 and trends['15m']['volatility'] > 0.6) or
-                            (self.thread_id >= 4 and trends['15m']['trend'] < -0.3 and trends['240m']['volatility'] > 0.5)
-                        )
-                        
-                        # 2. 지속적인 하락 추세 (시간대별 확인)
-                        price_down_condition = (
-                            (current_profit_rate < loss_threshold and (
-                                (self.thread_id < 4 and trends['1m']['trend'] < -0.2 and trends['15m']['trend'] < -0.15) or
-                                (self.thread_id >= 4 and trends['15m']['trend'] < -0.2 and trends['240m']['trend'] < -0.15)
+                        # 매도 조건 감지 (단순화 및 통합)
+                        # 1. 수익 실현 조건 (기존 3, 5, 6, 11번 조건 통합)
+                        profit_take_condition = (
+                            (current_profit_rate >= 5.0) or  # 5% 이상 수익 즉시 매도
+                            (current_profit_rate >= 3.0 and (  # 3% 이상 수익시 추가 조건 확인
+                                (self.thread_id < 4 and (
+                                    trends['1m']['trend'] > 0.4 or  # 급격한 상승
+                                    trends['1m']['trend'] < -0.15 or  # 하락 전환
+                                    trends['15m']['volatility'] > 0.5  # 변동성 감지
+                                )) or
+                                (self.thread_id >= 4 and (
+                                    trends['15m']['trend'] > 0.3 or  # 급격한 상승
+                                    trends['15m']['trend'] < -0.15 or  # 하락 전환
+                                    trends['240m']['volatility'] > 0.4  # 변동성 감지
+                                ))
                             ))
                         )
-                        
-                        # 3. 목표 수익 달성 후 하락 추세
-                        profit_goal_sell_condition = (
-                            (current_profit_rate > profit_threshold or current_profit_rate > 3.0) and (  # 3% 이상 수익 추가
+
+                        # 2. 손실 방지 조건 (기존 1, 2, 4번 조건 통합)
+                        loss_prevention_condition = (
+                            (current_profit_rate < loss_threshold and (  # 기본 손실 제한
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] < -0.15 or  # 1분봉 하락 전환
-                                    trends['15m']['trend'] < -0.1 or  # 15분봉 하락 전환
-                                    current_profit_rate > 5.0  # 5% 이상 수익시 즉시 매도
+                                    trends['1m']['trend'] < -0.2 or
+                                    (trends['1m']['volatility'] > 0.6 and trends['15m']['trend'] < -0.1)
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] < -0.15 or  # 15분봉 하락 전환
-                                    trends['240m']['trend'] < -0.1 or  # 4시간봉 하락 전환
-                                    current_profit_rate > 5.0  # 5% 이상 수익시 즉시 매도
+                                    trends['15m']['trend'] < -0.2 or
+                                    (trends['15m']['volatility'] > 0.5 and trends['240m']['trend'] < -0.1)
                                 ))
-                            )
+                            )) or
+                            (current_profit_rate < (loss_threshold * 1.2) and market_risk > 0.7)  # 높은 위험도
                         )
-                        
-                        # 4. 과도한 손실 방지 (시장 상태 고려)
-                        loss_limit_sell_condition = (
-                            current_profit_rate < (loss_threshold * 1.2) and (  # 20% 더 여유
-                                market_risk > 0.5 or
-                                (self.thread_id < 4 and (trends['1m']['trend'] < -0.15 and trends['15m']['trend'] < -0.1)) or
-                                (self.thread_id >= 4 and (trends['15m']['trend'] < -0.15 and trends['240m']['trend'] < -0.1))
-                            )
-                        )
-                        
-                        # 5. 변동성 급증 시 이익 실현
-                        volatility_sell_condition = (
-                            current_profit_rate > (profit_threshold * 0.8) and (
-                                (self.thread_id < 4 and (
-                                    trends['1m']['volatility'] > 0.6 or  # 변동성 기준 완화
-                                    trends['15m']['volatility'] > 0.5 or
-                                    current_profit_rate > 3.0  # 3% 이상 수익시 변동성 감지되면 매도
-                                )) or
-                                (self.thread_id >= 4 and (
-                                    trends['15m']['volatility'] > 0.5 or
-                                    trends['240m']['volatility'] > 0.4 or
-                                    current_profit_rate > 3.0  # 3% 이상 수익시 변동성 감지되면 매도
-                                ))
+
+                        # 3. 시장 상태 기반 매도 (기존 8, 9번 조건 통합)
+                        market_condition_sell = (
+                            (current_profit_rate > 0.5) and (  # 수익이 있는 상태에서
+                                (current_fear_greed < 30 and coin_fear_greed < 35) or  # 공포 지수
+                                (market_condition['AFR'] < -0.5 and market_risk > 0.6)  # AFR 지표
                             )
                         )
 
-                        
-                        # 6. 평균 매수 가격보다 상승한 경우 (시장 상태 고려)
-                        price_increase_sell_condition = (
-                            current_profit_rate > (profit_threshold * 3) and  # 목표 수익의 3배
-                            current_price > active_trade.get('price', 0) * 1.05 and  # 5% 상승
-                            market_trend <= 0  # 시장이 하락 또는 중립일 때
-                        )
-                        
-                        # 7. 매도 신호와 수익이 있는 경우 (시장 상태 고려)
-                        sell_threshold_sell_condition = (
-                            signals.get('overall_signal', 0.0) <= thresholds['sell_threshold'] and 
-                            current_profit_rate > 0.1 and  # 0.1% 이상 수익
-                            market_risk > 0.4
-                        )
-                        
-                        # 8. 공포 지수 기반 매도 (전체 및 코인별)
-                        fear_greed_sell_condition = (
-                            (current_fear_greed < 30 or coin_fear_greed < 30) and  # 전체 또는 코인별 극도의 공포
-                            current_profit_rate > 1  # 수익이 있는 경우
+                        # 4. 기술적 지표 기반 매도 (기존 7번 조건 수정)
+                        technical_sell_condition = (
+                            signals.get('overall_signal', 0.0) <= thresholds['sell_threshold'] and
+                            current_profit_rate > 0.5 and  # 수익이 있는 경우
+                            (market_risk > 0.5 or trends['15m']['volatility'] > 0.4)  # 위험도 또는 변동성
                         )
 
-                        # 9. AFR 지표 기반 매도
-                        afr_sell_condition = (
-                            market_condition['AFR'] < -0.5 and  # AFR이 크게 하락
-                            current_profit_rate > 0.5 and
-                            coin_fear_greed < 40  # 코인별 공포 지수도 낮을 때
-                        )
-                        
-                        # 10. 사용자 호출 매도
-                        user_call_sell_condition = (
-                            active_trade.get('user_call', False)
-                        )
+                        # 5. 사용자 호출 매도 (기존 10번 조건 유지)
+                        user_call_sell_condition = active_trade.get('user_call', False)
 
-                        # 11. 급격한 상승 후 매도
-                        rapid_rise_sell_condition = (
-                            current_profit_rate > 3.0 and (  # 3% 이상 수익
-                                (self.thread_id < 4 and (
-                                    trends['1m']['trend'] > 0.5 or  # 급격한 상승
-                                    trends['15m']['trend'] > 0.4
-                                )) or
-                                (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] > 0.4 or
-                                    trends['240m']['trend'] > 0.3
-                                ))
-                            )
-                        )
-
-                        # 매도 조건 확인
+                        # 매도 조건 통합
                         should_sell = (
-                            radical_sell_condition or
-                            price_down_condition or
-                            profit_goal_sell_condition or
-                            loss_limit_sell_condition or
-                            volatility_sell_condition or
-                            price_increase_sell_condition or
-                            sell_threshold_sell_condition or
-                            fear_greed_sell_condition or
-                            afr_sell_condition or
-                            user_call_sell_condition or
-                            rapid_rise_sell_condition
+                            profit_take_condition or
+                            loss_prevention_condition or
+                            market_condition_sell or
+                            technical_sell_condition or
+                            user_call_sell_condition
                         )
 
-                        # 매도 조건 충족 시 추가 검사
-                        if should_sell:
-                            # 매도 사유 저장
-                            sell_reason = ""
-                            if radical_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "급격한 하락"
-                            if price_down_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "지속적 하락"
-                            if profit_goal_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "목표 수익 달성 후 하락"
-                            if loss_limit_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "과도한 손실"
-                            if volatility_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "변동성 급증"
-                            if price_increase_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "고수익 달성"
-                            if sell_threshold_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "매도 신호"
-                            if fear_greed_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "공포 지수 기반 매도"
-                            if afr_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "AFR 지표 기반 매도"
-                            if user_call_sell_condition:
-                                if sell_reason != "":
-                                    sell_reason += ", "
-                                sell_reason += "사용자 호출 매도"
+                        # 매도 사유 저장 로직 수정
+                        sell_reason = []
+                        if profit_take_condition:
+                            if current_profit_rate >= 5.0:
+                                sell_reason.append("목표 수익(5%) 달성")
+                            else:
+                                sell_reason.append("수익 실현(3%+)")
+                        if loss_prevention_condition:
+                            sell_reason.append("손실 방지")
+                        if market_condition_sell:
+                            sell_reason.append("시장 상태 악화")
+                        if technical_sell_condition:
+                            sell_reason.append("기술적 지표")
+                        if user_call_sell_condition:
+                            sell_reason.append("사용자 호출")
 
-                            signals['sell_reason'] = sell_reason
+                        signals['sell_reason'] = ", ".join(sell_reason)
 
                         averaging_down_count = active_trade.get('averaging_down_count', 0)
                         # 물타기 조건 확인
