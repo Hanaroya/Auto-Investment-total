@@ -434,9 +434,17 @@ class TradingThread(threading.Thread):
                         
                         # 3. 목표 수익 달성 후 하락 추세
                         profit_goal_sell_condition = (
-                            current_profit_rate > profit_threshold and (
-                                (self.thread_id < 4 and (trends['1m']['trend'] < -0.15 or trends['15m']['trend'] < -0.1)) or
-                                (self.thread_id >= 4 and (trends['15m']['trend'] < -0.15 or trends['240m']['trend'] < -0.1))
+                            (current_profit_rate > profit_threshold or current_profit_rate > 3.0) and (  # 3% 이상 수익 추가
+                                (self.thread_id < 4 and (
+                                    trends['1m']['trend'] < -0.15 or  # 1분봉 하락 전환
+                                    trends['15m']['trend'] < -0.1 or  # 15분봉 하락 전환
+                                    current_profit_rate > 5.0  # 5% 이상 수익시 즉시 매도
+                                )) or
+                                (self.thread_id >= 4 and (
+                                    trends['15m']['trend'] < -0.15 or  # 15분봉 하락 전환
+                                    trends['240m']['trend'] < -0.1 or  # 4시간봉 하락 전환
+                                    current_profit_rate > 5.0  # 5% 이상 수익시 즉시 매도
+                                ))
                             )
                         )
                         
@@ -451,11 +459,20 @@ class TradingThread(threading.Thread):
                         
                         # 5. 변동성 급증 시 이익 실현
                         volatility_sell_condition = (
-                            current_profit_rate > (profit_threshold * 0.8) and (  # 80%만 달성해도 매도
-                                (self.thread_id < 4 and (trends['1m']['volatility'] > 0.8 or trends['15m']['volatility'] > 0.7)) or
-                                (self.thread_id >= 4 and (trends['15m']['volatility'] > 0.7 or trends['240m']['volatility'] > 0.6))
+                            current_profit_rate > (profit_threshold * 0.8) and (
+                                (self.thread_id < 4 and (
+                                    trends['1m']['volatility'] > 0.6 or  # 변동성 기준 완화
+                                    trends['15m']['volatility'] > 0.5 or
+                                    current_profit_rate > 3.0  # 3% 이상 수익시 변동성 감지되면 매도
+                                )) or
+                                (self.thread_id >= 4 and (
+                                    trends['15m']['volatility'] > 0.5 or
+                                    trends['240m']['volatility'] > 0.4 or
+                                    current_profit_rate > 3.0  # 3% 이상 수익시 변동성 감지되면 매도
+                                ))
                             )
                         )
+
                         
                         # 6. 평균 매수 가격보다 상승한 경우 (시장 상태 고려)
                         price_increase_sell_condition = (
@@ -489,6 +506,20 @@ class TradingThread(threading.Thread):
                             active_trade.get('user_call', False)
                         )
 
+                        # 11. 급격한 상승 후 매도
+                        rapid_rise_sell_condition = (
+                            current_profit_rate > 3.0 and (  # 3% 이상 수익
+                                (self.thread_id < 4 and (
+                                    trends['1m']['trend'] > 0.5 or  # 급격한 상승
+                                    trends['15m']['trend'] > 0.4
+                                )) or
+                                (self.thread_id >= 4 and (
+                                    trends['15m']['trend'] > 0.4 or
+                                    trends['240m']['trend'] > 0.3
+                                ))
+                            )
+                        )
+
                         # 매도 조건 확인
                         should_sell = (
                             radical_sell_condition or
@@ -500,7 +531,8 @@ class TradingThread(threading.Thread):
                             sell_threshold_sell_condition or
                             fear_greed_sell_condition or
                             afr_sell_condition or
-                            user_call_sell_condition
+                            user_call_sell_condition or
+                            rapid_rise_sell_condition
                         )
 
                         # 매도 조건 충족 시 추가 검사
