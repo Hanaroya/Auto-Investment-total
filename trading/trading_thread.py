@@ -186,10 +186,10 @@ class TradingThread(threading.Thread):
                 
                 # 스레드 ID에 따라 다른 대기 시간 설정
                 if self.thread_id < 4:
-                    wait_time = 40
+                    wait_time = 10
                     initial_delay = self.thread_id * 1
                 else:
-                    wait_time = 300
+                    wait_time = 180
                     initial_delay = (self.thread_id - 4) * 1
                 
                 time.sleep(initial_delay)
@@ -408,73 +408,73 @@ class TradingThread(threading.Thread):
                         
                         # 시장 상황별 동적 임계값 설정
                         if market_risk > 0.7:  # 고위험 시장
-                            profit_threshold = 0.2  # 0.2% 수익
-                            loss_threshold = -2
+                            profit_threshold = 0.15  # 0.15% 수익
+                            loss_threshold = -1.5
+                            volatility_threshold = 0.3
+                            trend_threshold = 0.2
+                            stagnation_threshold = 0.08
+                            stagnation_period = 2
+                            stagnation_drop_threshold = -0.03
+                            quick_profit_threshold = 0.3
+                        elif market_risk > 0.5:  # 중위험 시장
+                            profit_threshold = 0.25
+                            loss_threshold = -2.0
                             volatility_threshold = 0.4
                             trend_threshold = 0.3
-                            stagnation_threshold = 0.1  # 더 민감하게 조정
-                            stagnation_period = 2  # 더 짧게 조정
-                            stagnation_drop_threshold = -0.05  # 더 민감하게 조정
-                            quick_profit_threshold = 0.5  # 빠른 수익 실현 임계값
-                        elif market_risk > 0.5:  # 중위험 시장
-                            profit_threshold = 0.4
+                            stagnation_threshold = 0.1
+                            stagnation_period = 2
+                            stagnation_drop_threshold = -0.05
+                            quick_profit_threshold = 0.4
+                        else:  # 저위험 시장
+                            profit_threshold = 0.35
                             loss_threshold = -2.5
                             volatility_threshold = 0.5
                             trend_threshold = 0.4
                             stagnation_threshold = 0.15
                             stagnation_period = 3
                             stagnation_drop_threshold = -0.08
-                            quick_profit_threshold = 0.6
-                        else:  # 저위험 시장
-                            profit_threshold = 0.5
-                            loss_threshold = -3
-                            volatility_threshold = 0.6
-                            trend_threshold = 0.5
-                            stagnation_threshold = 0.2
-                            stagnation_period = 4
-                            stagnation_drop_threshold = -0.1
-                            quick_profit_threshold = 0.7
+                            quick_profit_threshold = 0.5
 
                         
 
                         # 1. 수익 실현 조건 수정 (더 빠른 수익 실현)
                         profit_take_condition = (
-                            (current_profit_rate >= 5.0) or  # 5% 이상은 무조건 매도
-                            (current_profit_rate >= profit_threshold * 3) or  # profit_threshold의 3배 수익 달성
-                            (current_profit_rate >= quick_profit_threshold and (  # 0.5% 이상 수익에서 하락 조짐 시 매도
+                            (current_profit_rate >= 3.0) or  # 3% 이상은 무조건 매도 (기존 5%에서 하향)
+                            (current_profit_rate >= profit_threshold * 2) or  # profit_threshold의 2배 수익 달성 (기존 3배에서 하향)
+                            (current_profit_rate >= quick_profit_threshold and (  # 낮은 수익에서도 하락 조짐 시 매도
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] < 0 or  # 1분봉 하락 전환만으로도 매도
-                                    trends['15m']['trend'] < -0.1  # 15분봉 약한 하락도 매도
+                                    trends['1m']['trend'] < -0.05 or  # 1분봉 약한 하락만으로도 매도 (기존 0에서 -0.05로 완화)
+                                    trends['15m']['trend'] < -0.08  # 15분봉 약한 하락도 매도 (기존 -0.1에서 -0.08로 강화)
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] < 0 or  # 15분봉 하락 전환만으로도 매도
-                                    trends['240m']['trend'] < -0.1  # 4시간봉 약한 하락도 매도
+                                    trends['15m']['trend'] < -0.05 or  # 15분봉 약한 하락만으로도 매도
+                                    trends['240m']['trend'] < -0.08  # 4시간봉 약한 하락도 매도
                                 ))
                             ))
                         )
 
-                        # 2. 손실 방지 조건 (시장 상황 반영)
+                        # 2. 손실 방지 조건 강화
                         loss_prevention_condition = (
-                            (current_profit_rate < loss_threshold * (1.2 if market_risk > 0.6 else 1.0) and (
+                            (current_profit_rate < loss_threshold * (1.1 if market_risk > 0.6 else 1.0) and (  # 손실 임계값 상향
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] < -trend_threshold or
-                                    (trends['1m']['volatility'] > volatility_threshold and trends['15m']['trend'] < -trend_threshold * 0.5)
+                                    trends['1m']['trend'] < -trend_threshold * 0.8 or  # 트렌드 임계값 완화
+                                    (trends['1m']['volatility'] > volatility_threshold * 0.9 and trends['15m']['trend'] < -trend_threshold * 0.4)
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] < -trend_threshold or
-                                    (trends['15m']['volatility'] > volatility_threshold and trends['240m']['trend'] < -trend_threshold * 0.5)
+                                    trends['15m']['trend'] < -trend_threshold * 0.8 or
+                                    (trends['15m']['volatility'] > volatility_threshold * 0.9 and trends['240m']['trend'] < -trend_threshold * 0.4)
                                 ))
                             )) or
-                            (current_profit_rate < loss_threshold * 1.5 and market_risk > 0.7)  # 극도의 위험 상황
+                            (current_profit_rate < loss_threshold * 1.3 and market_risk > 0.6)  # 위험 임계값 완화
                         )
 
-                        # 3. 시장 상태 기반 매도 (시장 상황 반영)
+                        # 3. 시장 상태 기반 매도 조건 강화
                         market_condition_sell = (
-                            (current_profit_rate > (0.3 if market_risk > 0.6 else 0.5)) and (
-                                (current_fear_greed < (25 if market_risk > 0.7 else 30) and 
-                                 coin_fear_greed < (30 if market_risk > 0.7 else 35)) or
-                                (market_condition['AFR'] < (-0.4 if market_risk > 0.7 else -0.5) and 
-                                 market_risk > (0.5 if market_trend > 0 else 0.6))
+                            (current_profit_rate > (0.2 if market_risk > 0.6 else 0.3)) and (  # 수익 임계값 하향
+                                (current_fear_greed < (30 if market_risk > 0.7 else 35) and 
+                                 coin_fear_greed < (35 if market_risk > 0.7 else 40)) or
+                                (market_condition['AFR'] < (-0.3 if market_risk > 0.7 else -0.4) and 
+                                 market_risk > (0.4 if market_trend > 0 else 0.5))
                             )
                         )
 
@@ -546,10 +546,10 @@ class TradingThread(threading.Thread):
                         # 매도 사유 저장 로직 수정
                         sell_reason = []
                         if profit_take_condition:
-                            if current_profit_rate >= 5.0:
-                                sell_reason.append("목표 수익(5%) 달성")
+                            if current_profit_rate >= 3.0:
+                                sell_reason.append("목표 수익(3%) 달성")
                             else:
-                                sell_reason.append("수익 실현(3%+)")
+                                sell_reason.append("수익 실현({}%+)".format(profit_threshold * 2))
                         if loss_prevention_condition:
                             sell_reason.append("손실 방지")
                         if market_condition_sell:
