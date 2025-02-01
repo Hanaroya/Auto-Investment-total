@@ -412,42 +412,43 @@ class TradingThread(threading.Thread):
                             loss_threshold = -2
                             volatility_threshold = 0.4
                             trend_threshold = 0.3
-                            stagnation_threshold = 0.05  # 5분 동안 0.05% 이하의 변동
-                            stagnation_period = 2  # 2분
-                            stagnation_drop_threshold = -0.1  # 정체 후 -0.1% 하락 시 매도
+                            stagnation_threshold = 0.1  # 더 민감하게 조정
+                            stagnation_period = 2  # 더 짧게 조정
+                            stagnation_drop_threshold = -0.05  # 더 민감하게 조정
+                            quick_profit_threshold = 0.5  # 빠른 수익 실현 임계값
                         elif market_risk > 0.5:  # 중위험 시장
-                            profit_threshold = 0.4  # 0.4% 수익
+                            profit_threshold = 0.4
                             loss_threshold = -2.5
                             volatility_threshold = 0.5
                             trend_threshold = 0.4
-                            stagnation_threshold = 0.08
-                            stagnation_period = 4
-                            stagnation_drop_threshold = -0.15
+                            stagnation_threshold = 0.15
+                            stagnation_period = 3
+                            stagnation_drop_threshold = -0.08
+                            quick_profit_threshold = 0.6
                         else:  # 저위험 시장
-                            profit_threshold = 0.5  # 0.4% 수익
+                            profit_threshold = 0.5
                             loss_threshold = -3
                             volatility_threshold = 0.6
                             trend_threshold = 0.5
-                            stagnation_threshold = 0.1
-                            stagnation_period = 6
-                            stagnation_drop_threshold = -0.2
+                            stagnation_threshold = 0.2
+                            stagnation_period = 4
+                            stagnation_drop_threshold = -0.1
+                            quick_profit_threshold = 0.7
 
                         
 
-                        # 1. 수익 실현 조건 (시장 상황 반영)
+                        # 1. 수익 실현 조건 수정 (더 빠른 수익 실현)
                         profit_take_condition = (
                             (current_profit_rate >= 5.0) or  # 5% 이상은 무조건 매도
                             (current_profit_rate >= profit_threshold * 3) or  # profit_threshold의 3배 수익 달성
-                            (current_profit_rate >= profit_threshold * 2 and (  # profit_threshold의 2배 수익에서 추가 조건 확인
+                            (current_profit_rate >= quick_profit_threshold and (  # 0.5% 이상 수익에서 하락 조짐 시 매도
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] > trend_threshold or
-                                    trends['1m']['trend'] < -trend_threshold * 0.5 or
-                                    trends['15m']['volatility'] > volatility_threshold
+                                    trends['1m']['trend'] < 0 or  # 1분봉 하락 전환만으로도 매도
+                                    trends['15m']['trend'] < -0.1  # 15분봉 약한 하락도 매도
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] > trend_threshold or
-                                    trends['15m']['trend'] < -trend_threshold * 0.5 or
-                                    trends['240m']['volatility'] > volatility_threshold
+                                    trends['15m']['trend'] < 0 or  # 15분봉 하락 전환만으로도 매도
+                                    trends['240m']['trend'] < -0.1  # 4시간봉 약한 하락도 매도
                                 ))
                             ))
                         )
@@ -487,24 +488,27 @@ class TradingThread(threading.Thread):
                              trends['15m']['volatility'] > volatility_threshold)
                         )
                         
-                        # 5. 정체 상태 감지 조건 매도도
+                        # 5. 정체 상태 감지 조건 수정 (더 빠른 반응)
                         stagnation_sell_condition = False
                         if self.thread_id < 4:  # 1분봉 사용 스레드
-                            # 최근 N분 동안의 가격 변동 계산
                             recent_prices = [float(candle['close']) for candle in candles_1m[-stagnation_period:]]
                             price_changes = [abs((recent_prices[i] - recent_prices[i-1])/recent_prices[i-1]*100) 
                                             for i in range(1, len(recent_prices))]
                             
-                            # 정체 상태 확인 (모든 변동이 임계값 이하)
+                            # 정체 상태 확인 (변동성이 낮은 구간 발견)
                             is_stagnant = all(change <= stagnation_threshold for change in price_changes)
                             
-                            # 정체 후 하락 확인
-                            if is_stagnant:
+                            if is_stagnant and current_profit_rate >= 0.5:  # 0.5% 이상 수익 시에는 더 민감하게
+                                latest_change = ((recent_prices[-1] - recent_prices[-2])/recent_prices[-2]*100)  # 직전 봉과 비교
+                                stagnation_sell_condition = (
+                                    latest_change < -0.05 or  # 직전 봉 대비 -0.05% 이상 하락 시
+                                    trends['1m']['trend'] < -0.1  # 1분봉 추세가 약한 하락으로 전환 시
+                                )
+                            elif is_stagnant:  # 수익이 적을 때는 좀 더 여유있게
                                 latest_change = ((recent_prices[-1] - recent_prices[0])/recent_prices[0]*100)
                                 stagnation_sell_condition = (
                                     latest_change < stagnation_drop_threshold and
-                                    trends['1m']['trend'] < -0.2 and
-                                    current_profit_rate > -1.0  # 큰 손실 상태가 아닐 때만
+                                    trends['1m']['trend'] < -0.2
                                 )
                         else:  # 15분봉 사용 스레드
                             recent_prices = [float(candle['close']) for candle in candles_15m[-stagnation_period:]]
@@ -513,12 +517,17 @@ class TradingThread(threading.Thread):
                             
                             is_stagnant = all(change <= stagnation_threshold for change in price_changes)
                             
-                            if is_stagnant:
+                            if is_stagnant and current_profit_rate >= 0.5:  # 0.5% 이상 수익 시에는 더 민감하게
+                                latest_change = ((recent_prices[-1] - recent_prices[-2])/recent_prices[-2]*100)
+                                stagnation_sell_condition = (
+                                    latest_change < -0.08 or  # 직전 봉 대비 -0.08% 이상 하락 시
+                                    trends['15m']['trend'] < -0.1  # 15분봉 추세가 약한 하락으로 전환 시
+                                )
+                            elif is_stagnant:  # 수익이 적을 때는 좀 더 여유있게
                                 latest_change = ((recent_prices[-1] - recent_prices[0])/recent_prices[0]*100)
                                 stagnation_sell_condition = (
                                     latest_change < stagnation_drop_threshold and
-                                    trends['15m']['trend'] < -0.2 and
-                                    current_profit_rate > -1.0
+                                    trends['15m']['trend'] < -0.2
                                 )
 
                         # 6. 사용자 호출 매도 (유지)
