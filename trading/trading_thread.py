@@ -437,8 +437,8 @@ class TradingThread(threading.Thread):
                         # 1. 수익 실현 조건 (시장 상황 반영)
                         profit_take_condition = (
                             (current_profit_rate >= 5.0) or  # 5% 이상은 무조건 매도
-                            (current_profit_rate >= profit_threshold * 6) or  # profit_threshold의 6배 수익 달성
-                            (current_profit_rate >= profit_threshold * 3 and (  # profit_threshold의 3배 수익에서 추가 조건 확인
+                            (current_profit_rate >= profit_threshold * 3) or  # profit_threshold의 3배 수익 달성
+                            (current_profit_rate >= profit_threshold * 2 and (  # profit_threshold의 2배 수익에서 추가 조건 확인
                                 (self.thread_id < 4 and (
                                     trends['1m']['trend'] > trend_threshold or
                                     trends['1m']['trend'] < -trend_threshold * 0.5 or
