@@ -412,16 +412,59 @@ class TradingThread(threading.Thread):
                             loss_threshold = -2
                             volatility_threshold = 0.4
                             trend_threshold = 0.3
+                            stagnation_threshold = 0.05  # 5분 동안 0.05% 이하의 변동
+                            stagnation_period = 5  # 5분
+                            stagnation_drop_threshold = -0.1  # 정체 후 -0.1% 하락 시 매도
                         elif market_risk > 0.5:  # 중위험 시장
                             profit_threshold = 0.4  # 0.4% 수익
                             loss_threshold = -2.5
                             volatility_threshold = 0.5
                             trend_threshold = 0.4
+                            stagnation_threshold = 0.08
+                            stagnation_period = 8
+                            stagnation_drop_threshold = -0.15
                         else:  # 저위험 시장
                             profit_threshold = 0.5  # 0.4% 수익
                             loss_threshold = -3
                             volatility_threshold = 0.6
                             trend_threshold = 0.5
+                            stagnation_threshold = 0.1
+                            stagnation_period = 10
+                            stagnation_drop_threshold = -0.2
+
+                        # 정체 상태 감지 조건 추가
+                        stagnation_sell_condition = False
+                        if self.thread_id < 4:  # 1분봉 사용 스레드
+                            # 최근 N분 동안의 가격 변동 계산
+                            recent_prices = [float(candle['close']) for candle in candles_1m[-stagnation_period:]]
+                            price_changes = [abs((recent_prices[i] - recent_prices[i-1])/recent_prices[i-1]*100) 
+                                            for i in range(1, len(recent_prices))]
+                            
+                            # 정체 상태 확인 (모든 변동이 임계값 이하)
+                            is_stagnant = all(change <= stagnation_threshold for change in price_changes)
+                            
+                            # 정체 후 하락 확인
+                            if is_stagnant:
+                                latest_change = ((recent_prices[-1] - recent_prices[0])/recent_prices[0]*100)
+                                stagnation_sell_condition = (
+                                    latest_change < stagnation_drop_threshold and
+                                    trends['1m']['trend'] < -0.2 and
+                                    current_profit_rate > -1.0  # 큰 손실 상태가 아닐 때만
+                                )
+                        else:  # 15분봉 사용 스레드
+                            recent_prices = [float(candle['close']) for candle in candles_15m[-stagnation_period:]]
+                            price_changes = [abs((recent_prices[i] - recent_prices[i-1])/recent_prices[i-1]*100) 
+                                            for i in range(1, len(recent_prices))]
+                            
+                            is_stagnant = all(change <= stagnation_threshold for change in price_changes)
+                            
+                            if is_stagnant:
+                                latest_change = ((recent_prices[-1] - recent_prices[0])/recent_prices[0]*100)
+                                stagnation_sell_condition = (
+                                    latest_change < stagnation_drop_threshold and
+                                    trends['15m']['trend'] < -0.2 and
+                                    current_profit_rate > -1.0
+                                )
 
                         # 1. 수익 실현 조건 (시장 상황 반영)
                         profit_take_condition = (
@@ -485,7 +528,8 @@ class TradingThread(threading.Thread):
                             loss_prevention_condition or
                             market_condition_sell or
                             technical_sell_condition or
-                            user_call_sell_condition
+                            user_call_sell_condition or
+                            stagnation_sell_condition  # 새로운 조건 추가
                         )
 
                         # 매도 사유 저장 로직 수정
@@ -503,6 +547,8 @@ class TradingThread(threading.Thread):
                             sell_reason.append("기술적 지표")
                         if user_call_sell_condition:
                             sell_reason.append("사용자 호출")
+                        if stagnation_sell_condition:
+                            sell_reason.append("정체 후 하락")
 
                         signals['sell_reason'] = ", ".join(sell_reason)
 
