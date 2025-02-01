@@ -186,7 +186,7 @@ class TradingThread(threading.Thread):
                 
                 # 스레드 ID에 따라 다른 대기 시간 설정
                 if self.thread_id < 4:
-                    wait_time = 10
+                    wait_time = 6
                     initial_delay = self.thread_id * 1
                 else:
                     wait_time = 180
@@ -404,133 +404,90 @@ class TradingThread(threading.Thread):
                         
                         # 시장 상황에 따른 동적 임계값 조정
                         market_risk = market_condition['risk_level']
-                        market_trend = market_condition['market_trend']
                         
                         # 시장 상황별 동적 임계값 설정
                         if market_risk > 0.7:  # 고위험 시장
-                            profit_threshold = 0.15  # 0.15% 수익
+                            profit_threshold = 0.12  # 최소 0.12% 수익
+                            loss_threshold = -1.0
+                            volatility_threshold = 0.25
+                            stagnation_threshold = 0.05
+                        elif market_risk > 0.5:  # 중위험 시장
+                            profit_threshold = 0.15
                             loss_threshold = -1.5
                             volatility_threshold = 0.3
-                            trend_threshold = 0.2
                             stagnation_threshold = 0.08
-                            stagnation_period = 2
-                            stagnation_drop_threshold = -0.03
-                            quick_profit_threshold = 0.3
-                        elif market_risk > 0.5:  # 중위험 시장
-                            profit_threshold = 0.25
-                            loss_threshold = -2.0
-                            volatility_threshold = 0.4
-                            trend_threshold = 0.3
-                            stagnation_threshold = 0.1
-                            stagnation_period = 2
-                            stagnation_drop_threshold = -0.05
-                            quick_profit_threshold = 0.4
                         else:  # 저위험 시장
-                            profit_threshold = 0.35
-                            loss_threshold = -2.5
-                            volatility_threshold = 0.5
-                            trend_threshold = 0.4
-                            stagnation_threshold = 0.15
-                            stagnation_period = 3
-                            stagnation_drop_threshold = -0.08
-                            quick_profit_threshold = 0.5
-
-                        
-
-                        # 1. 수익 실현 조건 수정 (더 빠른 수익 실현)
+                            profit_threshold = 0.12
+                            loss_threshold = -1.0
+                            volatility_threshold = 0.25
+                            stagnation_threshold = 0.05
+                            
+                        # 1. 수익 실현 조건 수정 (5-10분 내 매도 목표)
                         profit_take_condition = (
-                            (current_profit_rate >= 3.0) or  # 3% 이상은 무조건 매도 (기존 5%에서 하향)
-                            (current_profit_rate >= profit_threshold * 2) or  # profit_threshold의 2배 수익 달성 (기존 3배에서 하향)
-                            (current_profit_rate >= quick_profit_threshold and (  # 낮은 수익에서도 하락 조짐 시 매도
+                            (current_profit_rate >= 1.0) or  # 1% 이상은 즉시 매도
+                            (current_profit_rate >= profit_threshold and (  # 최소 수익 달성 시
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] < -0.05 or  # 1분봉 약한 하락만으로도 매도 (기존 0에서 -0.05로 완화)
-                                    trends['15m']['trend'] < -0.08  # 15분봉 약한 하락도 매도 (기존 -0.1에서 -0.08로 강화)
+                                    trends['1m']['trend'] < 0 or  # 1분봉 하락 전환 즉시
+                                    trends['15m']['trend'] < -0.03  # 15분봉 미세 하락
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] < -0.05 or  # 15분봉 약한 하락만으로도 매도
-                                    trends['240m']['trend'] < -0.08  # 4시간봉 약한 하락도 매도
+                                    trends['15m']['trend'] < 0 or  # 15분봉 하락 전환 즉시
+                                    trends['240m']['trend'] < -0.03
                                 ))
                             ))
                         )
 
-                        # 2. 손실 방지 조건 강화
+                        # 2. 손실 방지 조건 (빠른 대응)
                         loss_prevention_condition = (
-                            (current_profit_rate < loss_threshold * (1.1 if market_risk > 0.6 else 1.0) and (  # 손실 임계값 상향
+                            current_profit_rate < loss_threshold or  # 손실 임계값 도달 시 즉시 매도
+                            (current_profit_rate < 0 and (  # 손실 발생 시
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] < -trend_threshold * 0.8 or  # 트렌드 임계값 완화
-                                    (trends['1m']['volatility'] > volatility_threshold * 0.9 and trends['15m']['trend'] < -trend_threshold * 0.4)
+                                    trends['1m']['trend'] < -0.1 or  # 1분봉 하락세 강화
+                                    trends['1m']['volatility'] > volatility_threshold
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] < -trend_threshold * 0.8 or
-                                    (trends['15m']['volatility'] > volatility_threshold * 0.9 and trends['240m']['trend'] < -trend_threshold * 0.4)
+                                    trends['15m']['trend'] < -0.1 or
+                                    trends['15m']['volatility'] > volatility_threshold
                                 ))
-                            )) or
-                            (current_profit_rate < loss_threshold * 1.3 and market_risk > 0.6)  # 위험 임계값 완화
+                            ))
                         )
 
-                        # 3. 시장 상태 기반 매도 조건 강화
+                        # 3. 시장 상태 기반 매도 (빠른 대응)
                         market_condition_sell = (
-                            (current_profit_rate > (0.2 if market_risk > 0.6 else 0.3)) and (  # 수익 임계값 하향
-                                (current_fear_greed < (30 if market_risk > 0.7 else 35) and 
-                                 coin_fear_greed < (35 if market_risk > 0.7 else 40)) or
-                                (market_condition['AFR'] < (-0.3 if market_risk > 0.7 else -0.4) and 
-                                 market_risk > (0.4 if market_trend > 0 else 0.5))
+                            current_profit_rate > profit_threshold and (
+                                market_condition['AFR'] < -0.2 or  # AFR 하락 즉시
+                                (current_fear_greed < 25 and coin_fear_greed < 30)  # 공포 지수 급락 시
                             )
                         )
 
-                        # 4. 기술적 지표 기반 매도 (시장 상황 반영)
-                        technical_sell_condition = (
-                            signals.get('overall_signal', 0.0) <= (
-                                thresholds['sell_threshold'] * (0.8 if market_risk > 0.7 else 1.0)
-                            ) and
-                            current_profit_rate > (0.3 if market_risk > 0.7 else 0.5) and
-                            (market_risk > (0.4 if market_trend > 0 else 0.5) or 
-                             trends['15m']['volatility'] > volatility_threshold)
-                        )
-                        
-                        # 5. 정체 상태 감지 조건 수정 (더 빠른 반응)
-                        stagnation_sell_condition = False
+                        # 4. 정체 상태 감지 (2-3분 내 판단)
                         if self.thread_id < 4:  # 1분봉 사용 스레드
-                            recent_prices = [float(candle['close']) for candle in candles_1m[-stagnation_period:]]
-                            price_changes = [abs((recent_prices[i] - recent_prices[i-1])/recent_prices[i-1]*100) 
-                                            for i in range(1, len(recent_prices))]
-                            
-                            # 정체 상태 확인 (변동성이 낮은 구간 발견)
-                            is_stagnant = all(change <= stagnation_threshold for change in price_changes)
-                            
-                            if is_stagnant and current_profit_rate >= 0.5:  # 0.5% 이상 수익 시에는 더 민감하게
-                                latest_change = ((recent_prices[-1] - recent_prices[-2])/recent_prices[-2]*100)  # 직전 봉과 비교
-                                stagnation_sell_condition = (
-                                    latest_change < -0.05 or  # 직전 봉 대비 -0.05% 이상 하락 시
-                                    trends['1m']['trend'] < -0.1  # 1분봉 추세가 약한 하락으로 전환 시
-                                )
-                            elif is_stagnant:  # 수익이 적을 때는 좀 더 여유있게
-                                latest_change = ((recent_prices[-1] - recent_prices[0])/recent_prices[0]*100)
-                                stagnation_sell_condition = (
-                                    latest_change < stagnation_drop_threshold and
-                                    trends['1m']['trend'] < -0.2
-                                )
-                        else:  # 15분봉 사용 스레드
-                            recent_prices = [float(candle['close']) for candle in candles_15m[-stagnation_period:]]
+                            recent_prices = [float(candle['close']) for candle in candles_1m[-3:]]  # 3분 데이터
                             price_changes = [abs((recent_prices[i] - recent_prices[i-1])/recent_prices[i-1]*100) 
                                             for i in range(1, len(recent_prices))]
                             
                             is_stagnant = all(change <= stagnation_threshold for change in price_changes)
                             
-                            if is_stagnant and current_profit_rate >= 0.5:  # 0.5% 이상 수익 시에는 더 민감하게
+                            if is_stagnant and current_profit_rate >= 0.15:  # 0.15% 이상 수익 시
                                 latest_change = ((recent_prices[-1] - recent_prices[-2])/recent_prices[-2]*100)
                                 stagnation_sell_condition = (
-                                    latest_change < -0.08 or  # 직전 봉 대비 -0.08% 이상 하락 시
-                                    trends['15m']['trend'] < -0.1  # 15분봉 추세가 약한 하락으로 전환 시
+                                    latest_change < -0.02 or  # 직전 봉 대비 -0.02% 하락
+                                    trends['1m']['trend'] < -0.05  # 1분봉 약한 하락
                                 )
-                            elif is_stagnant:  # 수익이 적을 때는 좀 더 여유있게
-                                latest_change = ((recent_prices[-1] - recent_prices[0])/recent_prices[0]*100)
-                                stagnation_sell_condition = (
-                                    latest_change < stagnation_drop_threshold and
-                                    trends['15m']['trend'] < -0.2
+                            else:
+                                stagnation_sell_condition = False
+                        else:  # 15분봉 사용 스레드
+                            recent_prices = [float(candle['close']) for candle in candles_15m[-2:]]  # 30분 데이터
+                            latest_change = ((recent_prices[-1] - recent_prices[-2])/recent_prices[-2]*100)
+                            
+                            stagnation_sell_condition = (
+                                current_profit_rate >= 0.15 and (  # 0.15% 이상 수익 시
+                                    latest_change < -0.03 or  # 직전 봉 대비 -0.03% 하락
+                                    trends['15m']['trend'] < -0.05  # 15분봉 약한 하락
                                 )
+                            )
 
-                        # 6. 사용자 호출 매도 (유지)
+                        # 5. 사용자 호출 매도 (유지)
                         user_call_sell_condition = active_trade.get('user_call', False)
 
                         # 매도 조건 통합
@@ -538,7 +495,6 @@ class TradingThread(threading.Thread):
                             profit_take_condition or
                             loss_prevention_condition or
                             market_condition_sell or
-                            technical_sell_condition or
                             user_call_sell_condition or
                             stagnation_sell_condition  # 새로운 조건 추가
                         )
@@ -546,16 +502,14 @@ class TradingThread(threading.Thread):
                         # 매도 사유 저장 로직 수정
                         sell_reason = []
                         if profit_take_condition:
-                            if current_profit_rate >= 3.0:
-                                sell_reason.append("목표 수익(3%) 달성")
+                            if current_profit_rate >= 1.0:
+                                sell_reason.append("목표 수익(1%) 달성")
                             else:
-                                sell_reason.append("수익 실현({}%+)".format(profit_threshold * 2))
+                                sell_reason.append("수익 실현({}%+)".format(profit_threshold))
                         if loss_prevention_condition:
                             sell_reason.append("손실 방지")
                         if market_condition_sell:
                             sell_reason.append("시장 상태 악화")
-                        if technical_sell_condition:
-                            sell_reason.append("기술적 지표")
                         if user_call_sell_condition:
                             sell_reason.append("사용자 호출")
                         if stagnation_sell_condition:
@@ -647,47 +601,57 @@ class TradingThread(threading.Thread):
                     else:
                         # 1. 일반 매수 신호 처리 (상승세)
                         normal_buy_condition = (
-                            signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] and 
+                            signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] * 1.2 and  # 매수 신호 기준 20% 상향
                             current_investment < self.max_investment and
-                            coin_fear_greed > 30 and  # 코인별 극도의 공포가 아닐 때
+                            coin_fear_greed > 35 and  # 코인별 공포지수 기준 상향
+                            market_condition['risk_level'] < 0.6 and  # 시장 위험도 체크
+                            market_condition['AFR'] > 0.1 and  # AFR 양수 확인
                             (
                                 # 0~3번 스레드: 1분봉과 15분봉 모두 상승세
                                 (self.thread_id < 4 and 
-                                 trends['1m']['trend'] > 0.2 and 
-                                 trends['15m']['trend'] > 0.15) or
+                                 trends['1m']['trend'] > 0.3 and  # 1분봉 상승세 강화
+                                 trends['1m']['volatility'] < 0.5 and  # 변동성 안정화
+                                 trends['15m']['trend'] > 0.2) or  # 15분봉도 상승세
                                 # 4~9번 스레드: 15분봉과 240분봉 모두 상승세
                                 (self.thread_id >= 4 and 
-                                 trends['15m']['trend'] > 0.2 and 
-                                 trends['240m']['trend'] > 0.15)
+                                 trends['15m']['trend'] > 0.3 and  # 15분봉 상승세 강화
+                                 trends['15m']['volatility'] < 0.5 and  # 변동성 안정화
+                                 trends['240m']['trend'] > 0.2)  # 4시간봉도 상승세
                             )
                         )
                         
                         # 2. 극도의 공포 상태에서의 반등 매수
                         extreme_fear_buy_condition = (
                             current_investment < self.max_investment and
+                            market_condition['risk_level'] < 0.5 and  # 시장 위험도가 낮을 때만
                             (coin_fear_greed <= 20 or current_fear_greed <= 20) and  # 극도의 공포 상태
+                            market_condition['AFR'] > 0 and  # AFR 양수 필수
                             (
                                 # 0~3번 스레드: 1분봉 반등 확인
                                 (self.thread_id < 4 and 
-                                 trends['1m']['trend'] > 0 and  # 상승 전환
-                                 trends['1m']['volatility'] < 0.7 and  # 변동성 안정화
-                                 trends['15m']['trend'] > -0.3) or  # 15분봉 하락세 완화
+                                 trends['1m']['trend'] > 0.2 and  # 상승 전환 강화
+                                 trends['1m']['volatility'] < 0.4 and  # 변동성 안정화
+                                 trends['15m']['trend'] > 0) or  # 15분봉도 상승 전환
                                 # 4~9번 스레드: 15분봉 반등 확인
                                 (self.thread_id >= 4 and 
-                                 trends['15m']['trend'] > 0 and  # 상승 전환
-                                 trends['15m']['volatility'] < 0.7 and  # 변동성 안정화
-                                 trends['240m']['trend'] > -0.3)  # 240분봉 하락세 완화
+                                 trends['15m']['trend'] > 0.2 and  # 상승 전환 강화
+                                 trends['15m']['volatility'] < 0.4 and  # 변동성 안정화
+                                 trends['240m']['trend'] > 0)  # 4시간봉도 상승 전환
                             )
                         )
                         
                         # 매수 신호 처리
                         if normal_buy_condition or extreme_fear_buy_condition:
+                            # 전체 투자량의 80% 제한 체크
+                            if current_investment >= (self.total_max_investment * 0.8):
+                                self.logger.debug(f"{coin}: 전체 투자 한도(80%) 초과 - 현재 투자: {current_investment:,}원")
+                                return
+                                
                             investment_amount = self.trading_strategy.calculate_position_size(
                                 coin, market_condition, trends
                             )
                             buy_reason = "일반 매수" if normal_buy_condition else "공포 지수 반등 매수"
                             
-                            # strategy_data에 investment_amount 추가
                             signals['investment_amount'] = investment_amount
                             
                             self.trading_manager.process_buy_signal(
@@ -700,8 +664,8 @@ class TradingThread(threading.Thread):
                             )
                             self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원 ({buy_reason})")
                         
-                        # 최저 신호 대비 반등 매수 전략 (기존 코드 유지)
-                        elif current_investment < self.max_investment:
+                        # 최저 신호 대비 반등 매수 전략
+                        elif current_investment < (self.total_max_investment * 0.8):  # 80% 제한으로 수정
                             # 기존 최저점 조회
                             existing_lowest = self.db.strategy_data.find_one({'coin': coin})
                             
@@ -727,12 +691,24 @@ class TradingThread(threading.Thread):
                         lowest_data = self.db.strategy_data.find_one({'coin': coin})
                         
                         if lowest_data and 'lowest_signal' in lowest_data:
-                            signal_increase = ((signals.get('overall_signal', 0.0) - lowest_data['lowest_signal']) / abs(lowest_data['lowest_signal'])) * 100 if lowest_data['lowest_signal'] != 0 else 0
-                            price_increase = ((current_price - lowest_data['lowest_price']) / abs(lowest_data['lowest_price'])) * 100 if lowest_data['lowest_price'] != 0 else 0
-                            buy_reason = "반등 매수"
-                            # 최저 신호 대비 15% 이상 개선된 경우
-                            if signal_increase >= 15 and price_increase >= 0.5:
-                                self.logger.info(f"반등 매수 신호 감지: {coin} - 신호 개선률: {signal_increase:.2f}%")
+                            signal_increase = ((signals.get('overall_signal', 0.0) - lowest_data['lowest_signal']) 
+                                              / abs(lowest_data['lowest_signal'])) * 100 if lowest_data['lowest_signal'] != 0 else 0
+                            price_increase = ((current_price - lowest_data['lowest_price']) 
+                                             / abs(lowest_data['lowest_price'])) * 100 if lowest_data['lowest_price'] != 0 else 0
+                            
+                            # 반등 매수 조건 강화
+                            if (signal_increase >= 20 and
+                                price_increase >= 0.8 and
+                                market_condition['risk_level'] < 0.6 and
+                                market_condition['AFR'] > 0 and
+                                (
+                                    (self.thread_id < 4 and trends['1m']['trend'] > 0.2 and trends['1m']['volatility'] < 0.5) or
+                                    (self.thread_id >= 4 and trends['15m']['trend'] > 0.2 and trends['15m']['volatility'] < 0.5)
+                                ) and
+                                # 추가: 전체 투자량 80% 제한 재확인
+                                current_investment < (self.total_max_investment * 0.8)):
+                                
+                                buy_reason = "반등 매수"
                                 investment_amount = self.trading_strategy.calculate_position_size(
                                     coin, market_condition, trends
                                 )
@@ -984,4 +960,5 @@ class TradingThread(threading.Thread):
         except Exception as e:
             self.logger.error(f"시장 상태 조회 중 오류 ({coin}): {str(e)}")
             return None
+        
         

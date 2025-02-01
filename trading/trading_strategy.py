@@ -3,10 +3,8 @@ from math import floor
 class TradingStrategy:
     def __init__(self, config, total_max_investment):
         self.config = config
-        # trading_thread.py의 투자금 설정 사용
-        self.total_max_investment = floor(total_max_investment * 0.8)
-        self.max_investment = floor(self.total_max_investment * 0.1)
-        self.investment_each = floor(self.total_max_investment / 20)
+        self.total_max_investment = total_max_investment  # 전체 100% 설정
+        self.investment_each = floor(self.total_max_investment / 20)  # 기본 분할 투자 단위
         self._cache = {}
         
     def calculate_position_size(self, coin: str, market_condition: dict, trends: dict) -> int:
@@ -35,8 +33,8 @@ class TradingStrategy:
             volatility_factor * weights['volatility']
         )
         
-        # 최소/최대 범위 적용 (max_investment 기준)
-        result = max(min(int(position_size), self.max_investment), floor(self.investment_each * 0.2))
+        # 최소/최대 범위 적용 (전체 투자금의 80%를 넘지 않도록)
+        result = max(min(int(position_size), floor(self.total_max_investment * 0.8)), floor(self.investment_each))
         self._cache[cache_key] = result
         return result
         
