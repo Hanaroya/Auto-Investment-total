@@ -355,6 +355,25 @@ class TradingThread(threading.Thread):
             # 거래 가능 여부 확인
             if not market_condition['is_tradeable']:
                 self.logger.debug(f"{coin}: 거래 중지 - {market_condition['message']}")
+                # 마켓 분석 수행 시 시장 상태 정보 추가
+                signals = self.market_analyzer.analyze_market(coin, candles_1m)
+                signals.update(market_condition)
+                current_price = candles_1m[-1]['close'] if self.thread_id < 4 else candles_15m[-1]['close']
+                self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
+                self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
+                self.trading_manager.update_strategy_data(coin=coin, thread_id=self.thread_id, price=current_price, strategy_results=signals)
+                # 스레드 상태 업데이트
+                self.db.thread_status.update_one(
+                    {'thread_id': self.thread_id},
+                    {'$set': {
+                        'last_coin': coin,
+                        'last_update': TimeUtils.get_current_kst(),  
+                        'status': 'running',
+                        'is_active': True
+                    }},
+                    upsert=True
+                )
+                self.logger.debug(f"Thread {self.thread_id}: {coin} - 처리 완료")
                 return
             
             # 동적 임계값 조정
