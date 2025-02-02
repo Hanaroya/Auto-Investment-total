@@ -291,6 +291,12 @@ class TradingThread(threading.Thread):
                             self.logger.warning(f"{coin}: 15분봉 데이터 없음")
                             return
                         
+                        candles_240m = self.investment_center.exchange.get_candle(
+                            market=coin, interval='240', count=300)
+                        if not candles_240m:
+                            self.logger.warning(f"{coin}: 4시간봉 데이터 없음")
+                            return  
+                        
                     else:  # 4~9번 스레드
                         candles_15m = self.investment_center.exchange.get_candle(
                             market=coin, interval='15', count=300)
@@ -352,30 +358,6 @@ class TradingThread(threading.Thread):
                 self.logger.error(f"{coin}: 추세 분석 중 오류 - {str(e)}")
                 return
             
-            # 거래 가능 여부 확인
-            if not market_condition['is_tradeable']:
-                self.logger.debug(f"{coin}: 거래 중지 - {market_condition['message']}")
-                # 마켓 분석 수행 시 시장 상태 정보 추가
-                signals = self.market_analyzer.analyze_market(coin, candles_1m)
-                signals.update(market_condition)
-                current_price = candles_1m[-1]['close'] if self.thread_id < 4 else candles_15m[-1]['close']
-                self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
-                self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
-                self.trading_manager.update_strategy_data(coin=coin, thread_id=self.thread_id, price=current_price, strategy_results=signals)
-                # 스레드 상태 업데이트
-                self.db.thread_status.update_one(
-                    {'thread_id': self.thread_id},
-                    {'$set': {
-                        'last_coin': coin,
-                        'last_update': TimeUtils.get_current_kst(),  
-                        'status': 'running',
-                        'is_active': True
-                    }},
-                    upsert=True
-                )
-                self.logger.debug(f"Thread {self.thread_id}: {coin} - 처리 완료")
-                return
-            
             # 동적 임계값 조정
             thresholds = self.trading_strategy.adjust_thresholds(market_condition, trends)
             
@@ -421,23 +403,26 @@ class TradingThread(threading.Thread):
                         price_trend = signals.get('price_trend', 0)
                         volatility = signals.get('volatility', 0)
                         
+                        # MA 대비 가격 확인
+                        ma_condition = trends['240m']['price_vs_ma'] <= -5 if trends['240m'].get('ma20') else False
+                        
                         # 시장 상황에 따른 동적 임계값 조정
                         market_risk = market_condition['risk_level']
                         
                         # 시장 상황별 동적 임계값 설정
                         if market_risk > 0.7:  # 고위험 시장
-                            profit_threshold = 0.12  # 최소 0.12% 수익
-                            loss_threshold = -1.0
+                            profit_threshold = 1.12  # 최소 1.12% 수익
+                            loss_threshold = -4.0
                             volatility_threshold = 0.25
                             stagnation_threshold = 0.05
                         elif market_risk > 0.5:  # 중위험 시장
-                            profit_threshold = 0.15
-                            loss_threshold = -1.5
+                            profit_threshold = 1.15
+                            loss_threshold = -4.5
                             volatility_threshold = 0.3
                             stagnation_threshold = 0.08
                         else:  # 저위험 시장
-                            profit_threshold = 0.12
-                            loss_threshold = -1.0
+                            profit_threshold = 1.15
+                            loss_threshold = -5.0
                             volatility_threshold = 0.25
                             stagnation_threshold = 0.05
                             
@@ -515,7 +500,8 @@ class TradingThread(threading.Thread):
                             loss_prevention_condition or
                             market_condition_sell or
                             user_call_sell_condition or
-                            stagnation_sell_condition  # 새로운 조건 추가
+                            stagnation_sell_condition or
+                            ma_condition  # MA 조건 추가
                         )
 
                         # 매도 사유 저장 로직 수정
@@ -533,6 +519,8 @@ class TradingThread(threading.Thread):
                             sell_reason.append("사용자 호출")
                         if stagnation_sell_condition:
                             sell_reason.append("정체 후 하락")
+                        if ma_condition:
+                            sell_reason.append("MA20 대비 -5% 이하")
 
                         signals['sell_reason'] = ", ".join(sell_reason)
 
@@ -618,13 +606,17 @@ class TradingThread(threading.Thread):
                                 self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
                     
                     else:
+                        # MA 대비 가격 확인
+                        price_below_ma = trends['240m']['price_vs_ma'] <= -5 if trends['240m'].get('ma20') else False
+                        
                         # 1. 일반 매수 신호 처리 (상승세)
                         normal_buy_condition = (
-                            signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] * 1.2 and  # 매수 신호 기준 20% 상향
+                            signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] * 1.2 and
                             current_investment < self.max_investment and
-                            coin_fear_greed > 35 and  # 코인별 공포지수 기준 상향
-                            market_condition['risk_level'] < 0.6 and  # 시장 위험도 체크
-                            market_condition['AFR'] > 0.1 and  # AFR 양수 확인
+                            coin_fear_greed > 35 and
+                            market_condition['risk_level'] < 0.6 and
+                            market_condition['AFR'] > 0.1 and
+                            market_condition['is_tradeable'] and  # is_tradeable 체크 추가
                             (
                                 # 0~3번 스레드: 1분봉과 15분봉 모두 상승세
                                 (self.thread_id < 4 and 
@@ -639,28 +631,19 @@ class TradingThread(threading.Thread):
                             )
                         )
                         
-                        # 2. 극도의 공포 상태에서의 반등 매수
-                        extreme_fear_buy_condition = (
+                        # 2. 하락세 매수 조건 (MA 기반)
+                        ma_buy_condition = (
+                            price_below_ma and
                             current_investment < self.max_investment and
-                            market_condition['risk_level'] < 0.5 and  # 시장 위험도가 낮을 때만
-                            (coin_fear_greed <= 20 or current_fear_greed <= 20) and  # 극도의 공포 상태
-                            market_condition['AFR'] > 0 and  # AFR 양수 필수
+                            market_condition['risk_level'] < 0.7 and
                             (
-                                # 0~3번 스레드: 1분봉 반등 확인
-                                (self.thread_id < 4 and 
-                                 trends['1m']['trend'] > 0.2 and  # 상승 전환 강화
-                                 trends['1m']['volatility'] < 0.4 and  # 변동성 안정화
-                                 trends['15m']['trend'] > 0) or  # 15분봉도 상승 전환
-                                # 4~9번 스레드: 15분봉 반등 확인
-                                (self.thread_id >= 4 and 
-                                 trends['15m']['trend'] > 0.2 and  # 상승 전환 강화
-                                 trends['15m']['volatility'] < 0.4 and  # 변동성 안정화
-                                 trends['240m']['trend'] > 0)  # 4시간봉도 상승 전환
+                                (self.thread_id < 4 and trends['1m']['volatility'] < 0.5) or
+                                (self.thread_id >= 4 and trends['15m']['volatility'] < 0.5)
                             )
                         )
                         
                         # 매수 신호 처리
-                        if normal_buy_condition or extreme_fear_buy_condition:
+                        if (normal_buy_condition and market_condition['is_tradeable']) or ma_buy_condition:
                             # 전체 투자량의 80% 제한 체크
                             if current_investment >= (self.total_max_investment * 0.8):
                                 self.logger.debug(f"{coin}: 전체 투자 한도(80%) 초과 - 현재 투자: {current_investment:,}원")
@@ -669,7 +652,7 @@ class TradingThread(threading.Thread):
                             investment_amount = self.trading_strategy.calculate_position_size(
                                 coin, market_condition, trends
                             )
-                            buy_reason = "일반 매수" if normal_buy_condition else "공포 지수 반등 매수"
+                            buy_reason = "일반 매수" if normal_buy_condition else "MA 하락세 매수"
                             
                             signals['investment_amount'] = investment_amount
                             
@@ -898,37 +881,44 @@ class TradingThread(threading.Thread):
         try:
             if not candles or len(candles) < 2:
                 self.logger.warning(f"캔들 데이터 부족: {len(candles) if candles else 0}개")
-                return {'trend': 0, 'volatility': 0}
+                return {'trend': 0, 'volatility': 0, 'ma20': None, 'price_vs_ma': 0}
             
             prices = [float(candle['close']) for candle in candles]
-            self.logger.debug(f"가격 데이터: 개수={len(prices)}, 최근={prices[-3:]}")
             
-            # 추세 계산 (최근 가격 변화율의 가중 평균)
+            # 20일 이동평균선 계산
+            if len(prices) >= 20:
+                ma20 = sum(prices[-20:]) / 20
+                current_price = prices[-1]
+                price_vs_ma = ((current_price - ma20) / ma20) * 100
+            else:
+                ma20 = None
+                price_vs_ma = 0
+            
+            # 기존 추세 및 변동성 계산 로직
             changes = []
             weights = []
             for i in range(1, min(20, len(prices))):
                 change = (prices[-i] - prices[-i-1]) / prices[-i-1]
                 changes.append(change)
-                weights.append(1 / i)  # 최근 데이터에 더 높은 가중치
+                weights.append(1 / i)
             
             trend = sum(c * w for c, w in zip(changes, weights)) / sum(weights)
             
-            # 변동성 계산 (최근 가격 변동의 표준편차)
             recent_prices = prices[-20:]
             mean_price = sum(recent_prices) / len(recent_prices)
             variance = sum((p - mean_price) ** 2 for p in recent_prices) / len(recent_prices)
             volatility = (variance ** 0.5) / mean_price
             
-            result = {
-                'trend': max(min(trend * 10, 1), -1),  # -1 ~ 1 범위로 정규화
-                'volatility': min(volatility * 10, 1)  # 0 ~ 1 범위로 정규화
+            return {
+                'trend': max(min(trend * 10, 1), -1),
+                'volatility': min(volatility * 10, 1),
+                'ma20': ma20,
+                'price_vs_ma': price_vs_ma
             }
-            self.logger.warning(f"계산 결과: {result}")
-            return result
             
         except Exception as e:
             self.logger.error(f"추세/변동성 계산 중 오류: {str(e)}")
-            return {'trend': 0, 'volatility': 0}
+            return {'trend': 0, 'volatility': 0, 'ma20': None, 'price_vs_ma': 0}
         
     def _get_market_condition(self, exchange: str, coin: str) -> dict:
         """시장 상태 조회"""
