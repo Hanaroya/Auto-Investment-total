@@ -235,21 +235,9 @@ class TradingThread(threading.Thread):
             if any(market_condition.get(key) is None for key in ['AFR', 'current_change', 'market_fear_and_greed']):
                 self.logger.debug(f"{coin}: AFR 데이터 누락")
                 return
-            
-            # 시장 상태 분석
-            self.logger.warning(f"{coin}: 시장 상태 분석 시작 - AFR: {market_condition['AFR']}, change: {market_condition['current_change']}, fear_greed: {market_condition['market_fear_and_greed']}")
-            analyzed_market = self._analyze_market_condition(
-                current_afr=market_condition['AFR'],
-                current_change=market_condition['current_change'],
-                current_fear_greed=market_condition['market_fear_and_greed'],
-                afr_history=market_condition.get('AFR_history', []),
-                change_history=market_condition.get('change_history', []),
-                fear_greed_history=market_condition.get('fear_greed_history', [])
-            )
-            self.logger.warning(f"{coin}: 시장 상태 분석 결과 - {analyzed_market}")
-            
-            current_fear_greed = market_condition['market_fear_and_greed']
-            coin_fear_greed = market_condition['feargreed']
+
+            current_fear_greed = None
+            coin_fear_greed = None
             
             # 시장 상태 분석
             try:
@@ -267,6 +255,8 @@ class TradingThread(threading.Thread):
                     return
                     
                 market_condition.update(analyzed_market)
+                current_fear_greed = market_condition['market_fear_and_greed']
+                coin_fear_greed = market_condition['feargreed']
             except Exception as e:
                 self.logger.error(f"{coin}: 시장 분석 중 오류 - {str(e)}")
                 return
@@ -613,10 +603,7 @@ class TradingThread(threading.Thread):
                         normal_buy_condition = (
                             signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] * 1.2 and
                             current_investment < self.max_investment and
-                            coin_fear_greed > 35 and
-                            market_condition['risk_level'] < 0.6 and
-                            market_condition['AFR'] > 0.1 and
-                            market_condition['is_tradeable'] and  # is_tradeable 체크 추가
+                            (market_condition['is_tradeable'] or coin_fear_greed > 75) and
                             (
                                 # 0~3번 스레드: 1분봉과 15분봉 모두 상승세
                                 (self.thread_id < 4 and 
