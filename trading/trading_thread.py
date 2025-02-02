@@ -418,7 +418,7 @@ class TradingThread(threading.Thread):
                             
                         # 1. 수익 실현 조건 수정 (5-10분 내 매도 목표)
                         profit_take_condition = (
-                            (current_profit_rate >= 1.0) or  # 1% 이상은 즉시 매도
+                            (current_profit_rate >= 5.0) or  # 1% 이상은 즉시 매도
                             (current_profit_rate >= profit_threshold and (  # 최소 수익 달성 시
                                 (self.thread_id < 4 and (
                                     trends['1m']['trend'] < 0 or  # 1분봉 하락 전환 즉시
@@ -434,7 +434,7 @@ class TradingThread(threading.Thread):
                         # 2. 손실 방지 조건 (빠른 대응)
                         loss_prevention_condition = (
                             current_profit_rate < loss_threshold or  # 손실 임계값 도달 시 즉시 매도
-                            (current_profit_rate < 0 and (  # 손실 발생 시
+                            (current_profit_rate < -3 and (  # 손실 발생 시
                                 (self.thread_id < 4 and (
                                     trends['1m']['trend'] < -0.1 or  # 1분봉 하락세 강화
                                     trends['1m']['volatility'] > volatility_threshold
