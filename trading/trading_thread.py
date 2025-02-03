@@ -359,10 +359,9 @@ class TradingThread(threading.Thread):
             current_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
 
             # 최대 투자금 체크 및 시장 상태 확인
-            if current_investment >= self.total_max_investment or not market_condition['is_tradeable']:
+            if current_investment >= self.total_max_investment:
                 self.logger.info(f"Thread {self.thread_id}: {coin} - 거래 제한 "
-                               f"(투자금 초과: {current_investment >= self.total_max_investment}, "
-                               f"시장상태: {market_condition['message']})")
+                               f"(투자금 초과: {current_investment >= self.total_max_investment})")
                 return
 
             # 마켓 분석 수행 시 시장 상태 정보 추가
