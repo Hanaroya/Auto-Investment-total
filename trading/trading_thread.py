@@ -594,7 +594,7 @@ class TradingThread(threading.Thread):
                     
                     else:
                         # MA 대비 가격 확인
-                        price_below_ma = trends['240m']['price_vs_ma'] <= -5 if trends['240m'].get('ma20') else False
+                        price_below_ma = -15 < trends['240m']['price_vs_ma'] <= -10 if trends['240m'].get('ma20') else False
                         
                         # 1. 일반 매수 신호 처리 (상승세)
                         normal_buy_condition = (
