@@ -393,7 +393,7 @@ class TradingThread(threading.Thread):
                         volatility = signals.get('volatility', 0)
                         
                         # MA 대비 가격 확인
-                        ma_condition = trends['240m']['price_vs_ma'] <= -10 if trends['240m'].get('ma20') else False
+                        ma_condition = trends['240m']['price_vs_ma'] <= -15 if trends['240m'].get('ma20') else False
                         
                         # 시장 상황에 따른 동적 임계값 조정
                         market_risk = market_condition['risk_level']
@@ -509,7 +509,7 @@ class TradingThread(threading.Thread):
                         if stagnation_sell_condition:
                             sell_reason.append("정체 후 하락")
                         if ma_condition:
-                            sell_reason.append("MA20 대비 -10% 이하")
+                            sell_reason.append("MA20 대비 -15% 이하")
 
                         signals['sell_reason'] = ", ".join(sell_reason)
 
