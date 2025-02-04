@@ -396,34 +396,43 @@ class TradingThread(threading.Thread):
                         # 시장 상황에 따른 동적 임계값 조정
                         market_risk = market_condition['risk_level']
                         
-                        # 시장 상황별 동적 임계값 설정
+                        # 코인별 공포탐욕지수에 따른 수익 실현 임계값 조정
+                        base_profit = 0.15  # 기본 수익률 0.15%
+                        
+                        if coin_fear_greed >= 65:  # 극도의 탐욕
+                            profit_threshold = base_profit + 0.3  # 0.45%
+                        elif 65 > coin_fear_greed >= 55:  # 탐욕
+                            profit_threshold = base_profit + 0.2  # 0.35%
+                        elif 55 > coin_fear_greed >= 45:  # 약한 공포
+                            profit_threshold = base_profit + 0.1  # 0.25%
+                        else:  # 중립 또는 공포
+                            profit_threshold = base_profit  # 0.15%
+                        
+                        # 시장 상황별 손실 및 변동성 임계값 설정
                         if market_risk > 0.7:  # 고위험 시장
-                            profit_threshold = 0.52  # 최소 0.52% 수익
-                            loss_threshold = -4.0
+                            loss_threshold = -2.0
                             volatility_threshold = 0.25
                             stagnation_threshold = 0.05
                         elif market_risk > 0.5:  # 중위험 시장
-                            profit_threshold = 0.65
-                            loss_threshold = -4.5
+                            loss_threshold = -2.0
                             volatility_threshold = 0.3
                             stagnation_threshold = 0.08
                         else:  # 저위험 시장
-                            profit_threshold = 0.65
-                            loss_threshold = -4.5
+                            loss_threshold = -4.0
                             volatility_threshold = 0.3
                             stagnation_threshold = 0.08
-                            
+                        
                         # 1. 수익 실현 조건 수정 (5-10분 내 매도 목표)
                         profit_take_condition = (
-                            (current_profit_rate >= 5.0) or  # 1% 이상은 즉시 매도
+                            (current_profit_rate >= (profit_threshold * 2)) or  # 최소 수익의 2배 달성 시
                             (current_profit_rate >= profit_threshold and (  # 최소 수익 달성 시
                                 (self.thread_id < 4 and (
-                                    trends['1m']['trend'] < 0 or  # 1분봉 하락 전환 즉시
-                                    trends['15m']['trend'] < -0.03  # 15분봉 미세 하락
+                                    trends['1m']['trend'] < 0.07 or  # 1분봉 하락 전환 즉시
+                                    trends['15m']['trend'] < -0.07  # 15분봉 미세 하락
                                 )) or
                                 (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] < 0 or  # 15분봉 하락 전환 즉시
-                                    trends['240m']['trend'] < -0.03
+                                    trends['15m']['trend'] < 0.07 or  # 15분봉 하락 전환 즉시
+                                    trends['240m']['trend'] < -0.07
                                 ))
                             ))
                         )
@@ -431,7 +440,7 @@ class TradingThread(threading.Thread):
                         # 2. 손실 방지 조건 (빠른 대응)
                         loss_prevention_condition = (
                             current_profit_rate < loss_threshold or  # 손실 임계값 도달 시 즉시 매도
-                            (current_profit_rate < -3 and (  # 손실 발생 시
+                            (current_profit_rate < (loss_threshold / 2) and (  # 손실 임계값의 50% 발생 시
                                 (self.thread_id < 4 and (
                                     trends['1m']['trend'] < -0.1 or  # 1분봉 하락세 강화
                                     trends['1m']['volatility'] > volatility_threshold
@@ -596,38 +605,45 @@ class TradingThread(threading.Thread):
                         # MA 대비 가격 확인
                         price_below_ma = -15 < trends['240m']['price_vs_ma'] <= -8 if trends['240m'].get('ma20') else False
                         
+                         # 매수 임계값 동적 조정
+                        market_fg = market_condition['market_fear_and_greed']
+                        base_threshold = thresholds['buy_threshold']
+                        
+                        # 전체 시장 상태에 따른 임계값 조정
+                        if market_fg <= 45:  # 공포 상태
+                            threshold_multiplier = 1.1  # 기준 10% 상향
+                        elif market_fg >= 55:  # 탐욕 상태
+                            threshold_multiplier = 0.95  # 기준 5% 하향
+                        else:  # 중립 상태
+                            threshold_multiplier = 1.0  # 기준 유지
+                        
+                        # 코인별 공포탐욕지수에 따른 추가 조정
+                        if coin_fear_greed <= 30:  # 극도의 공포
+                            threshold_multiplier += 0.1  # 추가 10% 상향
+                        elif coin_fear_greed <= 45:  # 공포
+                            threshold_multiplier += 0.15  # 추가 15% 상향
+                        elif 46 < coin_fear_greed <= 60:  # 중립
+                            threshold_multiplier += 0.05  # 추가 5% 상향
+                        elif coin_fear_greed >= 61:  # 극도의 탐욕
+                            threshold_multiplier -= 0.05  # 5% 하향
+                        
+                        adjusted_threshold = base_threshold * threshold_multiplier
+                        
                         # 1. 일반 매수 신호 처리 (상승세)
                         normal_buy_condition = (
-                            signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] * 1.2 and
-                            current_investment < self.max_investment and
-                            (market_condition['is_tradeable'] or coin_fear_greed > 75) and
-                            (
-                                # 0~3번 스레드:     분봉과 15분봉 모두 상승세
-                                (self.thread_id < 4 and 
-                                 trends['1m']['trend'] > 0.3 and  # 1분봉 상승세 강화
-                                 trends['1m']['volatility'] < 0.5 and  # 변동성 안정화
-                                 trends['15m']['trend'] > 0.2) or  # 15분봉도 상승세
-                                # 4~9번 스레드: 15분봉과 240분봉 모두 상승세
-                                (self.thread_id >= 4 and 
-                                 trends['15m']['trend'] > 0.3 and  # 15분봉 상승세 강화
-                                 trends['15m']['volatility'] < 0.5 and  # 변동성 안정화
-                                 trends['240m']['trend'] > 0.2)  # 4시간봉도 상승세
-                            )
+                            signals.get('overall_signal', 0.0) >= adjusted_threshold and
+                            current_investment < self.max_investment 
                         )
                         
                         # 2. 하락세 매수 조건 (MA 기반)
                         ma_buy_condition = (
                             price_below_ma and
                             current_investment < self.max_investment and
-                            market_condition['risk_level'] < 0.7 and
-                            (
-                                (self.thread_id < 4 and trends['1m']['volatility'] < 0.5) or
-                                (self.thread_id >= 4 and trends['15m']['volatility'] < 0.5)
-                            )
+                            market_condition['risk_level'] < 0.7 
                         )
                         
                         # 매수 신호 처리
-                        if (normal_buy_condition and market_condition['is_tradeable']) or ma_buy_condition:
+                        if normal_buy_condition or ma_buy_condition:
                             # 전체 투자량의 80% 제한 체크
                             if current_investment >= (self.total_max_investment * 0.8):
                                 self.logger.debug(f"{coin}: 전체 투자 한도(80%) 초과 - 현재 투자: {current_investment:,}원")
