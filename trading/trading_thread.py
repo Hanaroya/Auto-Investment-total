@@ -385,8 +385,6 @@ class TradingThread(threading.Thread):
                     self.logger.debug(f"Signals: {signals}")
                     self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.total_max_investment}")
 
-                    
-                    
                     if active_trade:
                         current_profit_rate = active_trade.get('profit_rate', 0)
                         price_trend = signals.get('price_trend', 0)
@@ -400,20 +398,20 @@ class TradingThread(threading.Thread):
                         
                         # 시장 상황별 동적 임계값 설정
                         if market_risk > 0.7:  # 고위험 시장
-                            profit_threshold = 1.12  # 최소 1.12% 수익
+                            profit_threshold = 0.52  # 최소 0.52% 수익
                             loss_threshold = -4.0
                             volatility_threshold = 0.25
                             stagnation_threshold = 0.05
                         elif market_risk > 0.5:  # 중위험 시장
-                            profit_threshold = 1.15
+                            profit_threshold = 0.65
                             loss_threshold = -4.5
                             volatility_threshold = 0.3
                             stagnation_threshold = 0.08
                         else:  # 저위험 시장
-                            profit_threshold = 1.15
-                            loss_threshold = -5.0
-                            volatility_threshold = 0.25
-                            stagnation_threshold = 0.05
+                            profit_threshold = 0.65
+                            loss_threshold = -4.5
+                            volatility_threshold = 0.3
+                            stagnation_threshold = 0.08
                             
                         # 1. 수익 실현 조건 수정 (5-10분 내 매도 목표)
                         profit_take_condition = (
