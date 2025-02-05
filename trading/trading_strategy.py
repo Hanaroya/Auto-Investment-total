@@ -7,9 +7,9 @@ class TradingStrategy:
         self.investment_each = floor(self.total_max_investment / 20)  # 기본 분할 투자 단위
         self._cache = {}
         
-    def calculate_position_size(self, coin: str, market_condition: dict, trends: dict) -> int:
+    def calculate_position_size(self, market: str, market_condition: dict, trends: dict) -> int:
         """포지션 크기 동적 계산"""
-        cache_key = f"{coin}_{market_condition.get('timestamp', '')}"
+        cache_key = f"{market}_{market_condition.get('timestamp', '')}"
         if cache_key in self._cache:
             return self._cache[cache_key]
             

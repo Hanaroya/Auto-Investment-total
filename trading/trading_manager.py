@@ -382,7 +382,7 @@ class TradingManager:
                     
                     # 필요한 컬럼만 선택하여 저장
                     display_columns = [
-                        'coin', '거래일자', '매수일자', '매수가', '매도가', '수익률', 
+                        '거래종목', '거래일자', '매수일자', '매수가', '매도가', '수익률', 
                         '투자금액', '수익금액', 'test_mode'
                     ]
                     history_df[display_columns].to_excel(
@@ -560,7 +560,7 @@ class TradingManager:
             
             for trade in active_trades:
                 investment_amount = trade.get('investment_amount', 0)
-                current_price = self.upbit.get_current_price(trade['coin'])
+                current_price = self.upbit.get_current_price(trade['market'])
                 executed_volume = trade.get('executed_volume', 0)
                 
                 # 현재 가치 계산 (현재가 * 보유수량)
@@ -686,11 +686,11 @@ class TradingManager:
 
         message = (
             f"------------------------------------------------\n"
-            f"Coin: {trade_data['coin']}, 구매 ({buy_reason})\n"
+            f"거래종목: {trade_data['market']}, 구매 ({buy_reason})\n"
             f" 구매 시간: {TimeUtils.format_kst(kst_now)}\n"
             f" 구매 가격: {trade_data['price']:,}\n"
             f" 구매 신호: {trade_data['signal_strength']:.2f}\n"
-            f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
+            f" Trade-rank: {trade_data.get('thread_id', 'N/A')}\n"
             f" 투자 금액: W{trade_data.get('investment_amount', 0):,}\n"
             f" 거래 사유: {buy_reason}\n"
         )
@@ -737,12 +737,12 @@ class TradingManager:
 
         message = (
             f"------------------------------------------------\n"
-            f"Coin: {trade_data['coin']}, 판매\n"
+            f"거래종목: {trade_data['market']}, 판매\n"
             f" 판매 시간: {TimeUtils.format_kst(kst_now)}\n"
             f" 구매 가격: {buy_price:,}\n"
             f" 판매 가격: {sell_price:,}\n"
             f" 판매 신호: {sell_signal:.2f}\n"
-            f" Coin-rank: {trade_data.get('thread_id', 'N/A')}\n"
+            f" Trade-rank: {trade_data.get('thread_id', 'N/A')}\n"
             f" 총 투자 금액: W{total_investment:,}\n"
             f" 거래 사유: {sell_message}\n"
         )
@@ -822,7 +822,7 @@ class TradingManager:
                 hours = hold_time.total_seconds() / 3600
                 
                 # 현재 가격 조회
-                current_price = self.upbit.get_current_price(trade['coin'])
+                current_price = self.upbit.get_current_price(trade['market'])
                 investment_amount = trade.get('investment_amount', 0)
                 
                 # 수익률 계산
@@ -1124,7 +1124,7 @@ class TradingManager:
             self.logger.error(f"매수 주문 처리 중 오류: {str(e)}")
             return {'success': False, 'message': f'주문 처리 실패: {str(e)}'}
 
-    async def user_call_sell(self, coin: str, price: float, immediate: bool = False) -> Dict:
+    async def user_call_sell(self, market: str, exchange: str, price: float, immediate: bool = False) -> Dict:
         """사용자 매도 주문
         
         Args:
@@ -1138,11 +1138,12 @@ class TradingManager:
         try:
             # 테스트 모드 확인
             is_test = self.config.get('test_mode', True)
-            self.logger.info(f"매도 주문 시작 - 코인: {coin}, 가격: {price:,}, 즉시체결: {immediate}")
+            self.logger.info(f"매도 주문 시작 - 코인: {market}, 가격: {price:,}, 즉시체결: {immediate}")
             
             # 활성 거래 확인
             active_trade = await self.db.get_collection('trades').find_one({
-                'coin': coin,
+                'market': market,
+                'exchange': exchange,
                 'status': 'active'
             })
             
@@ -1151,7 +1152,8 @@ class TradingManager:
             
             # 주문 데이터 생성
             order_data = {
-                'coin': coin,
+                'market': market,
+                'exchange': exchange,
                 'type': 'sell',
                 'price': price,
                 'status': 'pending',
@@ -1171,7 +1173,8 @@ class TradingManager:
             if immediate:
                 # 즉시 체결인 경우 바로 process_sell_signal 호출
                 await self.process_sell_signal(
-                    coin=coin,
+                    market=market,
+                    exchange=exchange,
                     thread_id=active_trade['thread_id'],
                     signal_strength=1.0,
                     price=price,

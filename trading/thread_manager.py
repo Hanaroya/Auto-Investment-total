@@ -69,6 +69,7 @@ class ThreadManager:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
 
+        self.trading_manager = TradingManager()
         self.scheduler_thread = None
         self.afr_monitor_thread = None
         self.afr_ready = threading.Event()  # AFR 데이터 준비 상태를 위한 이벤트 추가
@@ -109,9 +110,10 @@ class ThreadManager:
                 
                 for trade in existing_trades:
                     try:
-                        current_price = upbit.get_current_price(trade['coin'])
+                        current_price = upbit.get_current_price(trade['market'])  
                         trading_manager.process_sell_signal(
-                            coin=trade['coin'],
+                            market=trade['market'],
+                            exchange=trade['exchange'],
                             thread_id=trade['thread_id'],
                             signal_strength=0,
                             price=current_price,
@@ -237,7 +239,7 @@ class ThreadManager:
                     
                 thread = TradingThread(
                     thread_id=i,
-                    coins=market_group,
+                    markets=market_group,
                     config=self.config,
                     exchange_name=self.investment_center.exchange_name,
                     shared_locks=self.shared_locks,
@@ -388,12 +390,12 @@ class ThreadManager:
             # 마켓 재분배
             market_groups = self.split_markets(markets)
             
-            # 각 스레드의 코인 목록 업데이트
+            # 각 스레드의 거래항목 목록 업데이트
             for i, thread in enumerate(self.threads):
                 if i < len(market_groups):
-                    thread.coins = market_groups[i]
+                    thread.markets = market_groups[i]
                     self.logger.info(f"Thread {i}: {len(market_groups[i])} 개의 코인 재할당")
-                    # 첫 번째 코인 로깅
+                    # 첫 번째 거래항목 로깅
                     if market_groups[i]:
                         self.logger.debug(f"Thread {i}의 첫 번째 코인: {market_groups[i][0]}")
                     
@@ -412,13 +414,14 @@ class ThreadManager:
                 }).to_list(None)
                 
                 for order in pending_orders:
-                    current_price = self.upbit.get_current_price(order['coin'])
+                    current_price = self.upbit.get_current_price(order['market'])
                     
                     if order['type'] == 'buy':
                         if current_price <= order['price']:
                             # 매수 조건 충족
                             await self.trading_manager.process_buy_signal(
-                                coin=order['coin'],
+                                market=order['market'],
+                                exchange=order['exchange'],
                                 thread_id=0,
                                 signal_strength=1.0,
                                 price=current_price,
@@ -439,7 +442,8 @@ class ThreadManager:
                         if current_price >= order['price']:
                             # 매도 조건 충족
                             await self.trading_manager.process_sell_signal(
-                                coin=order['coin'],
+                                market=order['market'],
+                                exchange=order['exchange'],
                                 thread_id=order['trade_data']['thread_id'],
                                 signal_strength=1.0,
                                 price=current_price,

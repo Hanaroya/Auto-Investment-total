@@ -520,12 +520,13 @@ class MongoDBManager:
                 return False
 
     # 시장 데이터 관련 메서드
-    def update_market_data(self, coin: str, market_data: Dict[str, Any]) -> bool:
+    def update_market_data(self, exchange: str, market: str, market_data: Dict[str, Any]) -> bool:
         """
         특정 코인의 시장 데이터를 업데이트합니다.
         
         Args:
-            coin: 코인 식별자
+            exchange: 거래소 이름
+            market: 코인 식별자
             market_data: 업데이트할 시장 데이터
             
         Returns:
@@ -534,7 +535,7 @@ class MongoDBManager:
         with self._get_collection_lock('market_data'):
             try:
                 result = self.db.market_data.update_one(
-                    {'coin': coin},
+                    {'market': market, 'exchange': exchange},
                     {'$set': market_data},
                     upsert=True
                 )
@@ -788,7 +789,7 @@ class MongoDBManager:
         except Exception as e:
             self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
             
-    def cleanup_portfolio(self):
+    def cleanup_portfolio(self, exchange: str):
         """portfolio 컬렉션 정리"""
         with self._get_collection_lock('portfolio'):
             try:
@@ -800,7 +801,8 @@ class MongoDBManager:
                 self.portfolio = self.db['portfolio']
                 initial_portfolio = {
                     '_id': 'main',
-                    'coin_list': {},
+                    'market_list': {},
+                    'exchange': exchange,
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
                     'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),

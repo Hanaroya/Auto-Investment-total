@@ -220,13 +220,14 @@ class InvestmentCenter:
             # 모든 활성 거래 청산
             for trade in active_trades:
                 try:
-                    current_price = self.exchange.get_current_price(trade['coin'])
+                    current_price = self.exchange.get_current_price(trade['market'])  
                     profit = (current_price - trade['price']) * trade['executed_volume']
                     total_profit += profit
                     
                     # 매도 처리
                     self.trading_manager.process_sell_signal(
-                        coin=trade['coin'],
+                        market=trade['market'],
+                        exchange=trade['exchange'],
                         thread_id=trade['thread_id'],
                         signal_strength=0,
                         price=current_price,

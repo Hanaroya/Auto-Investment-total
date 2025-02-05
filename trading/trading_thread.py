@@ -59,11 +59,11 @@ class TradingThread(threading.Thread):
     개별 코인 그룹을 처리하는 거래 스레드
     각 스레드는 할당된 코인들에 대해 독립적으로 거래 분석 및 실행을 담당합니다.
     """
-    def __init__(self, thread_id: int, coins: List[str], db: MongoDBManager, exchange_name: str, config: Dict, shared_locks: Dict, stop_flag: threading.Event, investment_center=None):
+    def __init__(self, thread_id: int, markets: List[str], db: MongoDBManager, exchange_name: str, config: Dict, shared_locks: Dict, stop_flag: threading.Event, investment_center=None):
         """
         Args:
             thread_id (int): 스레드 식별자
-            coins (List[str]): 처리할 코인 목록
+            markets (List[str]): 처리할 코인 목록
             db (MongoDBManager): 데이터베이스 인스턴스
             config: 설정 정보가 담긴 딕셔너리
             shared_locks (Dict): 공유 락 딕셔너리
@@ -72,7 +72,7 @@ class TradingThread(threading.Thread):
         """
         super().__init__()
         self.thread_id = thread_id
-        self.coins = coins
+        self.markets = markets
         self.db = db
         self.config = config
         self.shared_locks = shared_locks
@@ -180,7 +180,7 @@ class TradingThread(threading.Thread):
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
             
-            self.logger.info(f"Thread {self.thread_id}: 마켓 분석 시작 - {len(self.coins)} 개의 코인")
+            self.logger.info(f"Thread {self.thread_id}: 마켓 분석 시작 - {len(self.markets)} 개의 코인")
             
             while not self.stop_flag.is_set():
                 cycle_start_time = time.time()
@@ -195,18 +195,18 @@ class TradingThread(threading.Thread):
                 
                 time.sleep(initial_delay)
                 
-                for coin in self.coins:
+                for market in self.markets:
                     if self.stop_flag.is_set():
                         break
                         
                     try:
                         # 비동기 함수를 동기적으로 실행
-                        self.loop.run_until_complete(self.process_single_coin(coin))
+                        self.loop.run_until_complete(self.process_single_coin(market))
                     except Exception as e:
                         import traceback
                         tb = traceback.extract_tb(sys.exc_info()[2])[-1]
                         error_statement = tb.line  # 실제 에러가 발생한 코드 라인의 내용
-                        self.logger.error(f"Error processing {coin}: {str(e)} in statement: '{error_statement}' at {tb.filename}:{tb.lineno}")
+                        self.logger.error(f"Error processing {market}: {str(e)} in statement: '{error_statement}' at {tb.filename}:{tb.lineno}")
                         continue
                 
                 cycle_duration = time.time() - cycle_start_time
@@ -223,18 +223,18 @@ class TradingThread(threading.Thread):
                 self.loop.close()
             self.logger.info(f"Thread {self.thread_id} 정리 작업 완료")
 
-    async def process_single_coin(self, coin: str):
+    async def process_single_coin(self, market: str):
         """단일 코인 처리"""
         try:
             # 시장 상태 조회 
-            market_condition = self._get_market_condition(exchange=self.investment_center.exchange_name, coin= coin)
+            market_condition = self._get_market_condition(exchange=self.investment_center.exchange_name, market=market)
             if not market_condition:
-                self.logger.debug(f"{coin}: 시장 상태 데이터 없음")
+                self.logger.debug(f"{market}: 시장 상태 데이터 없음")
                 return
             
             # AFR 데이터 유효성 검사
             if any(market_condition.get(key) is None for key in ['AFR', 'current_change', 'market_fear_and_greed']):
-                self.logger.debug(f"{coin}: AFR 데이터 누락")
+                self.logger.debug(f"{market}: AFR 데이터 누락")
                 return
 
             current_fear_greed = None
@@ -252,14 +252,14 @@ class TradingThread(threading.Thread):
                 )
                 
                 if not analyzed_market:
-                    self.logger.debug(f"{coin}: 시장 분석 실패")
+                    self.logger.debug(f"{market}: 시장 분석 실패")
                     return
                     
                 market_condition.update(analyzed_market)
                 current_fear_greed = market_condition['market_fear_and_greed']
                 coin_fear_greed = market_condition['feargreed']
             except Exception as e:
-                self.logger.error(f"{coin}: 시장 분석 중 오류 - {str(e)}")
+                self.logger.error(f"{market}: 시장 분석 중 오류 - {str(e)}")
                 return
 
             # 여러 시간대의 캔들 데이터 조회
@@ -271,82 +271,82 @@ class TradingThread(threading.Thread):
                 try:
                     if self.thread_id < 4:  # 0~3번 스레드
                         candles_1m = self.investment_center.exchange.get_candle(
-                            market=coin, interval='1', count=300)
+                            market=market, interval='1', count=300)
                         if not candles_1m:
-                            self.logger.warning(f"{coin}: 1분봉 데이터 없음")
+                            self.logger.warning(f"{market}: 1분봉 데이터 없음")
                             return
                         
                         candles_15m = self.investment_center.exchange.get_candle(
-                            market=coin, interval='15', count=300)
+                            market=market, interval='15', count=300)
                         if not candles_15m:
-                            self.logger.warning(f"{coin}: 15분봉 데이터 없음")
+                            self.logger.warning(f"{market}: 15분봉 데이터 없음")
                             return
                         
                         candles_240m = self.investment_center.exchange.get_candle(
-                            market=coin, interval='240', count=300)
+                            market=market, interval='240', count=300)
                         if not candles_240m:
-                            self.logger.warning(f"{coin}: 4시간봉 데이터 없음")
+                            self.logger.warning(f"{market}: 4시간봉 데이터 없음")
                             return  
                         
                     else:  # 4~9번 스레드
                         candles_15m = self.investment_center.exchange.get_candle(
-                            market=coin, interval='15', count=300)
+                            market=market, interval='15', count=300)
                         if not candles_15m:
-                            self.logger.warning(f"{coin}: 15분봉 데이터 없음")
+                            self.logger.warning(f"{market}: 15분봉 데이터 없음")
                             return
                         
                         candles_240m = self.investment_center.exchange.get_candle(
-                            market=coin, interval='240', count=300)
+                            market=market, interval='240', count=300)
                         if not candles_240m:
-                            self.logger.warning(f"{coin}: 4시간봉 데이터 없음")
+                            self.logger.warning(f"{market}: 4시간봉 데이터 없음")
                             return
                         
                     # 캔들 데이터 길이 검증
                     if self.thread_id < 4:
                         if len(candles_1m) < 2:
-                            self.logger.warning(f"{coin}: 1분봉 데이터 부족 (개수: {len(candles_1m)})")
+                            self.logger.warning(f"{market}: 1분봉 데이터 부족 (개수: {len(candles_1m)})")
                             return
                         if len(candles_15m) < 2:
-                            self.logger.warning(f"{coin}: 15분봉 데이터 부족 (개수: {len(candles_15m)})")
+                            self.logger.warning(f"{market}: 15분봉 데이터 부족 (개수: {len(candles_15m)})")
                             return
                     else:
                         if len(candles_15m) < 2:
-                            self.logger.warning(f"{coin}: 15분봉 데이터 부족 (개수: {len(candles_15m)})")
+                            self.logger.warning(f"{market}: 15분봉 데이터 부족 (개수: {len(candles_15m)})")
                             return
                         if len(candles_240m) < 2:
-                            self.logger.warning(f"{coin}: 4시간봉 데이터 부족 (개수: {len(candles_240m)})")
+                            self.logger.warning(f"{market}: 4시간봉 데이터 부족 (개수: {len(candles_240m)})")
                             return
                         
                     # 마지막 캔들 데이터 검증
                     if self.thread_id < 4:
                         if not candles_1m[-1] or not candles_15m[-1]:
-                            self.logger.warning(f"{coin}: 최근 캔들 데이터 누락")
+                            self.logger.warning(f"{market}: 최근 캔들 데이터 누락")
                             return
                     else:
                         if not candles_15m[-1] or not candles_240m[-1]:
-                            self.logger.warning(f"{coin}: 최근 캔들 데이터 누락")
+                            self.logger.warning(f"{market}: 최근 캔들 데이터 누락")
                             return
                     
                 except Exception as e:
-                    self.logger.error(f"{coin}: 캔들 데이터 조회 실패 - {str(e)}")
+                    self.logger.error(f"{market}: 캔들 데이터 조회 실패 - {str(e)}")
                     return
 
             # 시간대별 추세 분석 전 데이터 검증
             if self.thread_id < 4 and (not isinstance(candles_1m, list) or not isinstance(candles_15m, list)):
-                self.logger.error(f"{coin}: 잘못된 캔들 데이터 형식")
+                self.logger.error(f"{market}: 잘못된 캔들 데이터 형식")
                 return
             elif self.thread_id >= 4 and (not isinstance(candles_15m, list) or not isinstance(candles_240m, list)):
-                self.logger.error(f"{coin}: 잘못된 캔들 데이터 형식")
+                self.logger.error(f"{market}: 잘못된 캔들 데이터 형식")
                 return
 
             # 시간대별 추세 분석
             try:
                 trends = self._analyze_multi_timeframe_trends(candles_1m, candles_15m, candles_240m)
                 if not trends:
-                    self.logger.warning(f"{coin}: 추세 분석 실패")
+                    self.logger.warning(f"{market}: 추세 분석 실패")
                     return
             except Exception as e:
-                self.logger.error(f"{coin}: 추세 분석 중 오류 - {str(e)}")
+                self.logger.error(f"{market}: 추세 분석 중 오류 - {str(e)}")
                 return
             
             # 동적 임계값 조정
@@ -361,28 +361,28 @@ class TradingThread(threading.Thread):
 
             # 최대 투자금 체크 및 시장 상태 확인
             if current_investment >= self.total_max_investment:
-                self.logger.info(f"Thread {self.thread_id}: {coin} - 거래 제한 "
+                self.logger.info(f"Thread {self.thread_id}: {market} - 거래 제한 "
                                f"(투자금 초과: {current_investment >= self.total_max_investment})")
                 return
 
             # 마켓 분석 수행 시 시장 상태 정보 추가
-            signals = self.market_analyzer.analyze_market(coin, candles_1m)
+            signals = self.market_analyzer.analyze_market(market, candles_1m)
             signals.update(market_condition)
             current_price = candles_1m[-1]['close'] if self.thread_id < 4 else candles_15m[-1]['close']
-            self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
-            self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
-            self.trading_manager.update_strategy_data(market=coin, exchange=self.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
+            self.logger.warning(f"{market}: 현재 가격 - {current_price}")
+            self.trading_manager.update_strategy_data(market=market, exchange=self.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
 
             # 분석 결과 저장 및 거래 신호 처리
             with self.shared_locks['trade']:
                 try:
                     # 현재 코인의 활성 거래 확인 및 로깅
                     active_trade = self.db.trades.find_one({
-                        'coin': coin,
+                        'market': market,
+                        'exchange': self.exchange_name,
                         'status': 'active'
                     })
                     
-                    self.logger.info(f"Thread {self.thread_id}: {coin} - Active trade check result: {active_trade is not None}")
+                    self.logger.info(f"Thread {self.thread_id}: {market} - Active trade check result: {active_trade is not None}")
                     self.logger.debug(f"Signals: {signals}")
                     self.logger.debug(f"Current investment: {current_investment}, Max investment: {self.total_max_investment}")
 
@@ -556,7 +556,7 @@ class TradingThread(threading.Thread):
                         )
 
                         # 디버깅 로깅
-                        self.logger.debug(f"{coin} - 수익률: {current_profit_rate:.2f}%, "
+                        self.logger.debug(f"{market} - 수익률: {current_profit_rate:.2f}%, "
                                         f"should_sell: {should_sell}, "
                                         f"should_average_down: {should_average_down}, "
                                         f"투자금: {current_investment:,}원, "
@@ -565,17 +565,18 @@ class TradingThread(threading.Thread):
                                         f"코인 공포지수: {coin_fear_greed}")
                         
                         if should_sell and not should_average_down:
-                            self.logger.info(f"매도 신호 감지: {coin} - Profit: {current_profit_rate:.2f}%, "
+                            self.logger.info(f"매도 신호 감지: {market} - Profit: {current_profit_rate:.2f}%, "
                                         f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
                             if self.trading_manager.process_sell_signal(
-                                coin=coin,
+                                market=market,
+                                exchange=self.exchange_name,
                                 thread_id=self.thread_id,
                                 signal_strength=signals.get('overall_signal', 0.0),
                                 price=current_price,
                                 strategy_data=signals,
                                 sell_message=signals['sell_reason']
                             ):
-                                self.logger.info(f"매도 신호 처리 완료: {coin}")
+                                self.logger.info(f"매도 신호 처리 완료: {market}")
                         
                         if should_average_down:
                             # 물타기 투자금 계산 (기존 투자금의 50%)
@@ -585,7 +586,7 @@ class TradingThread(threading.Thread):
                             )
                             
                             if signals.get('overall_signal', 0.0) >= thresholds['sell_threshold'] and averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
-                                self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {current_profit_rate:.2f}%")
+                                self.logger.info(f"물타기 신호 감지: {market} - 현재 수익률: {current_profit_rate:.2f}%")
                                 
                                 # 물타기용 전략 데이터 업데이트
                                 signals['investment_amount'] = averaging_down_amount
@@ -593,14 +594,15 @@ class TradingThread(threading.Thread):
                                 signals['existing_trade_id'] = active_trade['_id']
                                 
                                 self.trading_manager.process_buy_signal(
-                                    coin=coin,
+                                    market=market,
+                                    exchange=self.exchange_name,
                                     thread_id=self.thread_id,
                                     signal_strength=0.8,  # 물타기용 신호 강도
                                     price=current_price,
                                     strategy_data=signals,
                                     buy_message="물타기"
                                 )
-                                self.logger.info(f"물타기 주문 처리 완료: {coin} - 추가 투자금액: {averaging_down_amount:,}원")
+                                self.logger.info(f"물타기 주문 처리 완료: {market} - 추가 투자금액: {averaging_down_amount:,}원")
                     
                     else:
                         # MA 대비 가격 확인
@@ -645,30 +647,31 @@ class TradingThread(threading.Thread):
                         if normal_buy_condition or ma_buy_condition:
                             # 전체 투자량의 80% 제한 체크
                             if current_investment >= (self.total_max_investment * 0.8):
-                                self.logger.debug(f"{coin}: 전체 투자 한도(80%) 초과 - 현재 투자: {current_investment:,}원")
+                                self.logger.debug(f"{market}: 전체 투자 한도(80%) 초과 - 현재 투자: {current_investment:,}원")
                                 return
                                 
                             investment_amount = self.trading_strategy.calculate_position_size(
-                                coin, market_condition, trends
+                                market, market_condition, trends
                             )
                             buy_reason = "일반 매수" if normal_buy_condition else "MA 하락세 매수"
                             
                             signals['investment_amount'] = investment_amount
                             
                             self.trading_manager.process_buy_signal(
-                                coin=coin,
+                                market=market,
+                                exchange=self.exchange_name,
                                 thread_id=self.thread_id,
                                 signal_strength=signals.get('overall_signal', 0.0),
                                 price=current_price,
                                 strategy_data=signals,
                                 buy_message=buy_reason
                             )
-                            self.logger.info(f"매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원 ({buy_reason})")
+                            self.logger.info(f"매수 신호 처리 완료: {market} - 투자금액: {investment_amount:,}원 ({buy_reason})")
                         
                         # 최저 신호 대비 반등 매수 전략
                         elif current_investment < (self.total_max_investment * 0.8):  # 80% 제한으로 수정
                             # 기존 최저점 조회
-                            existing_lowest = self.db.strategy_data.find_one({'coin': coin})
+                            existing_lowest = self.db.strategy_data.find_one({'market': market, 'exchange': self.exchange_name})
                             
                             # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때, 현재 가격이 기존 최저가보다 낮을 때 업데이트
                             if (not existing_lowest
@@ -678,7 +681,7 @@ class TradingThread(threading.Thread):
                                       existing_lowest.get('lowest_signal', float('inf')) == 0):
                                 # 최저 신호 정보 업데이트
                                 self.db.strategy_data.update_one(
-                                    {'market': coin, 'exchange': self.exchange_name},
+                                    {'market': market, 'exchange': self.exchange_name},
                                     {
                                         '$set': {
                                             'lowest_signal': signals.get('overall_signal', 0.0),
@@ -688,10 +691,10 @@ class TradingThread(threading.Thread):
                                     },
                                     upsert=True
                                 )
-                                self.logger.debug(f"{coin} - 새로운 최저 신호 기록: {signals.get('overall_signal', 0.0):.4f}")
+                                self.logger.debug(f"{market} - 새로운 최저 신호 기록: {signals.get('overall_signal', 0.0):.4f}")
                         
                         # 최저 신호 정보 조회
-                        lowest_data = self.db.strategy_data.find_one({'coin': coin})
+                        lowest_data = self.db.strategy_data.find_one({'market': market, 'exchange': self.exchange_name})
                         
                         if lowest_data and 'lowest_signal' in lowest_data:
                             signal_increase = ((signals.get('overall_signal', 0.0) - lowest_data['lowest_signal']) 
@@ -713,12 +716,12 @@ class TradingThread(threading.Thread):
                                 
                                 buy_reason = "반등 매수"
                                 investment_amount = self.trading_strategy.calculate_position_size(
-                                    coin, market_condition, trends
+                                    market, market_condition, trends
                                 )
                                 
                                  # 최저 신호 정보 초기화
                                 self.db.strategy_data.update_one(
-                                    {'market': coin, 'exchange': self.exchange_name},
+                                    {'market': market, 'exchange': self.exchange_name},
                                     {
                                         '$set': {
                                             'lowest_signal': 0,
@@ -728,26 +731,27 @@ class TradingThread(threading.Thread):
                                     },
                                     upsert=True
                                 )
-                                self.logger.debug(f"{coin} - 최저 신호 기록 초기화")
+                                self.logger.debug(f"{market} - 최저 신호 기록 초기화")
                                 
                                 signals['investment_amount'] = investment_amount
                                 signals['rebound_buy'] = True
                                 signals['signal_increase'] = signal_increase
                                 
                                 self.trading_manager.process_buy_signal(
-                                    coin=coin,
+                                    market=market,
+                                    exchange=self.exchange_name,
                                     thread_id=self.thread_id,
                                     signal_strength=signals.get('overall_signal', 0.0),  # 반등 매수용 신호 강도
                                     price=current_price,
                                     strategy_data=signals,
                                     buy_message=buy_reason
                                 )
-                                self.logger.info(f"반등 매수 신호 처리 완료: {coin} - 투자금액: {investment_amount:,}원")
+                                self.logger.info(f"반등 매수 신호 처리 완료: {market} - 투자금액: {investment_amount:,}원")
                                 
                                 # 최저 신호 정보 초기화
-                                self.db.strategy_data.delete_one({'coin': coin})
+                                self.db.strategy_data.delete_one({'market': market, 'exchange': self.exchange_name})
                         else:
-                            self.logger.debug(f"매수 조건 미충족: {coin} - Signal: {signals.get('overall_signal')}, Investment: {current_investment}/{self.max_investment}")
+                            self.logger.debug(f"매수 조건 미충족: {market} - Signal: {signals.get('overall_signal')}, Investment: {current_investment}/{self.max_investment}")
 
                 except Exception as e:
                     self.logger.error(f"거래 신호 처리 중 오류 발생: {str(e)}", exc_info=True)
@@ -756,7 +760,7 @@ class TradingThread(threading.Thread):
             self.db.thread_status.update_one(
                 {'thread_id': self.thread_id},
                 {'$set': {
-                    'last_coin': coin,
+                    'last_market': market,
                     'last_update': TimeUtils.get_current_kst(),  
                     'status': 'running',
                     'is_active': True
@@ -764,12 +768,12 @@ class TradingThread(threading.Thread):
                 upsert=True
             )
 
-            self.logger.debug(f"Thread {self.thread_id}: {coin} - 처리 완료")
+            self.logger.debug(f"Thread {self.thread_id}: {market} - 처리 완료")
 
         except Exception as e:
             import traceback
             error_location = traceback.extract_tb(sys.exc_info()[2])[-1]
-            self.logger.error(f"Error processing {coin}: {str(e)} at {error_location.filename}:{error_location.lineno} in {error_location.name}")
+            self.logger.error(f"Error processing {market}: {str(e)} at {error_location.filename}:{error_location.lineno} in {error_location.name}")
 
     def _analyze_market_condition(self, current_afr: float, current_change: float, 
                                 current_fear_greed: float, afr_history: list,
@@ -935,7 +939,7 @@ class TradingThread(threading.Thread):
             self.logger.error(f"추세/변동성 계산 중 오류: {str(e)}")
             return {'trend': 0, 'volatility': 0, 'ma20': None, 'price_vs_ma': 0}
         
-    def _get_market_condition(self, exchange: str, coin: str) -> dict:
+    def _get_market_condition(self, exchange: str, market: str) -> dict:
         """시장 상태 조회"""
         try:
             # 최신 AFR 데이터 조회
@@ -945,13 +949,13 @@ class TradingThread(threading.Thread):
             )
             
             if not market_index:
-                self.logger.warning(f"{coin}: market_index 데이터 없음")
+                self.logger.warning(f"{market}: market_index 데이터 없음")
                 return None
             
             # 필수 필드 존재 확인
             required_fields = ['market_feargreed', 'AFR', 'current_change', 'fear_and_greed']
             if not all(field in market_index for field in required_fields):
-                self.logger.warning(f"{coin}: 필수 필드 누락 - {[f for f in required_fields if f not in market_index]}")
+                self.logger.warning(f"{market}: 필수 필드 누락 - {[f for f in required_fields if f not in market_index]}")
                 return None
             
             # market_feargreed 리스트에서 해당 코인 데이터 찾기
@@ -960,12 +964,12 @@ class TradingThread(threading.Thread):
             
             if isinstance(market_feargreed, list):
                 for item in market_feargreed:
-                    if isinstance(item, dict) and item.get('market') == coin:
+                    if isinstance(item, dict) and item.get('market') == market:
                         coin_fear_greed = item
                         break
                 
             if not coin_fear_greed:
-                self.logger.warning(f"{coin}: fear_greed 데이터 없음")
+                self.logger.warning(f"{market}: fear_greed 데이터 없음")
                 return None
             
             try:
@@ -978,11 +982,11 @@ class TradingThread(threading.Thread):
                     'market_fear_and_greed': float(market_index['fear_and_greed'][-1]) if market_index.get('fear_and_greed') else 50
                 }
             except (IndexError, ValueError, TypeError) as e:
-                self.logger.warning(f"{coin}: 데이터 변환 중 오류 - {str(e)}")
+                self.logger.warning(f"{market}: 데이터 변환 중 오류 - {str(e)}")
                 return None
             
         except Exception as e:
-            self.logger.error(f"시장 상태 조회 중 오류 ({coin}): {str(e)}")
+            self.logger.error(f"시장 상태 조회 중 오류 ({market}): {str(e)}")
             return None
         
         
