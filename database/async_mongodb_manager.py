@@ -81,7 +81,7 @@ class AsyncMongoDBManager:
         return await self.db.thread_status.find_one({'thread_id': thread_id}) 
 
     async def save_strategy_data(self, market: str, exchange: str, strategy_data: Dict[str, Any]) -> bool:
-        """코인별 전략 데이터 저장"""
+        """마켓별 전략 데이터 저장"""
         try:
             document = {
                 'market': market,
@@ -163,7 +163,7 @@ class AsyncMongoDBManager:
                 'market_metrics': {
                     'volume': strategy_data.get('volume', 0),
                     'market_cap': strategy_data.get('market_cap', 0),
-                    'rank': strategy_data.get('coin_rank', 0),
+                    'rank': strategy_data.get('market_rank', 0),
                     'price_change_24h': strategy_data.get('price_change_24h', 0),
                     'volume_change_24h': strategy_data.get('volume_change_24h', 0)
                 },
@@ -178,18 +178,18 @@ class AsyncMongoDBManager:
             success = bool(result.inserted_id)
             
             if success:
-                logging.debug(f"전략 데이터 저장 성공 - 코인: {market}, ID: {result.inserted_id}")
+                logging.debug(f"전략 데이터 저장 성공 - 마켓: {market}, ID: {result.inserted_id}")
             else:
-                logging.warning(f"전략 데이터 저장 실패 - 코인: {market}")
+                logging.warning(f"전략 데이터 저장 실패 - 마켓: {market}")
                 
             return success
 
         except Exception as e:
-            logging.error(f"전략 데이터 저장 실패 - 코인: {market}, 오류: {str(e)}")
+            logging.error(f"전략 데이터 저장 실패 - 마켓: {market}, 오류: {str(e)}")
             return False
 
     async def get_latest_strategy_data(self, market: str, exchange: str) -> Dict:
-        """특정 코인의 최신 전략 데이터 조회"""
+        """특정 마켓의 최신 전략 데이터 조회"""
         try:
             result = await self.strategy_data.find_one(
                 {'market': market, 'exchange': exchange},
@@ -197,5 +197,5 @@ class AsyncMongoDBManager:
             )
             return result or {}
         except Exception as e:
-            logging.error(f"전략 데이터 조회 실패 - 코인: {market}, 오류: {str(e)}")
+            logging.error(f"전략 데이터 조회 실패 - 마켓: {market}, 오류: {str(e)}")
             return {} 

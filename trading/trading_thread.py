@@ -56,14 +56,14 @@ class RecoveryManager:
 
 class TradingThread(threading.Thread):
     """
-    개별 코인 그룹을 처리하는 거래 스레드
-    각 스레드는 할당된 코인들에 대해 독립적으로 거래 분석 및 실행을 담당합니다.
+    개별 마켓 그룹을 처리하는 거래 스레드
+    각 스레드는 할당된 마켓들에 대해 독립적으로 거래 분석 및 실행을 담당합니다.
     """
     def __init__(self, thread_id: int, markets: List[str], db: MongoDBManager, exchange_name: str, config: Dict, shared_locks: Dict, stop_flag: threading.Event, investment_center=None):
         """
         Args:
             thread_id (int): 스레드 식별자
-            markets (List[str]): 처리할 코인 목록
+            markets (List[str]): 처리할 마켓 목록
             db (MongoDBManager): 데이터베이스 인스턴스
             config: 설정 정보가 담긴 딕셔너리
             shared_locks (Dict): 공유 락 딕셔너리
@@ -129,12 +129,12 @@ class TradingThread(threading.Thread):
                 self.total_max_investment = floor(total_max_investment * 0.8)
                 # 스레드당 최대 투자금은 total_max_investment의 10%로 설정
                 self.max_investment = floor(self.total_max_investment * 0.1)
-                # 코인당 투자금은 total_max_investment를 20으로 나눈 값
+                # 마켓당 투자금은 total_max_investment를 20으로 나눈 값
                 self.investment_each = floor(self.total_max_investment / 20)
                 
                 self.logger.info(f"Thread {self.thread_id} 투자 한도 업데이트: "
                                f"최대 투자금: {self.max_investment:,}원, "
-                               f"코인당 투자금: {self.investment_each:,}원")
+                               f"마켓당 투자금: {self.investment_each:,}원")
                 
                 # 현재 활성화된 거래들의 총 투자금액 계산
                 active_trades = self.db.trades.find({"status": "active"})
@@ -180,7 +180,7 @@ class TradingThread(threading.Thread):
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
             
-            self.logger.info(f"Thread {self.thread_id}: 마켓 분석 시작 - {len(self.markets)} 개의 코인")
+            self.logger.info(f"Thread {self.thread_id}: 마켓 분석 시작 - {len(self.markets)} 개의 마켓")
             
             while not self.stop_flag.is_set():
                 cycle_start_time = time.time()
@@ -201,7 +201,7 @@ class TradingThread(threading.Thread):
                         
                     try:
                         # 비동기 함수를 동기적으로 실행
-                        self.loop.run_until_complete(self.process_single_coin(market))
+                        self.loop.run_until_complete(self.process_single_market(market))
                     except Exception as e:
                         import traceback
                         tb = traceback.extract_tb(sys.exc_info()[2])[-1]
@@ -223,8 +223,8 @@ class TradingThread(threading.Thread):
                 self.loop.close()
             self.logger.info(f"Thread {self.thread_id} 정리 작업 완료")
 
-    async def process_single_coin(self, market: str):
-        """단일 코인 처리"""
+    async def process_single_market(self, market: str):
+        """단일 마켓 처리"""
         try:
             # 시장 상태 조회 
             market_condition = self._get_market_condition(exchange=self.investment_center.exchange_name, market=market)
@@ -238,7 +238,7 @@ class TradingThread(threading.Thread):
                 return
 
             current_fear_greed = None
-            coin_fear_greed = None
+            market_fear_greed = None
             
             # 시장 상태 분석
             try:
@@ -257,7 +257,7 @@ class TradingThread(threading.Thread):
                     
                 market_condition.update(analyzed_market)
                 current_fear_greed = market_condition['market_fear_and_greed']
-                coin_fear_greed = market_condition['feargreed']
+                market_fear_greed = market_condition['feargreed']
             except Exception as e:
                 self.logger.error(f"{market}: 시장 분석 중 오류 - {str(e)}")
                 return
@@ -375,7 +375,7 @@ class TradingThread(threading.Thread):
             # 분석 결과 저장 및 거래 신호 처리
             with self.shared_locks['trade']:
                 try:
-                    # 현재 코인의 활성 거래 확인 및 로깅
+                    # 현재 마켓의 활성 거래 확인 및 로깅
                     active_trade = self.db.trades.find_one({
                         'market': market,
                         'exchange': self.exchange_name,
@@ -397,14 +397,14 @@ class TradingThread(threading.Thread):
                         # 시장 상황에 따른 동적 임계값 조정
                         market_risk = market_condition['risk_level']
                         
-                        # 코인별 공포탐욕지수에 따른 수익 실현 임계값 조정
+                        # 마켓별 공포탐욕지수에 따른 수익 실현 임계값 조정
                         base_profit = 0.15  # 기본 수익률 0.15%
                         
-                        if coin_fear_greed >= 65:  # 극도의 탐욕
+                        if market_fear_greed >= 65:  # 극도의 탐욕
                             profit_threshold = base_profit + 0.3  # 0.45%
-                        elif 65 > coin_fear_greed >= 55:  # 탐욕
+                        elif 65 > market_fear_greed >= 55:  # 탐욕
                             profit_threshold = base_profit + 0.2  # 0.35%
-                        elif 55 > coin_fear_greed >= 45:  # 약한 공포
+                        elif 55 > market_fear_greed >= 45:  # 약한 공포
                             profit_threshold = base_profit + 0.1  # 0.25%
                         else:  # 중립 또는 공포
                             profit_threshold = base_profit  # 0.15%
@@ -457,7 +457,7 @@ class TradingThread(threading.Thread):
                         market_condition_sell = (
                             current_profit_rate > profit_threshold and (
                                 market_condition['AFR'] < -0.2 or  # AFR 하락 즉시
-                                (current_fear_greed < 25 and coin_fear_greed < 30)  # 공포 지수 급락 시
+                                (current_fear_greed < 25 and market_fear_greed < 30)  # 공포 지수 급락 시
                             )
                         )
 
@@ -531,7 +531,7 @@ class TradingThread(threading.Thread):
                             
                             # 시장 상태 확인
                             market_condition['risk_level'] < 0.7 and  # 시장 위험도가 높지 않을 때
-                            coin_fear_greed > 20 and  # 극도의 공포 상태가 아닐 때
+                            market_fear_greed > 20 and  # 극도의 공포 상태가 아닐 때
                             
                             # 시간대별 추세 확인
                             (
@@ -562,7 +562,7 @@ class TradingThread(threading.Thread):
                                         f"투자금: {current_investment:,}원, "
                                         f"물타기 횟수: {averaging_down_count}, "
                                         f"시장 위험도: {market_condition['risk_level']}, "
-                                        f"코인 공포지수: {coin_fear_greed}")
+                                        f"마켓 공포지수: {market_fear_greed}")
                         
                         if should_sell and not should_average_down:
                             self.logger.info(f"매도 신호 감지: {market} - Profit: {current_profit_rate:.2f}%, "
@@ -620,12 +620,12 @@ class TradingThread(threading.Thread):
                         else:  # 중립 상태
                             threshold_multiplier = 1.0  # 기준 유지
                         
-                        # 코인별 공포탐욕지수에 따른 추가 조정
-                        if coin_fear_greed <= 30:  # 극도의 공포
+                        # 마켓별 공포탐욕지수에 따른 추가 조정
+                        if market_fear_greed <= 30:  # 극도의 공포
                             threshold_multiplier += 0.1  # 추가 10% 상향
-                        elif coin_fear_greed <= 45:  # 공포
+                        elif market_fear_greed <= 45:  # 공포
                             threshold_multiplier += 0.05  # 추가 5% 상향
-                        elif coin_fear_greed >= 61:  # 극도의 탐욕
+                        elif market_fear_greed >= 61:  # 극도의 탐욕
                             threshold_multiplier -= 0.15  # 10% 하향
                         
                         adjusted_threshold = base_threshold * threshold_multiplier
@@ -958,25 +958,25 @@ class TradingThread(threading.Thread):
                 self.logger.warning(f"{market}: 필수 필드 누락 - {[f for f in required_fields if f not in market_index]}")
                 return None
             
-            # market_feargreed 리스트에서 해당 코인 데이터 찾기
-            coin_fear_greed = None
+            # market_feargreed 리스트에서 해당 마켓 데이터 찾기
+            market_fear_greed = None
             market_feargreed = market_index.get('market_feargreed', [])
             
             if isinstance(market_feargreed, list):
                 for item in market_feargreed:
                     if isinstance(item, dict) and item.get('market') == market:
-                        coin_fear_greed = item
+                        market_fear_greed = item
                         break
                 
-            if not coin_fear_greed:
+            if not market_fear_greed:
                 self.logger.warning(f"{market}: fear_greed 데이터 없음")
                 return None
             
             try:
                 return {
-                    'feargreed': float(coin_fear_greed.get('feargreed', 50)),
-                    'state': str(coin_fear_greed.get('state', '중립')),
-                    'timestamp': coin_fear_greed.get('timestamp'),
+                    'feargreed': float(market_fear_greed.get('feargreed', 50)),
+                    'state': str(market_fear_greed.get('state', '중립')),
+                    'timestamp': market_fear_greed.get('timestamp'),
                     'AFR': float(market_index['AFR'][-1]) if market_index.get('AFR') else None,
                     'current_change': float(market_index['current_change'][-1]) if market_index.get('current_change') else None,
                     'market_fear_and_greed': float(market_index['fear_and_greed'][-1]) if market_index.get('fear_and_greed') else 50

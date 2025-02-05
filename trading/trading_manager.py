@@ -191,7 +191,7 @@ class TradingManager:
             # 활성 거래 조회
             active_trades = self.get_active_trades()
             
-            # 해당 코인의 활성 거래 찾기
+            # 해당 마켓의 활성 거래 찾기
             active_trade = next((trade for trade in active_trades 
                                if trade['market'] == market and trade['exchange'] == exchange), None)
 
@@ -303,7 +303,7 @@ class TradingManager:
                 # 포트폴리오 업데이트
                 portfolio = self.db.get_portfolio(exchange)
                 
-                # market_list에서 판매된 코인 제거
+                # market_list에서 판매된 마켓 제거
                 if market in portfolio.get('market_list', {}):
                     del portfolio['market_list'][market]
                 
@@ -502,7 +502,7 @@ class TradingManager:
                     
                     # 차트 크기와 위치 조정
                     pie_chart.set_title({
-                        'name': '코인별 투자 비중',
+                        'name': '마켓별 투자 비중',
                         'name_font': {'size': 12, 'bold': True},
                         'overlay': False
                     })
@@ -595,7 +595,7 @@ class TradingManager:
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
                 f"📊 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
                 f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
-                f"🔢 보유 코인: {len(active_trades)}개\n"
+                f"🔢 보유 마켓: {len(active_trades)}개\n"
             )
             
             message = "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + portfolio_summary + "\n" + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -710,7 +710,7 @@ class TradingManager:
 
         # 기타 전략 결과들 추가
         for key, value in strategy_data.items():
-            if key not in ['rsi', 'stochastic_k', 'stochastic_d', 'coin_rank'] and '_signal' in key:
+            if key not in ['rsi', 'stochastic_k', 'stochastic_d', 'market_rank'] and '_signal' in key:
                 strategy_name = key.replace('_signal', '').upper()
                 message += f" {strategy_name}: [{value:.1f}]\n"
 
@@ -760,7 +760,7 @@ class TradingManager:
 
         # 기타 전략 결과들 추가
         for key, value in current_strategy_data.items():
-            if key not in ['rsi', 'stochastic_k', 'stochastic_d', 'coin_rank'] and '_signal' in key:
+            if key not in ['rsi', 'stochastic_k', 'stochastic_d', 'market_rank'] and '_signal' in key:
                 strategy_name = key.replace('_signal', '').upper()
                 message += f" {strategy_name}: [{value:.1f}]\n"
 
@@ -781,8 +781,8 @@ class TradingManager:
         """시간별 리포트 생성
         
         매 시간 정각에 실행되며 현재 보유 포지션과 투자 현황을 보고합니다.
-        - 현재 보유 코인 목록
-        - 각 코인별 매수 시간과 임계값
+        - 현재 보유 마켓 목록
+        - 각 마켓별 매수 시간과 임계값
         - 총 투자금액
         """
         try:
@@ -806,7 +806,7 @@ class TradingManager:
                 self.logger.warning("포트폴리오 정보를 찾을 수 없습니다")
                 return
             
-            # 각 코인별 상세 정보
+            # 각 마켓별 상세 정보
             for trade in active_trades:
                 # timestamp를 KST로 변환
                 trade_time = TimeUtils.from_mongo_date(trade['timestamp'])
@@ -833,8 +833,8 @@ class TradingManager:
                 total_investment += investment_amount
                 total_current_value += (investment_amount + profit_amount)
                 
-                coin_info = (
-                    f"• {trade['coin']}\n"
+                market_info = (
+                    f"• {trade['market']}\n"
                     f"  └ RANK: {trade['thread_id']:,}\n"
                     f"  └ 매수가: ₩{trade['price']:,}\n"
                     f"  └ 현재가: ₩{current_price:,}\n"
@@ -844,7 +844,7 @@ class TradingManager:
                     f"  └ 매수 임계값: {trade['strategy_data'].get('overall_signal', 'N/A')}\n"
                     f"  └ 투자금액: ₩{investment_amount:,}\n"
                 )
-                message += coin_info + "\n"
+                message += market_info + "\n"
                 time.sleep(0.2)
             
             # 전체 포트폴리오 수익률
@@ -871,9 +871,9 @@ class TradingManager:
                 f"💰 초기 투자금: ₩{initial_investment:,}\n"
                 f"💰 현재 투자금: ₩{total_max_investment:,}\n"
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
-                f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
+                f"📊 보유 마켓 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
                 f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
-                f"🔢 보유 코인: {len(active_trades)}개\n"
+                f"🔢 보유 마켓: {len(active_trades)}개\n"
             )
             
             message = portfolio_summary + "\n" + message + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -887,8 +887,8 @@ class TradingManager:
                 f"💰 총 투자금액: ₩{portfolio.get('investment_amount', 0):,.0f}\n"
                 f"💵 사용 가능 금액: ₩{portfolio.get('available_investment', 0):,.0f}\n"
                 f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
-                f"📊 보유 코인 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
-                f"🔢 보유 코인: {len(active_trades)}개\n\n"
+                f"📊 보유 마켓 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
+                f"🔢 보유 마켓: {len(active_trades)}개\n\n"
             )
             
             # Slack으로 메시지 전송
@@ -904,7 +904,7 @@ class TradingManager:
         """전략 분석 결과 업데이트
         
         Args:
-            coin: 코인 정보
+            market: 마켓 정보
             price: 현재 가격
             strategy_results: 전략 분석 결과
         """
@@ -924,7 +924,7 @@ class TradingManager:
             # 전략 데이터 구성
             strategy_data = {
                 'exchange': exchange, # 거래소 이름
-                'market': market, # 코인 이름
+                'market': market, # 마켓 이름
                 'current_price': price, # 현재 가격
                 'timestamp': TimeUtils.get_current_kst(),  # KST 시간
                 'price':  price, # 매수 가격
@@ -944,7 +944,7 @@ class TradingManager:
             # MongoDB에 전략 데이터 저장 (upsert 사용)
             try:
                 result = self.db.strategy_data.update_one(
-                    {'market': market}, # 코인 이름으로 조회
+                    {'market': market}, # 마켓 이름으로 조회
                     {'$set': strategy_data}, # 전략 데이터 업데이트
                     upsert=True # 데이터가 없으면 생성
                 )
@@ -1068,7 +1068,7 @@ class TradingManager:
         """사용자 매수 주문
         
         Args:
-            market: 코인명
+            market: 마켓명
             price: 주문 가격
             immediate: 즉시 체결 여부
             
@@ -1078,7 +1078,7 @@ class TradingManager:
         try:
             # 테스트 모드 확인
             is_test = self.config.get('test_mode', True)
-            self.logger.info(f"매수 주문 시작 - 코인: {market}, 가격: {price:,}, 즉시체결: {immediate}")
+            self.logger.info(f"매수 주문 시작 - 마켓: {market}, 가격: {price:,}, 즉시체결: {immediate}")
             
             # 전략/시장 데이터 조회
             strategy_data = await self.db.get_collection('strategy_data').find_one({'market': market, 'exchange': exchange})
@@ -1128,7 +1128,7 @@ class TradingManager:
         """사용자 매도 주문
         
         Args:
-            coin: 코인명
+            market: 마켓명
             price: 주문 가격
             immediate: 즉시 체결 여부
             
@@ -1138,7 +1138,7 @@ class TradingManager:
         try:
             # 테스트 모드 확인
             is_test = self.config.get('test_mode', True)
-            self.logger.info(f"매도 주문 시작 - 코인: {market}, 가격: {price:,}, 즉시체결: {immediate}")
+            self.logger.info(f"매도 주문 시작 - 마켓: {market}, 가격: {price:,}, 즉시체결: {immediate}")
             
             # 활성 거래 확인
             active_trade = await self.db.get_collection('trades').find_one({
@@ -1148,7 +1148,7 @@ class TradingManager:
             })
             
             if not active_trade:
-                return {'success': False, 'message': '해당 코인의 활성 거래가 없습니다'}
+                return {'success': False, 'message': '해당 마켓의 활성 거래가 없습니다'}
             
             # 주문 데이터 생성
             order_data = {

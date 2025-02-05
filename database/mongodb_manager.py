@@ -522,11 +522,11 @@ class MongoDBManager:
     # 시장 데이터 관련 메서드
     def update_market_data(self, exchange: str, market: str, market_data: Dict[str, Any]) -> bool:
         """
-        특정 코인의 시장 데이터를 업데이트합니다.
+        특정 마켓의 시장 데이터를 업데이트합니다.
         
         Args:
             exchange: 거래소 이름
-            market: 코인 식별자
+            market: 마켓 식별자
             market_data: 업데이트할 시장 데이터
             
         Returns:
@@ -622,7 +622,7 @@ class MongoDBManager:
             logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
 
     def save_strategy_data(self, market: str, exchange: str, strategy_data: Dict[str, Any]) -> bool:
-        """코인별 전략 데이터 저장
+        """마켓별 전략 데이터 저장
 
         Args:
             market: 마켓 심볼
@@ -714,7 +714,7 @@ class MongoDBManager:
                     'market_metrics': {
                         'volume': strategy_data.get('volume', 0),
                         'market_cap': strategy_data.get('market_cap', 0),
-                        'rank': strategy_data.get('coin_rank', 0),
+                        'rank': strategy_data.get('market_rank', 0),
                         'price_change_24h': strategy_data.get('price_change_24h', 0),
                         'volume_change_24h': strategy_data.get('volume_change_24h', 0)
                     },
@@ -752,7 +752,7 @@ class MongoDBManager:
                 return False
 
     def get_latest_strategy_data(self, market: str, exchange: str) -> Dict:
-        """특정 코인의 최신 전략 데이터 조회
+        """특정 마켓의 최신 전략 데이터 조회
 
         Args:
             market: 마켓 심볼

@@ -88,11 +88,11 @@ async def test_candle_data():
         config['api_keys']['upbit']['secret_key']
     )
     
-    # 테스트할 코인
+    # 테스트할 마켓
     test_coins = ['KRW-BTC', 'KRW-ETH', 'KRW-XRP']
     
     for coin in test_coins:
-        logger.info(f"\n{'='*50}\n테스트 코인: {coin}\n{'='*50}")
+        logger.info(f"\n{'='*50}\n테스트 마켓: {coin}\n{'='*50}")
         
         try:
             # 캔들 데이터 조회

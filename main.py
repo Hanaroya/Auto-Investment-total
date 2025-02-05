@@ -75,7 +75,7 @@ class CryptoTradingBot:
                 minute=0
             )
             
-            # 코인 목록 재분배 - 4시간마다 실행 (00:00, 04:00, 08:00, 12:00, 16:00, 20:00)
+            # 마켓 목록 재분배 - 4시간마다 실행 (00:00, 04:00, 08:00, 12:00, 16:00, 20:00)
             self.scheduler.schedule_task(
                 'market_redistribution',
                 self.investment_center.thread_manager.update_market_distribution,

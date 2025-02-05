@@ -40,7 +40,7 @@ class SchedulerThread(threading.Thread):
 class ThreadManager:
     """
     여러 거래 스레드를 관리하는 매니저 클래스
-    코인 목록을 여러 스레드로 분할하여 병렬 처리를 관리합니다.
+    마켓 목록을 여러 스레드로 분할하여 병렬 처리를 관리합니다.
     """
     
     def __init__(self, config: Dict, investment_center=None):
@@ -292,8 +292,8 @@ class ThreadManager:
                 group = sorted_markets[start_idx:end_idx]
                 market_groups.append(group)
                 
-                # 각 그룹의 첫 번째 코인 로깅
-                self.logger.debug(f"Thread {i}에 할당된 첫 번째 코인: {group[0] if group else 'None'}")   
+                # 각 그룹의 첫 번째 마켓 로깅
+                self.logger.debug(f"Thread {i}에 할당된 첫 번째 마켓: {group[0] if group else 'None'}")   
             
             return market_groups
             
@@ -366,14 +366,14 @@ class ThreadManager:
             self.logger.error(f"스케줄러 스레드 시작 실패: {str(e)}")
 
     def update_market_distribution(self, exchange: str):
-        """4시간마다 코인 목록을 재조회하고 스레드에 재분배"""
+        """4시간마다 마켓 목록을 재조회하고 스레드에 재분배"""
         try:
             # 현재 시간이 4시간 간격인지 확인
             current_hour = TimeUtils.get_current_kst().hour
             if current_hour % 4 != 0:
                 return
                 
-            self.logger.info("코인 목록 재분배 시작")
+            self.logger.info("마켓 목록 재분배 시작")
             
             # UpbitCall 인스턴스 생성
             upbit = UpbitCall(
@@ -394,15 +394,15 @@ class ThreadManager:
             for i, thread in enumerate(self.threads):
                 if i < len(market_groups):
                     thread.markets = market_groups[i]
-                    self.logger.info(f"Thread {i}: {len(market_groups[i])} 개의 코인 재할당")
+                    self.logger.info(f"Thread {i}: {len(market_groups[i])} 개의 마켓 재할당")
                     # 첫 번째 거래항목 로깅
                     if market_groups[i]:
-                        self.logger.debug(f"Thread {i}의 첫 번째 코인: {market_groups[i][0]}")
+                        self.logger.debug(f"Thread {i}의 첫 번째 마켓: {market_groups[i][0]}")
                     
-            self.logger.info("코인 목록 재분배 완료")
+            self.logger.info("마켓 목록 재분배 완료")
             
         except Exception as e:
-            self.logger.error(f"코인 목록 재분배 중 오류: {str(e)}")
+            self.logger.error(f"마켓 목록 재분배 중 오류: {str(e)}")
 
     async def watch_orders(self):
         """주문 감시 스레드"""

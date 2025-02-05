@@ -201,7 +201,7 @@ class UpbitCall:
                 reverse=True
             )
             
-            # 코인 이름만 추출
+            # 마켓 이름만 추출
             return [
                 market['code'].replace("CRIX.UPBIT.", '')
                 for market in sorted_markets
@@ -698,7 +698,7 @@ class UpbitCall:
                 'AFR': float,  # 현재 AFR 값
                 'current_change': float,  # 현재 변화율
                 'fear_and_greed': float,  # 현재 공포/탐욕 지수
-                'market_feargreed': List[Dict[str, Any]]  # 코인별 공포/탐욕 데이터
+                'market_feargreed': List[Dict[str, Any]]  # 마켓별 공포/탐욕 데이터
             }
         """
         try:
@@ -784,7 +784,7 @@ class UpbitCall:
                     rows_processed = 0
                     for row in rows:
                         try:
-                            # 코인 코드 (div.code의 부모 div.currency 내부에서 찾기)
+                            # 마켓 코드 (div.code의 부모 div.currency 내부에서 찾기)
                             currency_div = row.find_element(By.CSS_SELECTOR, "div.currency")
                             code_div = currency_div.find_element(By.CSS_SELECTOR, "div.code")
                             name_div = currency_div.find_element(By.CSS_SELECTOR, "div.name")
