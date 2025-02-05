@@ -611,7 +611,7 @@ class TradingThread(threading.Thread):
                         
                         # 전체 시장 상태에 따른 임계값 조정
                         if market_fg <= 45:  # 공포 상태
-                            threshold_multiplier = 1.1  # 기준 10% 상향
+                            threshold_multiplier = 1.05  # 기준 5% 상향
                         elif market_fg >= 55:  # 탐욕 상태
                             threshold_multiplier = 0.95  # 기준 5% 하향
                         else:  # 중립 상태
@@ -619,11 +619,11 @@ class TradingThread(threading.Thread):
                         
                         # 코인별 공포탐욕지수에 따른 추가 조정
                         if coin_fear_greed <= 30:  # 극도의 공포
-                            threshold_multiplier += 0.15  # 추가 15% 상향
-                        elif coin_fear_greed <= 45:  # 공포
                             threshold_multiplier += 0.1  # 추가 10% 상향
+                        elif coin_fear_greed <= 45:  # 공포
+                            threshold_multiplier += 0.05  # 추가 5% 상향
                         elif coin_fear_greed >= 61:  # 극도의 탐욕
-                            threshold_multiplier -= 0.1  # 10% 하향
+                            threshold_multiplier -= 0.15  # 10% 하향
                         
                         adjusted_threshold = base_threshold * threshold_multiplier
                         
