@@ -101,7 +101,7 @@ class TradingThread(threading.Thread):
         self.trading_strategy = TradingStrategy(config, self.total_max_investment)
         
         self.db.portfolio.update_one(
-                    {'_id': 'main'},
+                    {'exchange': self.exchange_name},
                     {'$set': {
                         'investment_amount': system_config.get('total_max_investment', 1000000),
                         'available_investment': floor(self.total_max_investment * 0.8),
@@ -141,14 +141,14 @@ class TradingThread(threading.Thread):
                 total_invested = sum(trade.get('investment_amount', 0) for trade in active_trades)
                 
                 # 기존 포트폴리오 정보 가져오기
-                existing_portfolio = self.db.portfolio.find_one({'_id': 'main'})
+                existing_portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
                 if existing_portfolio:
                     # 기존 profit_earned 값 보존
                     profit_earned = existing_portfolio.get('profit_earned', 0)
                     
                     # portfolio 컬렉션 업데이트 (기존 값 유지하면서 필요한 부분만 업데이트)
                     self.db.portfolio.update_one(
-                        {'_id': 'main'},
+                        {'exchange': self.exchange_name},
                         {'$set': {
                             'current_amount': floor(self.total_max_investment - total_invested),
                             'last_updated': TimeUtils.get_current_kst()  
@@ -158,7 +158,7 @@ class TradingThread(threading.Thread):
                 else:
                     # 포트폴리오가 없는 경우에만 전체 초기화
                     self.db.portfolio.update_one(
-                        {'_id': 'main'},
+                        {'exchange': self.exchange_name},
                         {'$set': {
                             'investment_amount': floor(total_max_investment),
                             'available_investment': self.total_max_investment,

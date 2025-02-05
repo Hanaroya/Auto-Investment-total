@@ -801,7 +801,7 @@ class TradingManager:
             }))
             
             # 포트폴리오 정보 조회
-            portfolio = self.db.get_sync_collection('portfolio').find_one({'_id': 'main'})
+            portfolio = self.db.get_sync_collection('portfolio').find_one({'exchange': exchange})
             if not portfolio:
                 self.logger.warning("포트폴리오 정보를 찾을 수 없습니다")
                 return

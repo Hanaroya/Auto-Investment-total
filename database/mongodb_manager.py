@@ -370,10 +370,9 @@ class MongoDBManager:
         """
         try:
             # 기존 포트폴리오 확인
-            existing_portfolio = self.portfolio.find_one({'_id': 'main'})
+            existing_portfolio = self.portfolio.find_one({'exchange': exchange_name})
             if not existing_portfolio:
                 initial_portfolio = {
-                    '_id': 'main',
                     'market_list': {},
                     'exchange': exchange_name,
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
@@ -423,7 +422,7 @@ class MongoDBManager:
             try:
                 update_data['last_updated'] = TimeUtils.get_current_kst()
                 result = self.portfolio.update_one(
-                    {'_id': 'main'},
+                    {'exchange': update_data['exchange']},
                     {'$set': update_data},
                     upsert=True
                 )
@@ -436,12 +435,11 @@ class MongoDBManager:
         """현재 포트폴리오 조회 및 없으면 생성"""
         try:
             # 포트폴리오 조회
-            portfolio = self.db.portfolio.find_one({'_id': 'main'})
+            portfolio = self.db.portfolio.find_one({'exchange': exchange_name})
             
             # 포트폴리오가 없으면 새로 생성
             if not portfolio:
                 portfolio = {
-                    '_id': 'main',
                     'market_list': {},
                     'exchange': exchange_name,
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
@@ -800,7 +798,6 @@ class MongoDBManager:
                 # portfolio 컬렉션 재생성 및 초기 데이터 설정
                 self.portfolio = self.db['portfolio']
                 initial_portfolio = {
-                    '_id': 'main',
                     'market_list': {},
                     'exchange': exchange,
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),

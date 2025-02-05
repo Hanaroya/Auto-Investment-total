@@ -150,7 +150,7 @@ class ThreadManager:
             
             # add profit earn to system_config's total_max_investment
             current_config = self.db.system_config.find_one({'_id': 'config'})
-            portfolio = self.db.portfolio.find_one({'_id': 'main'})
+            portfolio = self.db.portfolio.find_one({'exchange': self.investment_center.exchange_name})
             if current_config and portfolio:
                 total_profit = portfolio.get('profit_earned', 0)
                 new_total_investment = current_config.get('total_max_investment', 0) + total_profit
@@ -159,7 +159,7 @@ class ThreadManager:
                     {'$set': {'total_max_investment': new_total_investment}}
                 )
                 self.db.portfolio.update_one(
-                    {'_id': 'main'},
+                    {'exchange': self.investment_center.exchange_name},
                     {'$set': {
                         'exchange': self.investment_center.exchange_name,
                         'investment_amount': floor(new_total_investment),
