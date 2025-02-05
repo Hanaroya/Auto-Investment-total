@@ -608,31 +608,31 @@ class TradingThread(threading.Thread):
                         # MA 대비 가격 확인
                         price_below_ma = -15 < trends['240m']['price_vs_ma'] <= -8 if trends['240m'].get('ma20') else False
                         
-                         # 매수 임계값 동적 조정
-                        market_fg = market_condition['market_fear_and_greed']
-                        base_threshold = thresholds['buy_threshold']
+                        #  # 매수 임계값 동적 조정
+                        # market_fg = market_condition['market_fear_and_greed']
+                        # base_threshold = thresholds['buy_threshold']
                         
-                        # 전체 시장 상태에 따른 임계값 조정
-                        if market_fg <= 45:  # 공포 상태
-                            threshold_multiplier = 1.05  # 기준 5% 상향
-                        elif market_fg >= 55:  # 탐욕 상태
-                            threshold_multiplier = 0.95  # 기준 5% 하향
-                        else:  # 중립 상태
-                            threshold_multiplier = 1.0  # 기준 유지
+                        # # 전체 시장 상태에 따른 임계값 조정
+                        # if market_fg <= 45:  # 공포 상태
+                        #     threshold_multiplier = 1.05  # 기준 5% 상향
+                        # elif market_fg >= 55:  # 탐욕 상태
+                        #     threshold_multiplier = 0.95  # 기준 5% 하향
+                        # else:  # 중립 상태
+                        #     threshold_multiplier = 1.0  # 기준 유지
                         
-                        # 마켓별 공포탐욕지수에 따른 추가 조정
-                        if market_fear_greed <= 30:  # 극도의 공포
-                            threshold_multiplier += 0.1  # 추가 10% 상향
-                        elif market_fear_greed <= 45:  # 공포
-                            threshold_multiplier += 0.05  # 추가 5% 상향
-                        elif market_fear_greed >= 61:  # 극도의 탐욕
-                            threshold_multiplier -= 0.15  # 10% 하향
+                        # # 마켓별 공포탐욕지수에 따른 추가 조정
+                        # if market_fear_greed <= 30:  # 극도의 공포
+                        #     threshold_multiplier += 0.1  # 추가 10% 상향
+                        # elif market_fear_greed <= 45:  # 공포
+                        #     threshold_multiplier += 0.05  # 추가 5% 상향
+                        # elif market_fear_greed >= 61:  # 극도의 탐욕
+                        #     threshold_multiplier -= 0.15  # 10% 하향
                         
-                        adjusted_threshold = base_threshold * threshold_multiplier
+                        # adjusted_threshold = base_threshold * threshold_multiplier
                         
                         # 1. 일반 매수 신호 처리 (상승세)
                         normal_buy_condition = (
-                            signals.get('overall_signal', 0.0) >= adjusted_threshold and
+                            signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] and
                             current_investment < self.max_investment 
                         )
                         
