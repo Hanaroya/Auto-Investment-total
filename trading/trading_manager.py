@@ -37,7 +37,7 @@ class TradingManager:
             self.logger.error(f"설정 파일 로드 실패: {str(e)}")
             return {}
 
-    def process_buy_signal(self, coin: str, thread_id: int, signal_strength: float, 
+    def process_buy_signal(self, market: str, exchange: str, thread_id: int, signal_strength: float, 
                                price: float, strategy_data: Dict, buy_message: str = None):
         """매수 신호 처리"""
         try:
@@ -67,27 +67,28 @@ class TradingManager:
             existing_trade = None
             if is_averaging_down:
                 existing_trade = self.db.trades.find_one({
-                    'coin': coin,
+                    'market': market,
+                    'exchange': exchange,
                     'status': 'active'
                 })
-                self.logger.info(f"물타기 신호 감지: {coin} - 현재 수익률: {existing_trade.get('profit_rate', 0):.2f}%")
+                self.logger.info(f"물타기 신호 감지: {market} - 현재 수익률: {existing_trade.get('profit_rate', 0):.2f}%")
 
             order_result = None
             if not is_test:
                 # 실제 매수 주문 실행
                 order_result = self.upbit.place_order(
-                    market=coin,
+                    market=market,
                     side='bid',
                     price=price,
                     volume=actual_investment / price
                 )
 
                 if not order_result:
-                    self.logger.error(f"매수 주문 실패: {coin}")
+                    self.logger.error(f"매수 주문 실패: {market}")
                     return False
             else:
                 # 테스트 모드 로그
-                self.logger.info(f"[TEST MODE] 가상 매수 신호 처리: {coin} @ {price:,}원 (수수료: {fee_amount:,.0f}원)")
+                self.logger.info(f"[TEST MODE] 가상 매수 신호 처리: {market} @ {price:,}원 (수수료: {fee_amount:,.0f}원)")
                 order_result = {
                     'uuid': f'test_buy_{kst_now.timestamp()}',
                     'executed_volume': actual_investment / price,  # 수수료를 제외한 수량
@@ -123,7 +124,8 @@ class TradingManager:
             else:
                 # 새로운 거래 데이터 생성
                 trade_data = {
-                    'coin': coin,
+                    'market': market,
+                    'exchange': exchange,
                     'type': 'buy',
                     'price': price,
                     'buy_signal': signal_strength,
@@ -159,9 +161,9 @@ class TradingManager:
             
             # 포트폴리오 업데이트
             if order_result:
-                portfolio = self.db.get_portfolio()
+                portfolio = self.db.get_portfolio(exchange)
                 
-                portfolio['coin_list'][coin] = {
+                portfolio['market_list'][market] = {
                     'amount': trade_data['executed_volume'],
                     'price': trade_data['price'],
                     'timestamp': kst_now
@@ -299,11 +301,11 @@ class TradingManager:
 
             if order_result:
                 # 포트폴리오 업데이트
-                portfolio = self.db.get_portfolio()
+                portfolio = self.db.get_portfolio(exchange)
                 
-                # coin_list에서 판매된 코인 제거
-                if market in portfolio.get('coin_list', {}):
-                    del portfolio['coin_list'][market]
+                # market_list에서 판매된 코인 제거
+                if market in portfolio.get('market_list', {}):
+                    del portfolio['market_list'][market]
                 
                 # 가용 투자금액과 현재 금액 업데이트
                 current_amount = portfolio['current_amount']
@@ -334,7 +336,7 @@ class TradingManager:
             self.logger.error(f"Error in process_sell_signal: {e}")
             return False
 
-    def generate_daily_report(self):
+    def generate_daily_report(self, exchange: str):
         """일일 리포트 생성
         
         Note:
@@ -348,7 +350,7 @@ class TradingManager:
             )
             kst_tomorrow = kst_today + timedelta(days=1)
 
-            portfolio = self.db.get_portfolio()
+            portfolio = self.db.get_portfolio(exchange)
         
             # 거래 내역 조회
             trading_history = list(self.db.trading_history.find({
@@ -433,7 +435,7 @@ class TradingManager:
                     
                     # 보유 현황 데이터 가공
                     holdings_display = pd.DataFrame({
-                        '코인': holdings_df['coin'],
+                        '거래종목': holdings_df['market'],
                         'RANK': holdings_df['thread_id'],
                         '매수시간': pd.to_datetime(holdings_df['timestamp']).apply(
                             lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
@@ -599,7 +601,7 @@ class TradingManager:
             message = "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n" + portfolio_summary + "\n" + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # 포트폴리오 정보 추가
-            portfolio = self.db.get_portfolio()
+            portfolio = self.db.get_portfolio(exchange_name=exchange)
             
             # 포트폴리오 정보 업데이트
             portfolio_update = {
@@ -607,11 +609,11 @@ class TradingManager:
                 'investment_amount': total_max_investment + total_profit_amount,
                 'profit_earned': 0,
                 'last_updated': TimeUtils.get_current_kst(),
-                'coin_list': {
-                    trade['coin']: {
+                'market_list': {
+                    trade['market']: {
                         'amount': trade.get('executed_volume', 0),
                         'price': trade.get('price', 0),
-                        'current_price': self.upbit.get_current_price(trade['coin']),
+                        'current_price': self.upbit.get_current_price(trade['market']),
                         'investment_amount': trade.get('investment_amount', 0)
                     } for trade in active_trades
                 }
@@ -775,7 +777,7 @@ class TradingManager:
         message += "\n------------------------------------------------"
         return message
 
-    def generate_hourly_report(self):
+    def generate_hourly_report(self, exchange: str):
         """시간별 리포트 생성
         
         매 시간 정각에 실행되며 현재 보유 포지션과 투자 현황을 보고합니다.
@@ -877,7 +879,7 @@ class TradingManager:
             message = portfolio_summary + "\n" + message + "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             # 포트폴리오 정보 추가
-            portfolio = self.db.get_portfolio()
+            portfolio = self.db.get_portfolio(exchange)
             
             message += (
                 f"\n📊 포트폴리오 현황\n"
@@ -898,7 +900,7 @@ class TradingManager:
             self.logger.error(f"시간별 리포트 생성 중 오류 발생: {e}")
             raise
 
-    def update_strategy_data(self, coin: str, thread_id: int, price: float, strategy_results: Dict):
+    def update_strategy_data(self, market: str, exchange: str, thread_id: int, price: float, strategy_results: Dict):
         """전략 분석 결과 업데이트
         
         Args:
@@ -908,21 +910,21 @@ class TradingManager:
         """
         try:
             # 입력값 로깅
-            self.logger.debug(f"{coin} - 입력된 전략 결과: {strategy_results}")
+            self.logger.debug(f"{market} - 입력된 전략 결과: {strategy_results}")
             
             # 전략 결과 검증
             if not isinstance(strategy_results, dict):
-                self.logger.error(f"{coin} - 유효하지 않은 전략 결과 형식: {type(strategy_results)}")
+                self.logger.error(f"{market} - 유효하지 않은 전략 결과 형식: {type(strategy_results)}")
                 return
             
             if 'strategy_data' not in strategy_results:
-                self.logger.error(f"{coin} - strategy_data 없음: {strategy_results}")
+                self.logger.error(f"{market} - strategy_data 없음: {strategy_results}")
                 return
             
             # 전략 데이터 구성
             strategy_data = {
-                'exchange': self.exchange_name, # 거래소 이름
-                'market': coin, # 코인 이름
+                'exchange': exchange, # 거래소 이름
+                'market': market, # 코인 이름
                 'current_price': price, # 현재 가격
                 'timestamp': TimeUtils.get_current_kst(),  # KST 시간
                 'price':  price, # 매수 가격
@@ -942,20 +944,20 @@ class TradingManager:
             # MongoDB에 전략 데이터 저장 (upsert 사용)
             try:
                 result = self.db.strategy_data.update_one(
-                    {'market': coin}, # 코인 이름으로 조회
+                    {'market': market}, # 코인 이름으로 조회
                     {'$set': strategy_data}, # 전략 데이터 업데이트
                     upsert=True # 데이터가 없으면 생성
                 )
                 
                 if result.modified_count > 0 or result.upserted_id:
-                    self.logger.debug(f"{coin} 전략 데이터 저장/업데이트 성공")
+                    self.logger.debug(f"{market} 전략 데이터 저장/업데이트 성공")
                 else:
-                    self.logger.warning(f"{coin} 전략 데이터 변경 없음")
+                    self.logger.warning(f"{market} 전략 데이터 변경 없음")
                 
                 # 활성 거래 조회 및 업데이트
                 active_trades = self.db.trades.find(
                     {
-                        'market': coin, 
+                        'market': market,     
                         'status': 'active'
                     }
                 )
@@ -965,7 +967,7 @@ class TradingManager:
                     # 수익률 계산 시 0으로 나누기 방지
                     base_price = active_trade.get('price', current_price)
                     if base_price <= 0:
-                        self.logger.warning(f"{coin} - 유효하지 않은 매수가: {base_price}")
+                        self.logger.warning(f"{market} - 유효하지 않은 매수가: {base_price}")
                         profit_rate = 0
                     else:
                         profit_rate = ((current_price / base_price) - 1) * 100
@@ -975,8 +977,8 @@ class TradingManager:
                         {'_id': active_trade['_id']},
                         {
                             '$set': {
-                                'exchange': self.exchange_name,
-                                'market': coin,
+                                'exchange': exchange,
+                                'market': market,
                                 'current_price': current_price,
                                 'thread_id': thread_id,
                                 'current_value': current_price * active_trade.get('executed_volume', 0),
@@ -988,7 +990,7 @@ class TradingManager:
                         }
                     )
                     
-                    self.logger.debug(f"가격 정보 업데이트 완료: {coin} - 현재가: {current_price:,}원")
+                    self.logger.debug(f"가격 정보 업데이트 완료: {market} - 현재가: {current_price:,}원")
                     
             except Exception as db_error:
                 self.logger.error(f"MongoDB 저장 중 오류 발생: {str(db_error)}")
@@ -1062,11 +1064,11 @@ class TradingManager:
             self.logger.error(f"투자 한도 확인 중 오류 발생: {str(e)}")
             return False  # 오류 발생 시 안전을 위해 False 반환
 
-    async def user_call_buy(self, coin: str, price: float, immediate: bool = False) -> Dict:
+    async def user_call_buy(self, market: str, exchange: str, price: float, immediate: bool = False) -> Dict:
         """사용자 매수 주문
         
         Args:
-            coin: 코인명
+            market: 코인명
             price: 주문 가격
             immediate: 즉시 체결 여부
             
@@ -1076,17 +1078,18 @@ class TradingManager:
         try:
             # 테스트 모드 확인
             is_test = self.config.get('test_mode', True)
-            self.logger.info(f"매수 주문 시작 - 코인: {coin}, 가격: {price:,}, 즉시체결: {immediate}")
+            self.logger.info(f"매수 주문 시작 - 코인: {market}, 가격: {price:,}, 즉시체결: {immediate}")
             
             # 전략/시장 데이터 조회
-            strategy_data = await self.db.get_collection('strategy_data').find_one({'coin': coin})
+            strategy_data = await self.db.get_collection('strategy_data').find_one({'market': market, 'exchange': exchange})
             if not strategy_data:
-                self.logger.warning(f"{coin} - 전략 데이터 없음")
+                self.logger.warning(f"{market} - 전략 데이터 없음")
                 return {'success': False, 'message': '전략 데이터 없음'}
             
             # 주문 데이터 생성
             order_data = {
-                'coin': coin,
+                'market': market,
+                'exchange': exchange,
                 'type': 'buy',
                 'price': price,
                 'status': 'pending',
@@ -1106,7 +1109,8 @@ class TradingManager:
             if immediate:
                 # 즉시 체결인 경우 바로 process_buy_signal 호출
                 await self.process_buy_signal(
-                    coin=coin,
+                    market=market,
+                    exchange=exchange,
                     thread_id=0,  # 사용자 주문은 thread_id 0 사용
                     signal_strength=1.0,
                     price=price,
@@ -1187,7 +1191,8 @@ class TradingManager:
             collections = await self.db.get_collection('order_list').list_collection_names()
             if 'order_list' not in collections:
                 await self.db.get_collection('order_list').create_index([
-                    ('coin', 1),
+                    ('market', 1),
+                    ('exchange', 1),
                     ('status', 1),
                     ('created_at', -1)
                 ])
@@ -1196,7 +1201,7 @@ class TradingManager:
             self.logger.error(f"order_list 컬렉션 초기화 중 오류: {str(e)}")
             raise
 
-    def initialize_lowest_price(self):
+    def initialize_lowest_price(self, exchange: str):
         """최저가 초기화
         
         strategy_data 컬렉션의 모든 마켓에 대해 
@@ -1207,7 +1212,7 @@ class TradingManager:
             
             # 모든 strategy_data 문서 업데이트
             result = self.db.strategy_data.update_many(
-                {},  # 모든 문서 선택
+                {'exchange': exchange},  # 모든 문서 선택
                 {
                     '$set': {
                         'lowest_price': None,

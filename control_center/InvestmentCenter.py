@@ -311,7 +311,7 @@ class InvestmentCenter:
             # strategy_data 컬렉션, trades 컬렉션 정리
             from database.mongodb_manager import MongoDBManager
             db = MongoDBManager()
-            db.cleanup_strategy_data()
+            db.cleanup_strategy_data(self.exchange_name)
             
             # 메신저로 종료 메시지 전송
             asyncio.create_task(self.messenger.send_message(message="시스템이 안전하게 종료되었습니다.", messenger_type="slack"))

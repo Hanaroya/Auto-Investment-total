@@ -62,6 +62,7 @@ class CryptoTradingBot:
             self.scheduler.schedule_task(
                 'hourly_report',
                 self.investment_center.trading_manager.generate_hourly_report,
+                exchange=self.investment_center.exchange_name,
                 minute=0
             )
             
@@ -69,6 +70,7 @@ class CryptoTradingBot:
             self.scheduler.schedule_task(
                 'daily_report',
                 self.investment_center.trading_manager.generate_daily_report,
+                exchange=self.investment_center.exchange_name,
                 hour=20,
                 minute=0
             )
@@ -77,6 +79,7 @@ class CryptoTradingBot:
             self.scheduler.schedule_task(
                 'market_redistribution',
                 self.investment_center.thread_manager.update_market_distribution,
+                exchange=self.investment_center.exchange_name,
                 hour=-1,  # 매시간 체크
                 minute=0  # 정각에 실행
             )
@@ -85,6 +88,7 @@ class CryptoTradingBot:
             self.scheduler.schedule_task(
                 'lowest_price_initialization',
                 self.investment_center.trading_manager.initialize_lowest_price,
+                exchange=self.investment_center.exchange_name,  
                 hour=9,
                 minute=0
             )

@@ -59,7 +59,7 @@ class TradingThread(threading.Thread):
     개별 코인 그룹을 처리하는 거래 스레드
     각 스레드는 할당된 코인들에 대해 독립적으로 거래 분석 및 실행을 담당합니다.
     """
-    def __init__(self, thread_id: int, coins: List[str], db: MongoDBManager, config: Dict, shared_locks: Dict, stop_flag: threading.Event, investment_center=None):
+    def __init__(self, thread_id: int, coins: List[str], db: MongoDBManager, exchange_name: str, config: Dict, shared_locks: Dict, stop_flag: threading.Event, investment_center=None):
         """
         Args:
             thread_id (int): 스레드 식별자
@@ -79,9 +79,10 @@ class TradingThread(threading.Thread):
         self.stop_flag = stop_flag
         self.logger = logging.getLogger(f"InvestmentCenter.Thread-{thread_id}")
         self.loop = None
+        self.exchange_name = exchange_name
         
         # 각 인스턴스 생성
-        self.market_analyzer = MarketAnalyzer(config=self.config)
+        self.market_analyzer = MarketAnalyzer(config=self.config, exchange_name=exchange_name)
         self.trading_manager = TradingManager()
         
         # system_config에서 설정값 가져오기
@@ -370,7 +371,7 @@ class TradingThread(threading.Thread):
             current_price = candles_1m[-1]['close'] if self.thread_id < 4 else candles_15m[-1]['close']
             self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
             self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
-            self.trading_manager.update_strategy_data(market=coin, exchange=self.investment_center.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
+            self.trading_manager.update_strategy_data(market=coin, exchange=self.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
 
             # 분석 결과 저장 및 거래 신호 처리
             with self.shared_locks['trade']:
@@ -672,7 +673,9 @@ class TradingThread(threading.Thread):
                             # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때, 현재 가격이 기존 최저가보다 낮을 때 업데이트
                             if (not existing_lowest
                                 ) or (signals.get('overall_signal', 0.0) < existing_lowest.get('lowest_signal', float('inf'))
-                                ) or (current_price < existing_lowest.get('lowest_price', float('inf'))):
+                                ) or (current_price < existing_lowest.get('lowest_price', float('inf'))
+                                ) or (existing_lowest.get('lowest_price', float('inf')) == 0 and 
+                                      existing_lowest.get('lowest_signal', float('inf')) == 0):
                                 # 최저 신호 정보 업데이트
                                 self.db.strategy_data.update_one(
                                     {'market': coin, 'exchange': self.exchange_name},
@@ -712,6 +715,20 @@ class TradingThread(threading.Thread):
                                 investment_amount = self.trading_strategy.calculate_position_size(
                                     coin, market_condition, trends
                                 )
+                                
+                                 # 최저 신호 정보 초기화
+                                self.db.strategy_data.update_one(
+                                    {'market': coin, 'exchange': self.exchange_name},
+                                    {
+                                        '$set': {
+                                            'lowest_signal': 0,
+                                            'lowest_price': 0,
+                                            'timestamp': TimeUtils.get_current_kst() 
+                                        }
+                                    },
+                                    upsert=True
+                                )
+                                self.logger.debug(f"{coin} - 최저 신호 기록 초기화")
                                 
                                 signals['investment_amount'] = investment_amount
                                 signals['rebound_buy'] = True

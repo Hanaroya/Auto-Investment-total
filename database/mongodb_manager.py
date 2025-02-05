@@ -317,7 +317,7 @@ class MongoDBManager:
             self.strategy_data.create_index([("market", 1), ("timestamp", -1)])
             self.thread_status.create_index([("thread_id", 1)])
             self.daily_profit.create_index([("timestamp", -1)])
-            self.portfolio.create_index([("_id", 1)])
+            self.portfolio.create_index([("_id", 1), ("exchange", 1)])
             self.market_index.create_index([
                 ("exchange", 1),
                 ("timestamp", -1)
@@ -364,7 +364,7 @@ class MongoDBManager:
             self.logger.error(f"시스템 설정 초기화 실패: {str(e)}")
             raise
 
-    def _initialize_portfolio(self):
+    def _initialize_portfolio(self, exchange_name: str):
         """포트폴리오 초기 설정
         포트폴리오가 없는 경우에만 초기화합니다.
         """
@@ -374,7 +374,8 @@ class MongoDBManager:
             if not existing_portfolio:
                 initial_portfolio = {
                     '_id': 'main',
-                    'coin_list': {},
+                    'market_list': {},
+                    'exchange': exchange_name,
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
                     'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
@@ -431,7 +432,7 @@ class MongoDBManager:
                 self.logger.error(f"포트폴리오 업데이트 실패: {str(e)}")
                 return False
 
-    def get_portfolio(self) -> Dict:
+    def get_portfolio(self, exchange_name: str) -> Dict:
         """현재 포트폴리오 조회 및 없으면 생성"""
         try:
             # 포트폴리오 조회
@@ -441,7 +442,8 @@ class MongoDBManager:
             if not portfolio:
                 portfolio = {
                     '_id': 'main',
-                    'coin_list': {},
+                    'market_list': {},
+                    'exchange': exchange_name,
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
                     'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
@@ -778,18 +780,11 @@ class MongoDBManager:
             self.logger.error(f"전략 데이터 조회 실패 - market: {market}, exchange: {exchange}, 오류: {str(e)}")
             return {}
 
-    def cleanup_strategy_data(self):
+    def cleanup_strategy_data(self, exchange_name: str):
         """strategy_data 컬렉션 정리"""
         try:
-            self.db.drop_collection('strategy_data')
-            self.logger.info("strategy_data 컬렉션 삭제 완료")
-            
-            # 컬렉션 재생성 및 인덱스 설정
-            self.strategy_data = self.db['strategy_data']
-            self.strategy_data.create_index([("market", 1), ("timestamp", -1)])
-            self.strategy_data.create_index([("timestamp", -1)])
-            
-            self.logger.info("strategy_data 컬렉션 재설정 완료")
+            self.db.strategy_data.delete_many({'exchange': exchange_name})
+            self.logger.info(f"strategy_data {exchange_name} 거래소 전략 데이터 초기화 완료")
         except Exception as e:
             self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
             

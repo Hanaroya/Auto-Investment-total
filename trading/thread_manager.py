@@ -159,6 +159,7 @@ class ThreadManager:
                 self.db.portfolio.update_one(
                     {'_id': 'main'},
                     {'$set': {
+                        'exchange': self.investment_center.exchange_name,
                         'investment_amount': floor(new_total_investment),
                         'current_amount': floor(new_total_investment * 0.8),
                         'available_investment': floor(new_total_investment * 0.8),
@@ -174,8 +175,8 @@ class ThreadManager:
                 db = MongoDBManager()
                 
                 try:
-                    db.cleanup_strategy_data()
-                    self.logger.info("strategy_data 컬렉션 정리 완료")
+                    db.cleanup_strategy_data(self.investment_center.exchange_name)
+                    self.logger.info(f"strategy_data {self.investment_center.exchange_name} 거래소 전략 데이터 초기화 완료")
                 except Exception as e:
                     self.logger.error(f"strategy_data 정리 실패: {str(e)}")
                 
@@ -238,6 +239,7 @@ class ThreadManager:
                     thread_id=i,
                     coins=market_group,
                     config=self.config,
+                    exchange_name=self.investment_center.exchange_name,
                     shared_locks=self.shared_locks,
                     stop_flag=self.stop_flag,
                     db=self.db,
@@ -361,7 +363,7 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"스케줄러 스레드 시작 실패: {str(e)}")
 
-    def update_market_distribution(self):
+    def update_market_distribution(self, exchange: str):
         """4시간마다 코인 목록을 재조회하고 스레드에 재분배"""
         try:
             # 현재 시간이 4시간 간격인지 확인
@@ -373,8 +375,8 @@ class ThreadManager:
             
             # UpbitCall 인스턴스 생성
             upbit = UpbitCall(
-                self.config['api_keys']['upbit']['access_key'],
-                self.config['api_keys']['upbit']['secret_key']
+                self.config['api_keys'][exchange]['access_key'],
+                self.config['api_keys'][exchange]['secret_key']
             )
             
             # 새로운 마켓 목록 조회 (거래량 순으로 이미 정렬되어 있음)
