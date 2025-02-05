@@ -177,7 +177,7 @@ class TradingManager:
             self.logger.error(f"Error in process_buy_signal: {e}")
             return False
 
-    def process_sell_signal(self, coin: str, thread_id: int, signal_strength: float, 
+    def process_sell_signal(self, market: str, exchange: str, thread_id: int, signal_strength: float, 
                             price: float, strategy_data: Dict, sell_message: str = None):
         """매도 신호 처리
         
@@ -191,7 +191,7 @@ class TradingManager:
             
             # 해당 코인의 활성 거래 찾기
             active_trade = next((trade for trade in active_trades 
-                               if trade['coin'] == coin), None)
+                               if trade['market'] == market and trade['exchange'] == exchange), None)
 
             if not active_trade:
                 return False
@@ -209,7 +209,7 @@ class TradingManager:
             actual_sell_amount = sell_amount - fee_amount  # 수수료를 제외한 실제 판매금액
 
             if actual_sell_amount < active_trade.get('investment_amount', 0) and active_trade.get('profit_rate', 0) >= 0.1:
-                self.logger.warning(f"매도 금액이 투자 금액보다 작습니다: {coin} - 매도 금액: {actual_sell_amount:,.0f}원, 투자 금액: {active_trade.get('investment_amount', 0):,.0f}원")
+                self.logger.warning(f"매도 금액이 투자 금액보다 작습니다: {market} - 매도 금액: {actual_sell_amount:,.0f}원, 투자 금액: {active_trade.get('investment_amount', 0):,.0f}원")
                 return False
             
             # 수익률 계산 (수수료 포함)
@@ -227,18 +227,18 @@ class TradingManager:
             if not is_test:
                 # 실제 매도 주문 실행
                 order_result = self.upbit.place_order(
-                    market=coin,
+                    market=market,
                     side='ask',
                     price=price,
                     volume=active_trade.get('executed_volume', 0)
                 )
 
                 if not order_result:
-                    self.logger.error(f"매도 주문 실패: {coin}")
+                    self.logger.error(f"매도 주문 실패: {market}")
                     return False
             else:
                 # 테스트 모드 로그
-                self.logger.info(f"[TEST MODE] 가상 매도 신호 처리: {coin} @ {price:,}원")
+                self.logger.info(f"[TEST MODE] 가상 매도 신호 처리: {market} @ {price:,}원")
                 order_result = {
                     'uuid': f'test_sell_{kst_now.timestamp()}',
                     'executed_volume': active_trade.get('executed_volume', 0),
@@ -267,7 +267,8 @@ class TradingManager:
 
             # 거래 내역을 trading_history 컬렉션에 저장
             trade_history = {
-                'coin': coin,
+                'market': market,
+                'exchange': exchange,
                 'thread_id': thread_id,
                 'buy_timestamp': active_trade['timestamp'],
                 'sell_timestamp': kst_now,
@@ -294,15 +295,15 @@ class TradingManager:
             
             # trades 컬렉션에서 완료된 거래 삭제
             self.db.trades.delete_one({'_id': active_trade['_id']})
-            self.logger.info(f"거래 내역 기록 완료 및 활성 거래 삭제: {coin}")
+            self.logger.info(f"거래 내역 기록 완료 및 활성 거래 삭제: {market}")
 
             if order_result:
                 # 포트폴리오 업데이트
                 portfolio = self.db.get_portfolio()
                 
                 # coin_list에서 판매된 코인 제거
-                if coin in portfolio.get('coin_list', {}):
-                    del portfolio['coin_list'][coin]
+                if market in portfolio.get('coin_list', {}):
+                    del portfolio['coin_list'][market]
                 
                 # 가용 투자금액과 현재 금액 업데이트
                 current_amount = portfolio['current_amount']
@@ -920,12 +921,13 @@ class TradingManager:
             
             # 전략 데이터 구성
             strategy_data = {
-                'current_price': price,
+                'exchange': self.exchange_name, # 거래소 이름
+                'market': coin, # 코인 이름
+                'current_price': price, # 현재 가격
                 'timestamp': TimeUtils.get_current_kst(),  # KST 시간
-                'coin': coin,
-                'price':  price,
-                'action': strategy_results.get('action', 'hold'),
-                'signal_strength': strategy_results.get('overall_signal', 0),
+                'price':  price, # 매수 가격
+                'action': strategy_results.get('action', 'hold'), # 매수/매도 여부
+                'signal_strength': strategy_results.get('overall_signal', 0), # 전략 신호
                 'market_data': strategy_results.get('market_data', {}),  # 시장 데이터
                 'strategies': {
                     name: {
@@ -940,7 +942,7 @@ class TradingManager:
             # MongoDB에 전략 데이터 저장 (upsert 사용)
             try:
                 result = self.db.strategy_data.update_one(
-                    {'coin': coin}, # 코인 이름으로 조회
+                    {'market': coin}, # 코인 이름으로 조회
                     {'$set': strategy_data}, # 전략 데이터 업데이트
                     upsert=True # 데이터가 없으면 생성
                 )
@@ -953,7 +955,7 @@ class TradingManager:
                 # 활성 거래 조회 및 업데이트
                 active_trades = self.db.trades.find(
                     {
-                        'coin': coin, 
+                        'market': coin, 
                         'status': 'active'
                     }
                 )
@@ -973,6 +975,8 @@ class TradingManager:
                         {'_id': active_trade['_id']},
                         {
                             '$set': {
+                                'exchange': self.exchange_name,
+                                'market': coin,
                                 'current_price': current_price,
                                 'thread_id': thread_id,
                                 'current_value': current_price * active_trade.get('executed_volume', 0),
@@ -1190,4 +1194,31 @@ class TradingManager:
                 self.logger.info("order_list 컬렉션 생성 완료")
         except Exception as e:
             self.logger.error(f"order_list 컬렉션 초기화 중 오류: {str(e)}")
+            raise
+
+    def initialize_lowest_price(self):
+        """최저가 초기화
+        
+        strategy_data 컬렉션의 모든 마켓에 대해 
+        lowest_price와 lowest_signal을 초기화합니다.
+        """
+        try:
+            self.logger.info("최저가 초기화 시작")
+            
+            # 모든 strategy_data 문서 업데이트
+            result = self.db.strategy_data.update_many(
+                {},  # 모든 문서 선택
+                {
+                    '$set': {
+                        'lowest_price': None,
+                        'lowest_signal': 0,
+                        'last_updated': TimeUtils.get_current_kst()
+                    }
+                }
+            )
+            
+            self.logger.info(f"최저가 초기화 완료: {result.modified_count}개 문서 업데이트")
+            
+        except Exception as e:
+            self.logger.error(f"최저가 초기화 중 오류 발생: {str(e)}")
             raise

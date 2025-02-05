@@ -28,13 +28,14 @@ class MarketAnalyzer:
     시장 분석을 위한 클래스
     여러 기술적 지표와 전략을 사용하여 거래 신호를 생성합니다.
     """
-    def __init__(self, config):
+    def __init__(self, config, exchange_name: str):
         """
         MarketAnalyzer 초기화
         Args:
             config: 설정 정보가 담긴 딕셔너리
         """
         self.config = config
+        self.exchange_name = exchange_name
         self.db = MongoDBManager()
         self.logger = logging.getLogger('investment-center')
         self.upbit = UpbitCall(
@@ -71,12 +72,13 @@ class MarketAnalyzer:
             for market in markets:
                 data = {
                     'market': market,
+                    'exchange': self.exchange_name,
                     'timestamp': datetime.utcnow()
                 }
                 try:
                     # DB 업데이트
                     self.db.market_data.update_one(
-                        {'market': market},
+                        {'market': market, 'exchange': self.exchange_name},
                         {'$set': data},
                         upsert=True
                     )

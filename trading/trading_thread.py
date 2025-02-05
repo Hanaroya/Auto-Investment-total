@@ -675,7 +675,7 @@ class TradingThread(threading.Thread):
                                 ) or (current_price < existing_lowest.get('lowest_price', float('inf'))):
                                 # 최저 신호 정보 업데이트
                                 self.db.strategy_data.update_one(
-                                    {'coin': coin},
+                                    {'market': coin, 'exchange': self.exchange_name},
                                     {
                                         '$set': {
                                             'lowest_signal': signals.get('overall_signal', 0.0),

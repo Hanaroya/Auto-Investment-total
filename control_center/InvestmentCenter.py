@@ -64,7 +64,7 @@ class InvestmentCenter:
         self.messenger = self._initialize_messenger()
         
         # 마켓 분석기 초기화
-        self.market_analyzer = MarketAnalyzer(self.config)
+        self.market_analyzer = MarketAnalyzer(self.config, exchange_name)
         
         # 거래 매니저 초기화
         self.trading_manager = TradingManager()

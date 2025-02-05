@@ -80,6 +80,14 @@ class CryptoTradingBot:
                 hour=-1,  # 매시간 체크
                 minute=0  # 정각에 실행
             )
+
+            # 최저가 초기화 스캐쥴 - 매일 아침 9시 혹은 거래 시작시 실행    
+            self.scheduler.schedule_task(
+                'lowest_price_initialization',
+                self.investment_center.trading_manager.initialize_lowest_price,
+                hour=9,
+                minute=0
+            )
             
             # 스케줄러 스레드 시작
             self.investment_center.thread_manager.start_scheduler(self.scheduler)

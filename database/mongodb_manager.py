@@ -312,9 +312,9 @@ class MongoDBManager:
             self.market_index = self.db['market_index']  # AFR 데이터를 위한 컬렉션 추가
             
             # 인덱스 생성
-            self.trades.create_index([("coin", 1), ("thread_id", 1), ("status", 1)])
+            self.trades.create_index([("market", 1), ("thread_id", 1), ("status", 1)])
             self.trades.create_index([("thread_id", 1)])
-            self.strategy_data.create_index([("coin", 1), ("timestamp", -1)])
+            self.strategy_data.create_index([("market", 1), ("timestamp", -1)])
             self.thread_status.create_index([("thread_id", 1)])
             self.daily_profit.create_index([("timestamp", -1)])
             self.portfolio.create_index([("_id", 1)])
@@ -618,11 +618,12 @@ class MongoDBManager:
         except Exception as e:
             logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
 
-    def save_strategy_data(self, coin: str, strategy_data: Dict[str, Any]) -> bool:
+    def save_strategy_data(self, market: str, exchange: str, strategy_data: Dict[str, Any]) -> bool:
         """코인별 전략 데이터 저장
 
         Args:
-            coin: 코인 심볼
+            market: 마켓 심볼
+            exchange: 거래소 이름
             strategy_data: 전략 데이터 딕셔너리
 
         Returns:
@@ -631,7 +632,8 @@ class MongoDBManager:
         with self._get_collection_lock('strategy_data'):
             try:
                 document = {
-                    'coin': coin,
+                    'market': market,
+                    'exchange': exchange,
                     'timestamp': TimeUtils.get_current_kst(), 
                     'current_price': strategy_data.get('current_price', 0),
                     'strategies': {
@@ -724,44 +726,45 @@ class MongoDBManager:
                 success = bool(result.inserted_id)
                 
                 if success:
-                    self.logger.debug(f"전략 데이터 저장 성공 - 코인: {coin}, ID: {result.inserted_id}")
+                    self.logger.debug(f"전략 데이터 저장 성공 - market: {market}, exchange: {exchange}, ID: {result.inserted_id}")
                     self.logger.debug(f"저장된 데이터: RSI={document['strategies']['rsi']['value']:.2f}, "
                                   f"MACD={document['strategies']['macd']['macd']:.2f}, "
                                   f"매수신호={document['signals']['buy_strength']:.2f}, "
                                   f"매도신호={document['signals']['sell_strength']:.2f}")
                 else:
-                    self.logger.warning(f"전략 데이터 저장 실패 - 코인: {coin}")
+                    self.logger.warning(f"전략 데이터 저장 실패 - market: {market}, exchange: {exchange}")
                     
                 return success
 
             except Exception as e:
-                self.logger.error(f"전략 데이터 저장 실패 - 코인: {coin}, 오류: {str(e)}")
+                self.logger.error(f"전략 데이터 저장 실패 - market: {market}, exchange: {exchange}, 오류: {str(e)}")
                 return False
 
-    def get_latest_strategy_data(self, coin: str) -> Dict:
+    def get_latest_strategy_data(self, market: str, exchange: str) -> Dict:
         """특정 코인의 최신 전략 데이터 조회
 
         Args:
-            coin: 코인 심볼
+            market: 마켓 심볼
+            exchange: 거래소 이름
 
         Returns:
             Dict: 최신 전략 데이터
         """
         try:
             result = self.strategy_data.find_one(
-                {'coin': coin},
+                {'market': market, 'exchange': exchange},
                 sort=[('timestamp', -1)]
             )
             
             if result:
-                self.logger.debug(f"최신 전략 데이터 조회 성공 - 코인: {coin}, 시간: {result['timestamp']}")
+                self.logger.debug(f"최신 전략 데이터 조회 성공 - market: {market}, exchange: {exchange}, 시간: {result['timestamp']}")
             else:
-                self.logger.warning(f"전략 데이터 없음 - 코인: {coin}")
+                self.logger.warning(f"전략 데이터 없음 - market: {market}, exchange: {exchange}")
                 
             return result or {}
 
         except Exception as e:
-            self.logger.error(f"전략 데이터 조회 실패 - 코인: {coin}, 오류: {str(e)}")
+            self.logger.error(f"전략 데이터 조회 실패 - market: {market}, exchange: {exchange}, 오류: {str(e)}")
             return {}
 
     def cleanup_strategy_data(self):
@@ -772,7 +775,7 @@ class MongoDBManager:
             
             # 컬렉션 재생성 및 인덱스 설정
             self.strategy_data = self.db['strategy_data']
-            self.strategy_data.create_index([("coin", 1), ("timestamp", -1)])
+            self.strategy_data.create_index([("market", 1), ("timestamp", -1)])
             self.strategy_data.create_index([("timestamp", -1)])
             
             self.logger.info("strategy_data 컬렉션 재설정 완료")
@@ -817,7 +820,7 @@ class MongoDBManager:
                 
                 # trades 컬렉션 재생성 및 인덱스 설정
                 self.trades = self.db['trades']
-                self.trades.create_index([("coin", 1), ("thread_id", 1), ("status", 1)])
+                self.trades.create_index([("market", 1), ("exchange", 1), ("thread_id", 1), ("status", 1)])
                 self.trades.create_index([("thread_id", 1)])
                 
                 self.logger.info("trades 컬렉션 재설정 완료")
@@ -840,7 +843,7 @@ class MongoDBManager:
                     
                     # trading_history 컬렉션 재생성 및 인덱스 설정
                     self.trading_history = self.db['trading_history']
-                    self.trading_history.create_index([("coin", 1), ("thread_id", 1)])
+                    self.trading_history.create_index([("market", 1), ("exchange", 1), ("thread_id", 1)])
                     self.trading_history.create_index([("buy_timestamp", -1)])
                     self.trading_history.create_index([("sell_timestamp", -1)])
                     
