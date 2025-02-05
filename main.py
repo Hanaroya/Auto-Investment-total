@@ -20,13 +20,6 @@ env_path = Path(__file__).parent / '.env'
 # .env 파일 로드
 load_dotenv(dotenv_path=env_path)
 
-# 환경 변수 로드 확인
-print("MongoDB 설정 확인:")
-print(f"MONGO_ROOT_USERNAME: {os.getenv('MONGO_ROOT_USERNAME')}")
-print(f"MONGO_HOST: {os.getenv('MONGO_HOST')}")
-print(f"MONGO_PORT: {os.getenv('MONGO_PORT')}")
-print(f"MONGO_DB_NAME: {os.getenv('MONGO_DB_NAME')}")
-
 class CryptoTradingBot:
     def __init__(self):
         # 로거 설정
