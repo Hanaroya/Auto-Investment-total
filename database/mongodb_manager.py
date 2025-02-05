@@ -722,11 +722,19 @@ class MongoDBManager:
                     }
                 }
 
-                result = self.strategy_data.insert_one(document)
-                success = bool(result.inserted_id)
+                result = self.strategy_data.update_one(
+                    {
+                        'market': market,
+                        'exchange': exchange
+                    },
+                    {'$set': document},
+                    upsert=True
+                )
+                
+                success = bool(result.upserted_id or result.modified_count > 0)
                 
                 if success:
-                    self.logger.debug(f"전략 데이터 저장 성공 - market: {market}, exchange: {exchange}, ID: {result.inserted_id}")
+                    self.logger.debug(f"전략 데이터 저장 성공 - market: {market}, exchange: {exchange}, ID: {result.upserted_id}")
                     self.logger.debug(f"저장된 데이터: RSI={document['strategies']['rsi']['value']:.2f}, "
                                   f"MACD={document['strategies']['macd']['macd']:.2f}, "
                                   f"매수신호={document['signals']['buy_strength']:.2f}, "
@@ -752,7 +760,10 @@ class MongoDBManager:
         """
         try:
             result = self.strategy_data.find_one(
-                {'market': market, 'exchange': exchange},
+                {
+                    'market': market,
+                    'exchange': exchange
+                },
                 sort=[('timestamp', -1)]
             )
             
@@ -761,7 +772,7 @@ class MongoDBManager:
             else:
                 self.logger.warning(f"전략 데이터 없음 - market: {market}, exchange: {exchange}")
                 
-            return result or {}
+            return result if result else {}
 
         except Exception as e:
             self.logger.error(f"전략 데이터 조회 실패 - market: {market}, exchange: {exchange}, 오류: {str(e)}")

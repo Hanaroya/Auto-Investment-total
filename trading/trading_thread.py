@@ -370,7 +370,7 @@ class TradingThread(threading.Thread):
             current_price = candles_1m[-1]['close'] if self.thread_id < 4 else candles_15m[-1]['close']
             self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
             self.logger.warning(f"{coin}: 현재 가격 - {current_price}")
-            self.trading_manager.update_strategy_data(coin=coin, thread_id=self.thread_id, price=current_price, strategy_results=signals)
+            self.trading_manager.update_strategy_data(market=coin, exchange=self.investment_center.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
 
             # 분석 결과 저장 및 거래 신호 처리
             with self.shared_locks['trade']:
