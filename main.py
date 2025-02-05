@@ -21,7 +21,7 @@ env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 class CryptoTradingBot:
-    def __init__(self):
+    def __init__(self, exchange_name: str):
         # 로거 설정
         self.logger = logging.getLogger('investment-center')
         
@@ -34,12 +34,12 @@ class CryptoTradingBot:
         asyncio.set_event_loop(self.loop)
         
         # MongoDB 초기화
-        self.db = MongoDBManager()
+        self.db = MongoDBManager(exchange_name=exchange_name)
         
         # InvestmentCenter 초기화 (기본값으로 upbit 사용)
-        self.investment_center = InvestmentCenter("upbit")
+        self.investment_center = InvestmentCenter(exchange_name=exchange_name)
         
-        self.scheduler = SimpleScheduler()
+        self.scheduler = SimpleScheduler(exchange_name=exchange_name)
         
     async def initialize(self):
         """초기화"""
@@ -149,7 +149,7 @@ class CryptoTradingBot:
             self.logger.error(f"정리 작업 중 오류: {str(e)}", exc_info=True)
 
 if __name__ == "__main__":
-    bot = CryptoTradingBot()
+    bot = CryptoTradingBot(exchange_name="upbit")
     try:
         # 단일 이벤트 루프에서 실행
         asyncio.set_event_loop(bot.loop)

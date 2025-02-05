@@ -30,7 +30,7 @@ def test_daily_report():
     
     try:
         # TradingManager 인스턴스 생성
-        trading_manager = TradingManager()
+        trading_manager = TradingManager("upbit")
         
         # 일일 리포트 생성
         trading_manager.generate_daily_report()

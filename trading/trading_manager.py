@@ -18,8 +18,8 @@ class TradingManager:
     
     거래 신호 처리 및 거래 데이터 관리를 담당합니다.
     """
-    def __init__(self):
-        self.db = MongoDBManager()
+    def __init__(self, exchange_name: str):
+        self.db = MongoDBManager(exchange_name=exchange_name)
         self.config = self._load_config()
         self.messenger = Messenger(self.config)
         self.logger = logging.getLogger('investment-center')

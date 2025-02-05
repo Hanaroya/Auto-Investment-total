@@ -38,7 +38,7 @@ class MongoDBManager:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, exchange_name: str):
         """초기화는 한 번만 수행"""
         if not getattr(self, '_initialized', False):
             with self._instance_lock:
@@ -77,6 +77,7 @@ class MongoDBManager:
 
                         # 컬렉션 설정
                         self._setup_collections()
+                        self.exchange_name = exchange_name
                         
                         # 시스템 설정 초기화 (추가)
                         self._initialize_system_config()
@@ -336,10 +337,10 @@ class MongoDBManager:
         """
         try:
             # 기존 설정 확인
-            existing_config = self.system_config.find_one({'_id': 'config'})
+            existing_config = self.system_config.find_one({'exchange': self.exchange_name})
             if not existing_config:
                 initial_config = {
-                    '_id': 'config',
+                    'exchange': self.exchange_name,
                     'initial_investment': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
                     'min_trade_amount': float(os.getenv('MIN_TRADE_AMOUNT', 5000)),
                     'max_thread_investment': float(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
@@ -364,17 +365,17 @@ class MongoDBManager:
             self.logger.error(f"시스템 설정 초기화 실패: {str(e)}")
             raise
 
-    def _initialize_portfolio(self, exchange_name: str):
+    def _initialize_portfolio(self):
         """포트폴리오 초기 설정
         포트폴리오가 없는 경우에만 초기화합니다.
         """
         try:
             # 기존 포트폴리오 확인
-            existing_portfolio = self.portfolio.find_one({'exchange': exchange_name})
+            existing_portfolio = self.portfolio.find_one({'exchange': self.exchange_name})
             if not existing_portfolio:
                 initial_portfolio = {
                     'market_list': {},
-                    'exchange': exchange_name,
+                    'exchange': self.exchange_name,
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
                     'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
@@ -564,14 +565,14 @@ class MongoDBManager:
             return True if result.upserted_id or result.modified_count > 0 else False
 
     # 시스템 설정 관련 메서드
-    def get_system_config(self) -> Dict[str, Any]:
+    def get_system_config(self, exchange_name: str) -> Dict[str, Any]:
         """
         시스템 설정을 가져옵니다.
 
         Returns:
             Dict[str, Any]: 시스템 설정 데이터
         """
-        config = self.db.system_config.find_one({'_id': 'config'})
+        config = self.db.system_config.find_one({'exchange': exchange_name})
         return config if config else {}
 
     def get_sync_collection(self, name: str):

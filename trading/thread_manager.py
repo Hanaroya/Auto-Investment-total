@@ -55,7 +55,7 @@ class ThreadManager:
         self.investment_center = investment_center  # InvestmentCenter 인스턴스 저장
         self.threads = []
         self.running = False
-        self.db = MongoDBManager()
+        self.db = MongoDBManager(exchange_name=self.investment_center.exchange_name)
         self.logger = logging.getLogger('investment_center')
         self.stop_flag = threading.Event()
         # 공유 락 초기화
@@ -69,7 +69,7 @@ class ThreadManager:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
 
-        self.trading_manager = TradingManager()
+        self.trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name)
         self.scheduler_thread = None
         self.afr_monitor_thread = None
         self.afr_ready = threading.Event()  # AFR 데이터 준비 상태를 위한 이벤트 추가
@@ -102,7 +102,7 @@ class ThreadManager:
                 'status': 'active'
             })
             
-            trading_manager = TradingManager()  # 클래스 레벨로 이동
+            trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name)  # 클래스 레벨로 이동
             
             if existing_trades:
                 upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],
@@ -149,13 +149,13 @@ class ThreadManager:
             self.logger.info("모든 스레드 종료 완료")
             
             # add profit earn to system_config's total_max_investment
-            current_config = self.db.system_config.find_one({'_id': 'config'})
+            current_config = self.db.system_config.find_one({'exchange': self.investment_center.exchange_name})
             portfolio = self.db.portfolio.find_one({'exchange': self.investment_center.exchange_name})
             if current_config and portfolio:
                 total_profit = portfolio.get('profit_earned', 0)
                 new_total_investment = current_config.get('total_max_investment', 0) + total_profit
                 self.db.system_config.update_one(
-                    {'_id': 'config'},
+                    {'exchange': self.investment_center.exchange_name},
                     {'$set': {'total_max_investment': new_total_investment}}
                 )
                 self.db.portfolio.update_one(
@@ -174,7 +174,7 @@ class ThreadManager:
             # 데이터베이스 정리 작업
             try:
                 from database.mongodb_manager import MongoDBManager
-                db = MongoDBManager()
+                db = MongoDBManager(exchange_name=self.investment_center.exchange_name)
                 
                 try:
                     db.cleanup_strategy_data(self.investment_center.exchange_name)

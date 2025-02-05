@@ -36,7 +36,7 @@ class MarketAnalyzer:
         """
         self.config = config
         self.exchange_name = exchange_name
-        self.db = MongoDBManager()
+        self.db = MongoDBManager(exchange_name=self.exchange_name)
         self.logger = logging.getLogger('investment-center')
         self.upbit = UpbitCall(
             self.config['api_keys']['upbit']['access_key'],

@@ -83,10 +83,10 @@ class TradingThread(threading.Thread):
         
         # 각 인스턴스 생성
         self.market_analyzer = MarketAnalyzer(config=self.config, exchange_name=exchange_name)
-        self.trading_manager = TradingManager()
+        self.trading_manager = TradingManager(exchange_name=exchange_name)
         
         # system_config에서 설정값 가져오기
-        system_config = self.db.system_config.find_one({'_id': 'config'})
+        system_config = self.db.system_config.find_one({'exchange': self.exchange_name})
         if not system_config:
             self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
             self.max_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))
@@ -122,7 +122,7 @@ class TradingThread(threading.Thread):
     def update_investment_limits(self):
         """system_config에서 투자 한도를 업데이트"""
         try:
-            system_config = self.db.system_config.find_one({'_id': 'config'})
+            system_config = self.db.system_config.find_one({'exchange': self.exchange_name})
             if system_config:
                 total_max_investment = system_config.get('total_max_investment', 1000000)
                 # total_max_investment를 initial_investment의 80%로 설정

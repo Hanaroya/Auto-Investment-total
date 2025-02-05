@@ -7,8 +7,8 @@ from typing import Callable, Dict, Any
 from database.mongodb_manager import MongoDBManager
 
 class SimpleScheduler:
-    def __init__(self):
-        self.db = MongoDBManager()
+    def __init__(self, exchange_name: str):
+        self.db = MongoDBManager(exchange_name=exchange_name)
         self.logger = logging.getLogger('investment-center')
         self.running = False
         self.tasks = {}

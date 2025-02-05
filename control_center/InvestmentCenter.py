@@ -67,13 +67,13 @@ class InvestmentCenter:
         self.market_analyzer = MarketAnalyzer(self.config, exchange_name)
         
         # 거래 매니저 초기화
-        self.trading_manager = TradingManager()
+        self.trading_manager = TradingManager(exchange_name)
         
         # 스레드 매니저 초기화
         self.thread_manager = ThreadManager(self.config, self)
 
         # 데이터베이스 초기화
-        self.db = MongoDBManager()
+        self.db = MongoDBManager(exchange_name=exchange_name)
         
         # 기타 속성 초기화
         self.is_running = False
@@ -238,7 +238,7 @@ class InvestmentCenter:
                     self.logger.error(f"거래 청산 중 오류: {str(e)}")
             
             # system_config 업데이트
-            current_config = self.db.system_config.find_one({'_id': 'config'})
+            current_config = self.db.system_config.find_one({'exchange': self.exchange_name})
             if not current_config:
                 self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
                 current_config = {
@@ -249,7 +249,7 @@ class InvestmentCenter:
             new_total_investment = current_config.get('total_max_investment', 0) + total_profit
             
             self.db.system_config.update_one(
-                {'_id': 'config'},
+                {'exchange': self.exchange_name},
                 {
                     '$set': {
                         'total_max_investment': new_total_investment,
@@ -311,7 +311,7 @@ class InvestmentCenter:
             
             # strategy_data 컬렉션, trades 컬렉션 정리
             from database.mongodb_manager import MongoDBManager
-            db = MongoDBManager()
+            db = MongoDBManager(exchange_name=self.exchange_name)
             db.cleanup_strategy_data(self.exchange_name)
             
             # 메신저로 종료 메시지 전송

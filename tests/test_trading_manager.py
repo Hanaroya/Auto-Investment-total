@@ -6,7 +6,7 @@ from trading.trading_manager import TradingManager
 class TestTradingManager(unittest.TestCase):
     def setUp(self):
         """각 테스트 전에 실행되는 설정"""
-        self.trading_manager = TradingManager()
+        self.trading_manager = TradingManager("upbit")
         
         # MongoDB 매니저 모의 객체 설정
         self.trading_manager.db = Mock()
