@@ -368,6 +368,7 @@ class TradingManager:
             trading_history = list(self.db.trading_history.find({
                 'sell_timestamp': {
                     '$gte': kst_today,
+                    'exchange': exchange,
                     '$lt': kst_tomorrow
                 }
             }))
@@ -617,6 +618,7 @@ class TradingManager:
             
             # 포트폴리오 정보 업데이트
             portfolio_update = {
+                'exchange': exchange,
                 'current_amount': floor(total_current_value),
                 'investment_amount': total_max_investment + total_profit_amount,
                 'profit_earned': 0,
@@ -647,21 +649,24 @@ class TradingManager:
             
             # 오후 8시 이전 거래 내역 삭제
             kst_cutoff = kst_today.replace(hour=20, minute=0, second=0, microsecond=0)
-            self.db.trading_history.delete_many({'sell_timestamp': {'$lt': kst_cutoff}})
+            self.db.trading_history.delete_many({
+                'sell_timestamp': {'$lt': kst_cutoff},
+                'exchange': exchange
+            })
             self.logger.info(f"오후 8시 이전 거래 내역 삭제 완료 (기준시간: {kst_cutoff.strftime('%Y-%m-%d %H:%M:%S')})")
             
             # Slack으로 메시지 전송
             self.messenger.send_message(message=message, messenger_type="slack")
             
             # 리포트 전송 상태 업데이트
-            self.db.update_daily_profit_report_status(reported=True)
+            self.db.update_daily_profit_report_status(exchange=exchange, reported=True)
             
             self.logger.info(f"일일 리포트 생성 및 전송 완료: {kst_today.strftime('%Y-%m-%d')}")
             
         except Exception as e:
             self.logger.error(f"일일 리포트 생성 중 오류 발생: {str(e)}")
             # 리포트 전송 실패 시 상태 업데이트
-            self.db.update_daily_profit_report_status(reported=False)
+            self.db.update_daily_profit_report_status(exchange=exchange, reported=False)
             raise
         finally:
             # 파일 정리

@@ -393,12 +393,12 @@ class MongoDBManager:
             self.logger.error(f"포트폴리오 초기화 실패: {str(e)}")
             raise
 
-    def update_daily_profit_report_status(self, reported: bool = True) -> bool:
+    def update_daily_profit_report_status(self, exchange: str, reported: bool = True) -> bool:
         """일일 수익 리포트 상태 업데이트"""
         try:
             today = TimeUtils.get_current_kst().replace(hour=0, minute=0, second=0, microsecond=0)
             result = self.daily_profit.update_one(
-                {'date': today},
+                {'date': today, 'exchange': exchange},
                 {'$set': {'reported': reported}}
             )
             return bool(result.modified_count > 0)
