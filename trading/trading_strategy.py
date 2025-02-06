@@ -4,7 +4,7 @@ class TradingStrategy:
     def __init__(self, config, total_max_investment):
         self.config = config
         self.total_max_investment = total_max_investment  # 전체 100% 설정
-        self.investment_each = floor(self.total_max_investment / 20)  # 기본 분할 투자 단위
+        self.investment_each = floor(self.total_max_investment * 0.8 / 20)  # 기본 분할 투자 단위
         self._cache = {}
         
     def calculate_position_size(self, market: str, market_condition: dict, trends: dict) -> int:
