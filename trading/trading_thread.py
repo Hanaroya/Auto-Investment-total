@@ -758,7 +758,10 @@ class TradingThread(threading.Thread):
 
             # 스레드 상태 업데이트
             self.db.thread_status.update_one(
-                {'thread_id': self.thread_id},
+                {
+                    'thread_id': self.thread_id,
+                    'exchange': self.exchange_name
+                },
                 {'$set': {
                     'last_market': market,
                     'last_update': TimeUtils.get_current_kst(),  

@@ -316,7 +316,7 @@ class MongoDBManager:
             self.trades.create_index([("market", 1), ("thread_id", 1), ("status", 1)])
             self.trades.create_index([("thread_id", 1)])
             self.strategy_data.create_index([("market", 1), ("timestamp", -1)])
-            self.thread_status.create_index([("thread_id", 1)])
+            self.thread_status.create_index([("thread_id", 1), ("exchange", 1)])
             self.daily_profit.create_index([("timestamp", -1)])
             self.portfolio.create_index([("_id", 1), ("exchange", 1)])
             self.market_index.create_index([
@@ -558,7 +558,10 @@ class MongoDBManager:
         with self._get_collection_lock('thread_status'):
             status_data['last_updated'] = TimeUtils.get_current_kst()
             result = self.db.thread_status.update_one(
-                {'thread_id': thread_id},
+                {
+                    'thread_id': thread_id,
+                    'exchange': status_data['exchange']
+                },
                 {'$set': status_data},
                 upsert=True
             )

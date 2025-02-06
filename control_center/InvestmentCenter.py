@@ -59,6 +59,7 @@ class InvestmentCenter:
         
         # 거래소 초기화
         self.exchange = self._initialize_exchange(exchange_name)
+        self.exchange_name = exchange_name
         
         # 메신저 초기화
         self.messenger = self._initialize_messenger()

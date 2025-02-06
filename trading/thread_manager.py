@@ -314,7 +314,8 @@ class ThreadManager:
             for thread_id in range(len(self.threads)):
                 # 동기식으로 변경
                 status = self.db.thread_status.find_one({
-                    'thread_id': thread_id
+                    'thread_id': thread_id,
+                    'exchange': self.investment_center.exchange_name
                 })
                 
                 if not status:
