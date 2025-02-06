@@ -441,12 +441,12 @@ class MongoDBManager:
             # 포트폴리오가 없으면 새로 생성
             if not portfolio:
                 portfolio = {
-                    'market_list': [],
+                    'market_list': {},
                     'exchange': exchange_name,
-                    'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
-                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
-                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
-                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'investment_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.8),
+                    'reserve_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.2),
+                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.8),
                     'profit_earned': 0,
                     'created_at': TimeUtils.get_current_kst(),
                     'last_updated': TimeUtils.get_current_kst()
@@ -804,10 +804,10 @@ class MongoDBManager:
                 initial_portfolio = {
                     'market_list': {},
                     'exchange': exchange,
-                    'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
-                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
-                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
-                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'investment_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.8),
+                    'reserve_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.2),
+                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.8),
                     'profit_earned': 0,
                     'created_at': TimeUtils.get_current_kst(),
                     'last_updated': TimeUtils.get_current_kst()

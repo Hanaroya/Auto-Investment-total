@@ -163,12 +163,21 @@ class TradingManager:
             if order_result:
                 portfolio = self.db.get_portfolio(exchange)
                 
-                portfolio['market_list'][market] = {
+                # market_list가 없는 경우 초기화
+                if 'market_list' not in portfolio:
+                    portfolio['market_list'] = []
+                    portfolio['exchange'] = exchange
+                
+                # 해당 마켓 정보 업데이트
+                portfolio['market_list'].append({
+                    'market': market,
                     'amount': trade_data['executed_volume'],
                     'price': trade_data['price'],
                     'timestamp': kst_now
-                }
-                current_amount = portfolio['current_amount']
+                })
+                
+                # 현재 금액 업데이트
+                current_amount = portfolio.get('current_amount', 0)
                 portfolio['current_amount'] = floor(current_amount - investment_amount)
                 
                 self.db.update_portfolio(portfolio)
