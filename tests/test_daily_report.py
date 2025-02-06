@@ -33,7 +33,7 @@ def test_daily_report():
         trading_manager = TradingManager("upbit")
         
         # 일일 리포트 생성
-        trading_manager.generate_daily_report()
+        trading_manager.generate_daily_report('upbit')
         
         logger.info("일일 리포트 생성 테스트 완료")
         

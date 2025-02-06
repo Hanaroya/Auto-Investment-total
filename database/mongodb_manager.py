@@ -94,7 +94,7 @@ class MongoDBManager:
         with self._get_collection_lock('system_config'):
             try:
                 result = self.system_config.update_one(
-                    {'_id': 'system_config'},
+                    {'exchange': config_data['exchange']},
                     {'$set': config_data},
                     upsert=True
                 )
@@ -345,7 +345,7 @@ class MongoDBManager:
                     'min_trade_amount': float(os.getenv('MIN_TRADE_AMOUNT', 5000)),
                     'max_thread_investment': float(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
                     'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
-                    'total_max_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'total_max_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
                     'emergency_stop': False,
                     'created_at': TimeUtils.get_current_kst()
                 }
@@ -376,12 +376,12 @@ class MongoDBManager:
                 initial_portfolio = {
                     'market_list': {},
                     'exchange': self.exchange_name,
-                    'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
-                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
-                    'reserve_amount': float(os.getenv('RESERVE_AMOUNT', 200000)),
-                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
+                    'investment_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000)),
+                    'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.8),
+                    'reserve_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.2),
+                    'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.8),
                     'profit_earned': 0,
-                        'created_at': TimeUtils.get_current_kst(),
+                    'created_at': TimeUtils.get_current_kst(),
                     'last_updated': TimeUtils.get_current_kst()
                 }
                 self.portfolio.insert_one(initial_portfolio)
@@ -441,7 +441,7 @@ class MongoDBManager:
             # 포트폴리오가 없으면 새로 생성
             if not portfolio:
                 portfolio = {
-                    'market_list': {},
+                    'market_list': [],
                     'exchange': exchange_name,
                     'investment_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
                     'available_investment': float(os.getenv('TOTAL_MAX_INVESTMENT', 800000)),
@@ -841,7 +841,7 @@ class MongoDBManager:
                 
                 # daily_profit 문서가 없으면 일일 리포트 생성
                 if not daily_profit_doc:
-                    trading_manager.generate_daily_report()
+                    trading_manager.generate_daily_report(self.exchange_name)
                     daily_profit_doc = self.daily_profit.find_one({'date': today})
                 
                 # 리포트가 전송된 경우에만 trading_history와 portfolio 초기화

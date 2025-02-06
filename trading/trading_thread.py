@@ -103,6 +103,7 @@ class TradingThread(threading.Thread):
         self.db.portfolio.update_one(
                     {'exchange': self.exchange_name},
                     {'$set': {
+                        'market_list': [],
                         'investment_amount': system_config.get('total_max_investment', 1000000),
                         'available_investment': floor(self.total_max_investment * 0.8),
                         'current_amount': floor(self.total_max_investment * 0.8),
