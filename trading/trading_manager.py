@@ -313,8 +313,11 @@ class TradingManager:
                 portfolio = self.db.get_portfolio(exchange)
                 
                 # market_list에서 판매된 마켓 제거
-                if market in portfolio.get('market_list', {}):
-                    del portfolio['market_list'][market]
+                if 'market_list' in portfolio:
+                    portfolio['market_list'] = [
+                        item for item in portfolio['market_list'] 
+                        if item.get('market') != market
+                    ]
                 
                 # 가용 투자금액과 현재 금액 업데이트
                 current_amount = portfolio['current_amount']
