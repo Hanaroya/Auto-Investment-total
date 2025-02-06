@@ -90,8 +90,8 @@ class TradingThread(threading.Thread):
         if not system_config:
             self.logger.error("system_config를 찾을 수 없습니다. 기본값 사용")
             self.max_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))
-            self.total_max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000))
-            self.investment_each = self.total_max_investment / 20
+            self.total_max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000))
+            self.investment_each = (self.total_max_investment * 0.8) / 20
         else:
             self.max_investment = system_config.get('max_thread_investment', 80000)
             self.total_max_investment = system_config.get('total_max_investment', 1000000)

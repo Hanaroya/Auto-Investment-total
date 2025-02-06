@@ -104,19 +104,38 @@ class TradingStrategy:
         return max(min(volatility_factor, 1.0), 0.6)
         
     def adjust_thresholds(self, market_condition: dict, trends: dict) -> dict:
-        """시장 상황에 따른 임계값 동적 조정"""
-        base_buy = self.config['strategy']['buy_threshold']
-        base_sell = self.config['strategy']['sell_threshold']
+        """시장 상황에 따른 임계값 동적 조정
         
-        # 시장 위험도에 따른 조정
+        매수/매도 임계값을 시장 상황에 따라 미세 조정합니다.
+        - 위험도가 높을 때: 매수 임계값 +0.05~0.1 상향, 매도 임계값 -0.05~0.1 하향
+        - 추세가 강할 때: 추세 방향에 따라 임계값 미세 조정
+        """
+        base_buy = self.config['strategy']['buy_threshold']  # 기본값 0.75
+        base_sell = self.config['strategy']['sell_threshold']  # 기본값 0.55
+        
+        # 시장 위험도에 따른 조정 (0~1 사이값)
         risk_level = market_condition['risk_level']
+        risk_adjustment = risk_level * 0.1  # 최대 ±0.1 조정
         
-        # 추세 강도에 따른 조정
+        # 추세 강도에 따른 조정 (-1~1 사이값)
         trend_strength = self._get_trend_strength(trends)
+        trend_adjustment = abs(trend_strength) * 0.05  # 최대 ±0.05 조정
         
-        # 매수/매도 임계값 조정
-        buy_threshold = base_buy * (1 + risk_level) * (1 - trend_strength * 0.2)
-        sell_threshold = base_sell * (1 - risk_level) * (1 + trend_strength * 0.2)
+        # 매수 임계값 조정
+        if risk_level > 0.5:  # 위험도가 높을 때
+            buy_threshold = base_buy + risk_adjustment
+        else:  # 위험도가 낮을 때
+            buy_threshold = base_buy - trend_adjustment if trend_strength > 0 else base_buy
+            
+        # 매도 임계값 조정
+        if risk_level > 0.5:  # 위험도가 높을 때
+            sell_threshold = base_sell - risk_adjustment
+        else:  # 위험도가 낮을 때
+            sell_threshold = base_sell + trend_adjustment if trend_strength < 0 else base_sell
+        
+        # 임계값 범위 제한
+        buy_threshold = max(min(buy_threshold, base_buy + 0.1), base_buy - 0.05)
+        sell_threshold = max(min(sell_threshold, base_sell + 0.05), base_sell - 0.1)
         
         return {
             'buy_threshold': buy_threshold,
