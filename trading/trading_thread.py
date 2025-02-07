@@ -411,15 +411,15 @@ class TradingThread(threading.Thread):
                         
                         # 시장 상황별 손실 및 변동성 임계값 설정
                         if market_risk > 0.7:  # 고위험 시장
-                            loss_threshold = -2.0
+                            loss_threshold = -5.0
                             volatility_threshold = 0.25
                             stagnation_threshold = 0.05
                         elif market_risk > 0.5:  # 중위험 시장
-                            loss_threshold = -2.0
+                            loss_threshold = -4.0
                             volatility_threshold = 0.3
                             stagnation_threshold = 0.08
                         else:  # 저위험 시장
-                            loss_threshold = -4.0
+                            loss_threshold = -3.0
                             volatility_threshold = 0.3
                             stagnation_threshold = 0.08
                         
@@ -482,7 +482,7 @@ class TradingThread(threading.Thread):
                             # 손실 구간에서의 정체
                             loss_stagnation = (
                                 is_stagnant and 
-                                current_profit_rate < -0.5 and (  # 손실 상태에서
+                                current_profit_rate < (loss_threshold * 0.2) and (  # 손실 상태에서
                                     latest_change < -0.03 or  # 직전 봉 대비 -0.03% 추가 하락
                                     trends['1m']['trend'] < -0.08  # 1분봉 하락세 강화
                                 )
@@ -504,7 +504,7 @@ class TradingThread(threading.Thread):
                             
                             # 손실 구간에서의 정체
                             loss_stagnation = (
-                                current_profit_rate < -0.5 and (  # 손실 상태에서
+                                current_profit_rate < (loss_threshold * 0.2) and (  # 손실 상태에서
                                     latest_change < -0.05 or  # 직전 봉 대비 -0.05% 추가 하락
                                     trends['15m']['trend'] < -0.1  # 15분봉 하락세 강화
                                 )
