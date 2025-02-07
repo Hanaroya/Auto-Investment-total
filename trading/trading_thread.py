@@ -456,8 +456,8 @@ class TradingThread(threading.Thread):
                         # 3. 시장 상태 기반 매도 (빠른 대응)
                         market_condition_sell = (
                             current_profit_rate > profit_threshold and (
-                                market_condition['AFR'] < -0.2 or  # AFR 하락 즉시
-                                (current_fear_greed < 25 and market_fear_greed < 30)  # 공포 지수 급락 시
+                                market_condition['AFR'] < -0.05 or  # AFR 하락 즉시
+                                (current_fear_greed < 45 and market_fear_greed < 48)  # 공포 지수 급락 시
                             )
                         )
 
@@ -468,26 +468,50 @@ class TradingThread(threading.Thread):
                                             for i in range(1, len(recent_prices))]
                             
                             is_stagnant = all(change <= stagnation_threshold for change in price_changes)
+                            latest_change = ((recent_prices[-1] - recent_prices[-2])/recent_prices[-2]*100)
                             
-                            if is_stagnant and current_profit_rate >= 0.15:  # 0.15% 이상 수익 시
-                                latest_change = ((recent_prices[-1] - recent_prices[-2])/recent_prices[-2]*100)
-                                stagnation_sell_condition = (
+                            # 수익 구간에서의 정체
+                            profit_stagnation = (
+                                is_stagnant and 
+                                current_profit_rate >= 0.15 and (  # 0.15% 이상 수익 시
                                     latest_change < -0.02 or  # 직전 봉 대비 -0.02% 하락
                                     trends['1m']['trend'] < -0.05  # 1분봉 약한 하락
                                 )
-                            else:
-                                stagnation_sell_condition = False
+                            )
+                            
+                            # 손실 구간에서의 정체
+                            loss_stagnation = (
+                                is_stagnant and 
+                                current_profit_rate < 0 and (  # 손실 상태에서
+                                    latest_change < -0.03 or  # 직전 봉 대비 -0.03% 추가 하락
+                                    trends['1m']['trend'] < -0.08  # 1분봉 하락세 강화
+                                )
+                            )
+                            
+                            stagnation_sell_condition = profit_stagnation or loss_stagnation
+                            
                         else:  # 15분봉 사용 스레드
                             recent_prices = [float(candle['close']) for candle in candles_15m[-2:]]  # 30분 데이터
                             latest_change = ((recent_prices[-1] - recent_prices[-2])/recent_prices[-2]*100)
                             
-                            stagnation_sell_condition = (
+                            # 수익 구간에서의 정체
+                            profit_stagnation = (
                                 current_profit_rate >= 0.15 and (  # 0.15% 이상 수익 시
                                     latest_change < -0.03 or  # 직전 봉 대비 -0.03% 하락
                                     trends['15m']['trend'] < -0.05  # 15분봉 약한 하락
                                 )
                             )
-
+                            
+                            # 손실 구간에서의 정체
+                            loss_stagnation = (
+                                current_profit_rate < 0 and (  # 손실 상태에서
+                                    latest_change < -0.05 or  # 직전 봉 대비 -0.05% 추가 하락
+                                    trends['15m']['trend'] < -0.1  # 15분봉 하락세 강화
+                                )
+                            )
+                            
+                            stagnation_sell_condition = profit_stagnation or loss_stagnation
+                        
                         # 5. 사용자 호출 매도 (유지)
                         user_call_sell_condition = active_trade.get('user_call', False)
 
@@ -525,7 +549,7 @@ class TradingThread(threading.Thread):
                         # 물타기 조건 확인
                         should_average_down = (
                             # 기본 조건
-                            current_profit_rate <= -2 and  # 수익률이 -2% 이하
+                            current_profit_rate <= -1.5 and  # 수익률이 -2% 이하
                             current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
                             averaging_down_count < 3 and  # 최대 3회까지만 물타기
                             
