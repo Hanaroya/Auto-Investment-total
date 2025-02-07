@@ -387,6 +387,7 @@ class TradingManager:
                     history_df['매수일자'] = pd.to_datetime(history_df['buy_timestamp']).apply(
                         lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
                     )
+                    history_df['거래종목'] = history_df['market']  # market 컬럼을 거래종목으로 변환
                     history_df['매수가'] = history_df['buy_price'].map('{:,.0f}'.format)
                     history_df['매도가'] = history_df['sell_price'].map('{:,.0f}'.format)
                     history_df['수익률'] = history_df['profit_rate'].map('{:+.2f}%'.format)

@@ -608,28 +608,6 @@ class TradingThread(threading.Thread):
                         # MA 대비 가격 확인
                         price_below_ma = -15 < trends['240m']['price_vs_ma'] <= -8 if trends['240m'].get('ma20') else False
                         
-                        #  # 매수 임계값 동적 조정
-                        # market_fg = market_condition['market_fear_and_greed']
-                        # base_threshold = thresholds['buy_threshold']
-                        
-                        # # 전체 시장 상태에 따른 임계값 조정
-                        # if market_fg <= 45:  # 공포 상태
-                        #     threshold_multiplier = 1.05  # 기준 5% 상향
-                        # elif market_fg >= 55:  # 탐욕 상태
-                        #     threshold_multiplier = 0.95  # 기준 5% 하향
-                        # else:  # 중립 상태
-                        #     threshold_multiplier = 1.0  # 기준 유지
-                        
-                        # # 마켓별 공포탐욕지수에 따른 추가 조정
-                        # if market_fear_greed <= 30:  # 극도의 공포
-                        #     threshold_multiplier += 0.1  # 추가 10% 상향
-                        # elif market_fear_greed <= 45:  # 공포
-                        #     threshold_multiplier += 0.05  # 추가 5% 상향
-                        # elif market_fear_greed >= 61:  # 극도의 탐욕
-                        #     threshold_multiplier -= 0.15  # 10% 하향
-                        
-                        # adjusted_threshold = base_threshold * threshold_multiplier
-                        
                         # 1. 일반 매수 신호 처리 (상승세)
                         normal_buy_condition = (
                             signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] and
@@ -674,11 +652,13 @@ class TradingThread(threading.Thread):
                             existing_lowest = self.db.strategy_data.find_one({'market': market, 'exchange': self.exchange_name})
                             
                             # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때, 현재 가격이 기존 최저가보다 낮을 때 업데이트
-                            if (not existing_lowest
-                                ) or (signals.get('overall_signal', 0.0) < existing_lowest.get('lowest_signal', float('inf'))
-                                ) or (current_price < existing_lowest.get('lowest_price', float('inf'))
-                                ) or (existing_lowest.get('lowest_price', float('inf')) == 0 and 
-                                      existing_lowest.get('lowest_signal', float('inf')) == 0):
+                            lowest_price = existing_lowest.get('lowest_price') if existing_lowest else float('inf')
+                            lowest_signal = existing_lowest.get('lowest_signal') if existing_lowest else float('inf')
+                            
+                            if (not existing_lowest or 
+                                signals.get('overall_signal', 0.0) < lowest_signal or
+                                (current_price < lowest_price if lowest_price is not None else True) or
+                                (lowest_price is None and lowest_signal == 0)):
                                 # 최저 신호 정보 업데이트
                                 self.db.strategy_data.update_one(
                                     {'market': market, 'exchange': self.exchange_name},
