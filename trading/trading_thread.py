@@ -482,7 +482,7 @@ class TradingThread(threading.Thread):
                             # 손실 구간에서의 정체
                             loss_stagnation = (
                                 is_stagnant and 
-                                current_profit_rate < 0 and (  # 손실 상태에서
+                                current_profit_rate < -0.5 and (  # 손실 상태에서
                                     latest_change < -0.03 or  # 직전 봉 대비 -0.03% 추가 하락
                                     trends['1m']['trend'] < -0.08  # 1분봉 하락세 강화
                                 )
@@ -504,7 +504,7 @@ class TradingThread(threading.Thread):
                             
                             # 손실 구간에서의 정체
                             loss_stagnation = (
-                                current_profit_rate < 0 and (  # 손실 상태에서
+                                current_profit_rate < -0.5 and (  # 손실 상태에서
                                     latest_change < -0.05 or  # 직전 봉 대비 -0.05% 추가 하락
                                     trends['15m']['trend'] < -0.1  # 15분봉 하락세 강화
                                 )
