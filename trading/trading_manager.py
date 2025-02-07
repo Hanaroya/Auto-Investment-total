@@ -355,6 +355,7 @@ class TradingManager:
         - 예외 처리 강화
         - 파일 처리 후 정리
         """
+        filename = None  # filename 변수 초기화
         try:
             # 오늘 날짜 기준으로 거래 내역 조회
             kst_today = TimeUtils.get_current_kst().replace(
@@ -364,19 +365,23 @@ class TradingManager:
 
             portfolio = self.db.get_portfolio(exchange)
         
-            # 거래 내역 조회
+            # 거래 내역 조회 - MongoDB 쿼리 수정
             trading_history = list(self.db.trading_history.find({
                 'sell_timestamp': {
                     '$gte': kst_today,
-                    'exchange': exchange,
                     '$lt': kst_tomorrow
-                }
-            }))
+                },
+                'exchange': exchange
+            }).sort([
+                ('sell_timestamp', 1),  # 시간순 정렬
+                ('market', 1)           # 마켓별 정렬
+            ]))
+            
+            filename = f"투자현황-{kst_today.strftime('%Y%m%d')}.xlsx"
             
             # 현재 활성 거래 조회
             active_trades = list(self.db.trades.find({"status": "active"}))
             
-            filename = f"투자현황-{kst_today.strftime('%Y%m%d')}.xlsx"
             with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
                 # 1. 거래 내역 시트
                 if trading_history:
@@ -387,7 +392,7 @@ class TradingManager:
                     history_df['매수일자'] = pd.to_datetime(history_df['buy_timestamp']).apply(
                         lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
                     )
-                    history_df['거래종목'] = history_df['market']  # market 컬럼을 거래종목으로 변환
+                    history_df['거래종목'] = history_df['market']
                     history_df['매수가'] = history_df['buy_price'].map('{:,.0f}'.format)
                     history_df['매도가'] = history_df['sell_price'].map('{:,.0f}'.format)
                     history_df['수익률'] = history_df['profit_rate'].map('{:+.2f}%'.format)
@@ -624,14 +629,16 @@ class TradingManager:
                 'investment_amount': total_max_investment + total_profit_amount,
                 'profit_earned': 0,
                 'last_updated': TimeUtils.get_current_kst(),
-                'market_list': {
-                    trade['market']: {
+                'market_list': [
+                    {
+                        'market': trade['market'],
                         'amount': trade.get('executed_volume', 0),
                         'price': trade.get('price', 0),
                         'current_price': self.upbit.get_current_price(trade['market']),
-                        'investment_amount': trade.get('investment_amount', 0)
+                        'investment_amount': trade.get('investment_amount', 0),
+                        'timestamp': TimeUtils.get_current_kst()
                     } for trade in active_trades
-                }
+                ]
             }
             
             # 포트폴리오 업데이트   
@@ -671,7 +678,7 @@ class TradingManager:
             raise
         finally:
             # 파일 정리
-            if os.path.exists(filename):
+            if filename and os.path.exists(filename):
                 os.remove(filename)
 
     def create_buy_message(self, trade_data: Dict, buy_message: str = None) -> str:

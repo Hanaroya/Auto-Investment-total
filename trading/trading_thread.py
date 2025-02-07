@@ -656,9 +656,10 @@ class TradingThread(threading.Thread):
                             lowest_signal = existing_lowest.get('lowest_signal') if existing_lowest else float('inf')
                             
                             if (not existing_lowest or 
-                                signals.get('overall_signal', 0.0) < lowest_signal or
+                                (existing_lowest and 
+                                (signals.get('overall_signal', 0.0) < lowest_signal or
                                 (current_price < lowest_price if lowest_price is not None else True) or
-                                (lowest_price is None and lowest_signal == 0)):
+                                (lowest_price is None and lowest_signal == 0)))):
                                 # 최저 신호 정보 업데이트
                                 self.db.strategy_data.update_one(
                                     {'market': market, 'exchange': self.exchange_name},
@@ -676,7 +677,7 @@ class TradingThread(threading.Thread):
                         # 최저 신호 정보 조회
                         lowest_data = self.db.strategy_data.find_one({'market': market, 'exchange': self.exchange_name})
                         
-                        if lowest_data and 'lowest_signal' in lowest_data:
+                        if lowest_data and 'lowest_signal' in lowest_data and 'lowest_price' in lowest_data:
                             signal_increase = ((signals.get('overall_signal', 0.0) - lowest_data['lowest_signal']) 
                                               / abs(lowest_data['lowest_signal'])) * 100 if lowest_data['lowest_signal'] != 0 else 0
                             price_increase = ((current_price - lowest_data['lowest_price']) 
