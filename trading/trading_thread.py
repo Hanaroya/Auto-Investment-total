@@ -681,9 +681,9 @@ class TradingThread(threading.Thread):
                             
                             if (not existing_lowest or 
                                 (existing_lowest and 
+                                (lowest_price is None or lowest_signal is None)
                                 (signals.get('overall_signal', 0.0) < lowest_signal or
-                                (current_price < lowest_price if lowest_price is not None else True) or
-                                (lowest_price is None and lowest_signal == 0)))):
+                                (current_price < lowest_price)))):
                                 # 최저 신호 정보 업데이트
                                 self.db.strategy_data.update_one(
                                     {'market': market, 'exchange': self.exchange_name},
