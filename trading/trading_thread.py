@@ -676,27 +676,28 @@ class TradingThread(threading.Thread):
                             existing_lowest = self.db.strategy_data.find_one({'market': market, 'exchange': self.exchange_name})
                             
                             # 기존 최저점이 없거나 현재 신호가 기존 최저점보다 낮을 때, 현재 가격이 기존 최저가보다 낮을 때 업데이트
-                            lowest_price = existing_lowest.get('lowest_price') if existing_lowest else float('inf')
-                            lowest_signal = existing_lowest.get('lowest_signal') if existing_lowest else float('inf')
+                            lowest_price = existing_lowest.get('lowest_price', float('inf'))
+                            lowest_signal = existing_lowest.get('lowest_signal', float('inf'))
+                            current_signal = signals.get('overall_signal', 0.0)
                             
                             if (not existing_lowest or 
-                                (existing_lowest and 
-                                (lowest_price is None or lowest_signal is None)
-                                (signals.get('overall_signal', 0.0) < lowest_signal or
-                                (current_price < lowest_price)))):
+                                lowest_signal is None or 
+                                lowest_price is None or
+                                current_signal < lowest_signal or
+                                current_price < lowest_price):
                                 # 최저 신호 정보 업데이트
                                 self.db.strategy_data.update_one(
                                     {'market': market, 'exchange': self.exchange_name},
                                     {
                                         '$set': {
-                                            'lowest_signal': signals.get('overall_signal', 0.0),
+                                            'lowest_signal': current_signal,
                                             'lowest_price': current_price,
                                             'timestamp': TimeUtils.get_current_kst() 
                                         }
                                     },
                                     upsert=True
                                 )
-                                self.logger.debug(f"{market} - 새로운 최저 신호 기록: {signals.get('overall_signal', 0.0):.4f}")
+                                self.logger.debug(f"{market} - 새로운 최저 신호 기록: {current_signal:.4f}")
                         
                         # 최저 신호 정보 조회
                         lowest_data = self.db.strategy_data.find_one({'market': market, 'exchange': self.exchange_name})
