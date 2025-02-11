@@ -865,7 +865,7 @@ class TradingManager:
                     f"• {trade['market']}\n"
                     f"  └ RANK: {trade['thread_id']:,}\n"
                     f"  └ 매수가: ₩{trade['price']:,}\n"
-                    f"  └ 매수원인: {trade['strategy_data'].get('buy_reason', 'N/A')}\n"
+                    f"  └ 매수원인: {trade['buy_reason']}\n"
                     f"  └ 현재가: ₩{current_price:,}\n"
                     f"  └ 수익률: {profit_rate:+.2f}% (₩{profit_amount:+,.0f})\n"
                     f"  └ 매수시간: {trade['timestamp'].strftime('%Y-%m-%d %H:%M')}"
