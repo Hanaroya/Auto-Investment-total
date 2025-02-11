@@ -642,7 +642,7 @@ class TradingThread(threading.Thread):
                         ma_buy_condition = (
                             price_below_ma and
                             current_investment < self.max_investment and
-                            market_condition['risk_level'] < 0.7 
+                            signals.get('overall_signal', 0.0) >= thresholds['buy_threshold'] * 0.7
                         )
                         
                         # 매수 신호 처리

@@ -279,8 +279,11 @@ class TradingManager:
             # 거래 내역을 trading_history 컬렉션에 저장
             trade_history = {
                 'market': market,
-                'exchange': exchange,
                 'thread_id': thread_id,
+                'profit_rate': round(profit_rate, 2),
+                'profit_amount': floor(profit_amount),
+                'buy_reason': active_trade.get('buy_reason', 'N/A'),
+                'sell_reason': sell_message,
                 'buy_timestamp': active_trade['timestamp'],
                 'sell_timestamp': kst_now,
                 'buy_price': active_trade['price'],
@@ -291,7 +294,7 @@ class TradingManager:
                 'actual_sell_amount': floor(actual_sell_amount),
                 'total_fees': floor(total_fees),
                 'profit_amount': floor(profit_amount),
-                'profit_rate': round(profit_rate, 2),
+                'exchange': exchange,
                 'buy_signal': active_trade.get('buy_signal', 0),
                 'sell_signal': signal_strength,
                 'strategy_data': {
@@ -862,6 +865,7 @@ class TradingManager:
                     f"• {trade['market']}\n"
                     f"  └ RANK: {trade['thread_id']:,}\n"
                     f"  └ 매수가: ₩{trade['price']:,}\n"
+                    f"  └ 매수원인: {trade['strategy_data'].get('buy_reason', 'N/A')}\n"
                     f"  └ 현재가: ₩{current_price:,}\n"
                     f"  └ 수익률: {profit_rate:+.2f}% (₩{profit_amount:+,.0f})\n"
                     f"  └ 매수시간: {trade['timestamp'].strftime('%Y-%m-%d %H:%M')}"
