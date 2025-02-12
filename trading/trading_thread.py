@@ -549,7 +549,7 @@ class TradingThread(threading.Thread):
                         # 물타기 조건 확인
                         should_average_down = (
                             # 기본 조건
-                            current_profit_rate <= -1.5 and  # 수익률이 -2% 이하
+                            current_profit_rate <= -3.5 and  # 수익률이 -3.5% 이하
                             current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
                             averaging_down_count < 3 and  # 최대 3회까지만 물타기
                             
@@ -630,7 +630,7 @@ class TradingThread(threading.Thread):
                     
                     else:
                         # MA 대비 가격 확인
-                        price_below_ma = -15 < trends['240m']['price_vs_ma'] <= -8 if trends['240m'].get('ma20') else False
+                        price_below_ma = -35 < trends['240m']['price_vs_ma'] <= -18 if trends['240m'].get('ma20') else False
                         
                         # 1. 일반 매수 신호 처리 (상승세)
                         normal_buy_condition = (
