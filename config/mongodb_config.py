@@ -10,12 +10,17 @@ def get_mongodb_config() -> Dict[str, Any]:
         'username': os.getenv('MONGO_ROOT_USERNAME'),
         'password': os.getenv('MONGO_ROOT_PASSWORD'),
         'collections': {
-            'trades': 'trades',           # 거래 데이터
-            'market_data': 'market_data', # 시장 데이터
-            'thread_status': 'thread_status', # 스레드 상태
-            'system_config': 'system_config',  # 시스템 설정
-            'daily_profit': 'daily_profit',  # 추가
-            'strategy_data': 'strategy_data',  # 추가
+            'trades': 'trades',                    # 단기 거래 데이터
+            'market_data': 'market_data',          # 시장 데이터
+            'thread_status': 'thread_status',      # 스레드 상태
+            'system_config': 'system_config',      # 시스템 설정
+            'daily_profit': 'daily_profit',        # 일간 수익
+            'strategy_data': 'strategy_data',      # 전략 데이터
+            'long_term_trades': 'long_term_trades',# 장기 투자 거래 정보
+            'trade_conversion': 'trade_conversion', # 거래 전환 기록
+            'trading_history': 'trading_history',   # 거래 히스토리
+            'portfolio': 'portfolio',               # 포트폴리오 정보
+            'scheduled_tasks': 'scheduled_tasks'
         }
     }
 

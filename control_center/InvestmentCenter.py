@@ -322,6 +322,22 @@ class InvestmentCenter:
         except Exception as e:
             self.logger.error(f"정리 작업 중 오류: {str(e)}")
 
+    async def initialize(self):
+        """초기화"""
+        try:
+            self.logger.info("초기화 시작...")
+            
+            # ... 기존 코드 유지 ...
+            
+            # 장기 투자 스케줄러 작업 등록
+            self.trading_manager.register_scheduler_tasks(self.scheduler)
+            
+            # ... 기존 코드 유지 ...
+            
+        except Exception as e:
+            self.logger.error(f"초기화 중 오류 발생: {str(e)}")
+            raise
+
 if __name__ == "__main__":
     # 사용 예시
     """

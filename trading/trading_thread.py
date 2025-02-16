@@ -118,6 +118,7 @@ class TradingThread(threading.Thread):
         self.update_investment_limits()
 
         self.investment_center = investment_center  # InvestmentCenter 인스턴스 저장
+        self.long_term_trades = {}  # 장기 투자 거래 추적을 위한 딕셔너리 추가
 
     def update_investment_limits(self):
         """system_config에서 투자 한도를 업데이트"""
@@ -372,9 +373,96 @@ class TradingThread(threading.Thread):
             self.logger.warning(f"{market}: 현재 가격 - {current_price}")
             self.trading_manager.update_strategy_data(market=market, exchange=self.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
 
+            
+
             # 분석 결과 저장 및 거래 신호 처리
             with self.shared_locks['trade']:
                 try:
+                    # 장기 투자 거래 확인 및 처리
+                    long_term_trade = self.db.long_term_trades.find_one({
+                        'market': market,
+                        'exchange': self.exchange_name,
+                        'status': 'active'
+                    })
+
+                    if long_term_trade:
+                        current_profit_rate = ((current_price - long_term_trade['average_price']) 
+                                            / long_term_trade['average_price'])
+
+                        # 1. 목표 수익률 달성 확인 (5%)
+                        profit_target_reached = current_profit_rate >= 0.05
+
+                        # 2. 시장 상황 기반 매도 조건
+                        market_condition_sell = (
+                            current_profit_rate > 2 and (  # 2% 이상 수익 시
+                                market_condition['AFR'] < -0.05 or  # AFR 급락
+                                (current_fear_greed < 40 and market_fear_greed < 45) or  # 공포 지수 급락
+                                # 추가 조건들
+                                (trends['240m']['trend'] < -0.5 and trends['240m']['volatility'] > 0.8) or  # 4시간봉 급락 + 변동성 증가
+                                (market_condition['risk_level'] > 0.8) or  # 시장 위험도 급증
+                                (current_profit_rate > 3 and market_condition['market_trend'] == -1)  # 3% 이상 수익 + 하락 추세
+                            )
+                        )
+
+                        # 3. 사용자 호출 매도
+                        user_call_sell = long_term_trade.get('user_call', False)
+
+                        # 매도 조건 통합
+                        should_sell_long_term = (
+                            profit_target_reached or
+                            market_condition_sell or
+                            user_call_sell
+                        )
+
+                        # 매도 사유 저장
+                        sell_reason = []
+                        if profit_target_reached:
+                            sell_reason.append("목표 수익(5%) 달성")
+                        if market_condition_sell:
+                            sell_reason.append("시장 상황 악화")
+                        if user_call_sell:
+                            sell_reason.append("사용자 호출")
+                        sell_message = ", ".join(sell_reason)
+
+                        if should_sell_long_term:
+                            try:
+                                # 실제 거래소 매도 주문 (테스트 모드가 아닐 경우)
+                                if not long_term_trade.get('test_mode', False):
+                                    total_amount = sum(pos['amount'] for pos in long_term_trade['positions'])
+                                    
+                                    # 장기 투자 매도를 process_sell_signal을 통해 처리
+                                    sell_data = {
+                                        'market': market,
+                                        'exchange': self.exchange_name,
+                                        'thread_id': self.thread_id,
+                                        'signal_strength': 1.0,  # 장기 투자 매도는 강제 매도이므로 1.0
+                                        'price': current_price,
+                                        'strategy_data': {
+                                            'is_long_term': True,
+                                            'positions': long_term_trade['positions'],
+                                            'initial_investment': long_term_trade['initial_investment'],
+                                            'total_investment': long_term_trade['total_investment'],
+                                            'average_price': long_term_trade['average_price'],
+                                            'conversion_timestamp': long_term_trade.get('conversion_timestamp'),
+                                            'from_short_term': long_term_trade.get('from_short_term', False)
+                                        },
+                                        'sell_message': ", ".join(sell_reason)
+                                    }
+
+                                    if self.trading_manager.process_sell_signal(**sell_data):
+                                        self.logger.info(f"{market}: 장기 투자 매도 완료 - "
+                                                    f"수익률: {current_profit_rate:.2%}, "
+                                                    f"사유: {sell_message}")
+
+                                        # 장기 투자 추적 딕셔너리에서 제거
+                                        self.long_term_trades.pop(market, None)
+                                    else:
+                                        self.logger.error(f"{market}: 장기 투자 매도 처리 실패")
+                                        return
+
+                            except Exception as e:
+                                self.logger.error(f"{market}: 장기 투자 매도 처리 중 오류 - {str(e)}")
+                    
                     # 현재 마켓의 활성 거래 확인 및 로깅
                     active_trade = self.db.trades.find_one({
                         'market': market,
@@ -515,15 +603,22 @@ class TradingThread(threading.Thread):
                         # 5. 사용자 호출 매도 (유지)
                         user_call_sell_condition = active_trade.get('user_call', False)
 
-                        # 매도 조건 통합
+                        # 장기 투자 전환 조건
+                        should_convert_to_long_term = (
+                            current_profit_rate <= -3 and  # 3% 이상 손실
+                            not active_trade.get('is_long_term', False) and  # 아직 장기 투자가 아닌 경우
+                            self.get_total_investment() < self.total_max_investment  # 전체 투자한도 이내
+                        )
+
+                        # 매도 조건 통합 (물타기 관련 조건 제거)
                         should_sell = (
                             profit_take_condition or
                             loss_prevention_condition or
                             market_condition_sell or
                             user_call_sell_condition or
                             stagnation_sell_condition or
-                            ma_condition  # MA 조건 추가
-                        )
+                            ma_condition  # MA 조건
+                        ) and not should_convert_to_long_term
 
                         # 매도 사유 저장 로직 수정
                         sell_reason = []
@@ -544,51 +639,15 @@ class TradingThread(threading.Thread):
                             sell_reason.append("MA20 대비 -15% 이하")
 
                         signals['sell_reason'] = ", ".join(sell_reason)
-
-                        averaging_down_count = active_trade.get('averaging_down_count', 0)
-                        # 물타기 조건 확인
-                        should_average_down = (
-                            # 기본 조건
-                            current_profit_rate <= -3.5 and  # 수익률이 -3.5% 이하
-                            current_investment < self.total_max_investment * 0.8 and  # 최대 투자금의 80% 미만 사용
-                            averaging_down_count < 3 and  # 최대 3회까지만 물타기
-                            
-                            # 시장 상태 확인
-                            market_condition['risk_level'] < 0.7 and  # 시장 위험도가 높지 않을 때
-                            market_fear_greed > 20 and  # 극도의 공포 상태가 아닐 때
-                            
-                            # 시간대별 추세 확인
-                            (
-                                # 0~3번 스레드: 1분봉과 15분봉 기준
-                                (self.thread_id < 4 and (
-                                    trends['1m']['trend'] > -0.5 and  # 1분봉 급락이 아님
-                                    trends['1m']['volatility'] < 0.8 and  # 변동성 안정화
-                                    trends['15m']['trend'] > -0.3  # 15분봉 하락세 완화
-                                )) or
-                                # 4~9번 스레드: 15분봉과 240분봉 기준
-                                (self.thread_id >= 4 and (
-                                    trends['15m']['trend'] > -0.5 and  # 15분봉 급락이 아님
-                                    trends['15m']['volatility'] < 0.8 and  # 변동성 안정화
-                                    trends['240m']['trend'] > -0.3  # 240분봉 하락세 완화
-                                ))
-                            ) and
-                            
-                            # 신호 강도 확인
-                            (
-                                signals.get('overall_signal', 0.0) >= (thresholds['sell_threshold'] * 0.3)  # 매도 임계값의 30% 이상
-                            )
-                        )
-
+                        
                         # 디버깅 로깅
                         self.logger.debug(f"{market} - 수익률: {current_profit_rate:.2f}%, "
                                         f"should_sell: {should_sell}, "
-                                        f"should_average_down: {should_average_down}, "
                                         f"투자금: {current_investment:,}원, "
-                                        f"물타기 횟수: {averaging_down_count}, "
                                         f"시장 위험도: {market_condition['risk_level']}, "
                                         f"마켓 공포지수: {market_fear_greed}")
                         
-                        if should_sell and not should_average_down:
+                        if should_sell:
                             self.logger.info(f"매도 신호 감지: {market} - Profit: {current_profit_rate:.2f}%, "
                                         f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
                             if self.trading_manager.process_sell_signal(
@@ -602,31 +661,55 @@ class TradingThread(threading.Thread):
                             ):
                                 self.logger.info(f"매도 신호 처리 완료: {market}")
                         
-                        if should_average_down:
-                            # 물타기 투자금 계산 (기존 투자금의 50%)
-                            averaging_down_amount = min(
-                                floor(current_investment * 0.5),
-                                self.total_max_investment - current_investment
-                            )
+                        elif should_convert_to_long_term:
+                            # 장기 투자 전환
+                            conversion_data = {
+                                'market': market,
+                                'thread_id': self.thread_id,
+                                'original_trade': active_trade,
+                                'conversion_price': current_price,
+                                'conversion_reason': "3% 이상 손실로 인한 장기 투자 전환",
+                                'test_mode': active_trade.get('test_mode', False)
+                            }
                             
-                            if signals.get('overall_signal', 0.0) >= thresholds['sell_threshold'] and averaging_down_amount >= 5000:  # 최소 주문금액 5000원 이상
-                                self.logger.info(f"물타기 신호 감지: {market} - 현재 수익률: {current_profit_rate:.2f}%")
-                                
-                                # 물타기용 전략 데이터 업데이트
-                                signals['investment_amount'] = averaging_down_amount
-                                signals['is_averaging_down'] = True
-                                signals['existing_trade_id'] = active_trade['_id']
-                                
-                                self.trading_manager.process_buy_signal(
-                                    market=market,
-                                    exchange=self.exchange_name,
-                                    thread_id=self.thread_id,
-                                    signal_strength=0.8,  # 물타기용 신호 강도
-                                    price=current_price,
-                                    strategy_data=signals,
-                                    buy_message="물타기"
+                            if self.db.save_trade_conversion(conversion_data):
+                                # 기존 거래 상태 업데이트
+                                self.db.trades.update_one(
+                                    {'_id': active_trade['_id']},
+                                    {
+                                        '$set': {
+                                            'status': 'converted',
+                                            'is_long_term': True,
+                                            'conversion_timestamp': TimeUtils.get_current_kst(),
+                                            'conversion_price': current_price
+                                        }
+                                    }
                                 )
-                                self.logger.info(f"물타기 주문 처리 완료: {market} - 추가 투자금액: {averaging_down_amount:,}원")
+                                
+                                # 장기 투자 거래 생성
+                                long_term_trade = {
+                                    'market': market,
+                                    'thread_id': self.thread_id,
+                                    'exchange': self.exchange_name,
+                                    'status': 'active',
+                                    'initial_investment': active_trade['investment_amount'],
+                                    'total_investment': active_trade['investment_amount'],
+                                    'average_price': active_trade['price'],
+                                    'target_profit_rate': 5,  # 5% 목표 수익률
+                                    'positions': [{
+                                        'price': active_trade['price'],
+                                        'amount': active_trade['amount'],
+                                        'timestamp': TimeUtils.get_current_kst()
+                                    }],
+                                    'from_short_term': True,
+                                    'original_trade_id': str(active_trade['_id']),
+                                    'test_mode': active_trade.get('test_mode', False),
+                                    'created_at': TimeUtils.get_current_kst()
+                                }
+                                
+                                if self.db.save_long_term_trade(long_term_trade):
+                                    self.logger.info(f"{market}: 장기 투자 전환 완료 (거래 ID: {active_trade['_id']})")
+                                    self.long_term_trades[market] = long_term_trade
                     
                     else:
                         # MA 대비 가격 확인
@@ -997,5 +1080,27 @@ class TradingThread(threading.Thread):
         except Exception as e:
             self.logger.error(f"시장 상태 조회 중 오류 ({market}): {str(e)}")
             return None
+        
+    def get_total_investment(self) -> float:
+        """전체 투자금액 계산 (단기 + 장기)"""
+        try:
+            # 단기 투자 금액
+            active_trades = self.db.trades.find({
+                'thread_id': self.thread_id, 
+                'status': 'active'
+            })
+            short_term_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
+            
+            # 장기 투자 금액
+            long_term_trades = self.db.long_term_trades.find({
+                'thread_id': self.thread_id,
+                'status': 'active'
+            })
+            long_term_investment = sum(trade.get('total_investment', 0) for trade in long_term_trades)
+            
+            return short_term_investment + long_term_investment
+        except Exception as e:
+            self.logger.error(f"투자금액 계산 중 오류: {str(e)}")
+            return 0
         
         

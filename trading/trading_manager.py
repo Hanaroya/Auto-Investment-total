@@ -354,12 +354,15 @@ class TradingManager:
     def generate_daily_report(self, exchange: str):
         """일일 리포트 생성
         
-        Note:
-        - 예외 처리 강화
-        - 파일 처리 후 정리
+        매일 20시에 실행되며 하루 동안의 거래 실적과 현재 포지션을 보고합니다.
+        - 당일 거래 요약
+        - 수익/손실 현황
+        - 포트폴리오 상태
+        - 장기 투자 현황
         """
-        filename = None  # filename 변수 초기화
         try:
+            self.logger.info("일일 리포트 생성 시작")
+            
             # 오늘 날짜 기준으로 거래 내역 조회
             kst_today = TimeUtils.get_current_kst().replace(
                 hour=0, minute=0, second=0, microsecond=0
@@ -674,8 +677,62 @@ class TradingManager:
             
             self.logger.info(f"일일 리포트 생성 및 전송 완료: {kst_today.strftime('%Y-%m-%d')}")
             
+            # 장기 투자 정보 추가
+            long_term_trades = list(self.db.long_term_trades.find({
+                'exchange': exchange,
+                'status': 'active'
+            }))
+            
+            # 장기 투자 상세 정보
+            long_term_details = []
+            for trade in long_term_trades:
+                current_price = self.upbit.get_current_price(trade['market'])
+                total_amount = sum(pos['amount'] for pos in trade.get('positions', []))
+                current_value = total_amount * current_price
+                profit_rate = ((current_value - trade['total_investment']) / trade['total_investment']) * 100
+                
+                long_term_details.append({
+                    'market': trade['market'],
+                    'total_investment': trade['total_investment'],
+                    'current_value': current_value,
+                    'profit_rate': profit_rate,
+                    'position_count': len(trade.get('positions', [])),
+                    'days_active': (TimeUtils.get_current_kst() - trade['created_at']).days
+                })
+            
+            # 장기 투자 요약 정보
+            long_term_summary = {
+                'active_count': len(long_term_trades),
+                'total_investment': sum(trade.get('total_investment', 0) for trade in long_term_trades),
+                'total_current_value': sum(detail['current_value'] for detail in long_term_details),
+                'avg_profit_rate': sum(detail['profit_rate'] for detail in long_term_details) / len(long_term_details) if long_term_details else 0
+            }
+            
+            # 메시지에 장기 투자 정보 추가
+            message += (
+                f"\n\n📊 장기 투자 현황\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 활성 투자: {long_term_summary['active_count']}건\n"
+                f"💵 총 투자금: ₩{long_term_summary['total_investment']:,}\n"
+                f"📈 평가금액: ₩{long_term_summary['total_current_value']:,}\n"
+                f"📊 평균 수익률: {long_term_summary['avg_profit_rate']:+.2f}%\n\n"
+                f"📋 상세 현황:\n"
+            )
+            
+            # 수익률 순으로 정렬하여 상세 정보 추가
+            sorted_details = sorted(long_term_details, key=lambda x: x['profit_rate'], reverse=True)
+            for detail in sorted_details:
+                message += (
+                    f"• {detail['market']}\n"
+                    f"  └ 투자금: ₩{detail['total_investment']:,}\n"
+                    f"  └ 평가금: ₩{detail['current_value']:,}\n"
+                    f"  └ 수익률: {detail['profit_rate']:+.2f}%\n"
+                    f"  └ 포지션: {detail['position_count']}개\n"
+                    f"  └ 경과일: {detail['days_active']}일\n\n"
+                )
+            
         except Exception as e:
-            self.logger.error(f"일일 리포트 생성 중 오류 발생: {str(e)}")
+            self.logger.error(f"일일 리포트 생성 중 오류: {str(e)}")
             # 리포트 전송 실패 시 상태 업데이트
             self.db.update_daily_profit_report_status(exchange=exchange, reported=False)
             raise
@@ -812,6 +869,7 @@ class TradingManager:
         - 현재 보유 마켓 목록
         - 각 마켓별 매수 시간과 임계값
         - 총 투자금액
+        - 장기 투자 현황
         """
         try:
             self.logger.info("시간별 리포트 생성 시작")
@@ -900,7 +958,7 @@ class TradingManager:
                 f"💰 초기 투자금: ₩{initial_investment:,}\n"
                 f"💰 현재 투자금: ₩{total_max_investment:,}\n"
                 f"💵 현재 평가금액: ₩{total_current_value:,.0f}\n"
-                f"📊 보유 마켓 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
+                f"📊 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
                 f"📈 당일 수익률: {daily_profit_rate:+.2f}% (₩{total_profit_amount:+,.0f})\n"
                 f"🔢 보유 마켓: {len(active_trades)}개\n"
             )
@@ -919,6 +977,60 @@ class TradingManager:
                 f"📊 보유 마켓 누적 수익률: {total_profit_rate:+.2f}% (₩{total_profit_earned:+,.0f})\n"
                 f"🔢 보유 마켓: {len(active_trades)}개\n\n"
             )
+            
+            # 장기 투자 정보 추가
+            long_term_trades = list(self.db.long_term_trades.find({
+                'exchange': exchange,
+                'status': 'active'
+            }))
+            
+            # 장기 투자 상세 정보
+            long_term_details = []
+            for trade in long_term_trades:
+                current_price = self.upbit.get_current_price(trade['market'])
+                total_amount = sum(pos['amount'] for pos in trade.get('positions', []))
+                current_value = total_amount * current_price
+                profit_rate = ((current_value - trade['total_investment']) / trade['total_investment']) * 100
+                
+                long_term_details.append({
+                    'market': trade['market'],
+                    'total_investment': trade['total_investment'],
+                    'current_value': current_value,
+                    'profit_rate': profit_rate,
+                    'position_count': len(trade.get('positions', [])),
+                    'days_active': (TimeUtils.get_current_kst() - trade['created_at']).days
+                })
+            
+            # 장기 투자 요약 정보
+            long_term_summary = {
+                'active_count': len(long_term_trades),
+                'total_investment': sum(trade.get('total_investment', 0) for trade in long_term_trades),
+                'total_current_value': sum(detail['current_value'] for detail in long_term_details),
+                'avg_profit_rate': sum(detail['profit_rate'] for detail in long_term_details) / len(long_term_details) if long_term_details else 0
+            }
+            
+            # 메시지에 장기 투자 정보 추가
+            message += (
+                f"\n📊 장기 투자 현황\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 활성 투자: {long_term_summary['active_count']}건\n"
+                f"💵 총 투자금: ₩{long_term_summary['total_investment']:,}\n"
+                f"📈 평가금액: ₩{long_term_summary['total_current_value']:,}\n"
+                f"📊 평균 수익률: {long_term_summary['avg_profit_rate']:+.2f}%\n\n"
+                f"📋 상세 현황:\n"
+            )
+            
+            # 수익률 순으로 정렬하여 상세 정보 추가
+            sorted_details = sorted(long_term_details, key=lambda x: x['profit_rate'], reverse=True)
+            for detail in sorted_details:
+                message += (
+                    f"• {detail['market']}\n"
+                    f"  └ 투자금: ₩{detail['total_investment']:,}\n"
+                    f"  └ 평가금: ₩{detail['current_value']:,}\n"
+                    f"  └ 수익률: {detail['profit_rate']:+.2f}%\n"
+                    f"  └ 포지션: {detail['position_count']}개\n"
+                    f"  └ 경과일: {detail['days_active']}일\n\n"
+                )
             
             # Slack으로 메시지 전송
             self.messenger.send_message(message=message, messenger_type="slack")
@@ -1259,3 +1371,31 @@ class TradingManager:
         except Exception as e:
             self.logger.error(f"최저가 초기화 중 오류 발생: {str(e)}")
             raise
+
+    async def check_long_term_investments(self, exchange: str):
+        """장기 투자 상태 체크 및 추가 투자 처리"""
+        try:
+            # 활성 장기 투자 조회
+            active_trades = self.db.long_term_trades.find({
+                'status': 'active',
+                'exchange': exchange
+            })
+
+            for trade in active_trades:
+                try:
+                    # 마지막 투자로부터 1시간 경과 확인
+                    last_investment = trade.get('last_investment_time')
+                    if last_investment:
+                        time_diff = TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(last_investment)
+                        if time_diff.total_seconds() < 3600:  # 1시간 = 3600초
+                            continue
+
+                    # 추가 투자 실행
+                    await self.process_long_term_investment(trade)
+
+                except Exception as e:
+                    self.logger.error(f"장기 투자 처리 중 오류 ({trade['market']}): {str(e)}")
+                    continue
+
+        except Exception as e:
+            self.logger.error(f"장기 투자 체크 중 오류: {str(e)}")

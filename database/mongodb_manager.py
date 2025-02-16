@@ -1,7 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
 from pymongo.collection import Collection
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 from utils.time_utils import TimeUtils
 import sys
@@ -26,7 +26,9 @@ class MongoDBManager:
         'market_data': threading.Lock(),
         'thread_status': threading.Lock(),
         'system_config': threading.Lock(),
-        'market_index': threading.Lock()
+        'market_index': threading.Lock(),
+        'long_term_trades': threading.Lock(),
+        'trade_conversion': threading.Lock()
     }
 
     def __new__(cls, *args, **kwargs):
@@ -81,6 +83,16 @@ class MongoDBManager:
                         
                         # 시스템 설정 초기화 (추가)
                         self._initialize_system_config()
+                        
+                        # 컬렉션 초기화
+                        self.long_term_trades = self.db[MONGODB_CONFIG['collections']['long_term_trades']]
+                        self.trade_conversion = self.db[MONGODB_CONFIG['collections']['trade_conversion']]
+                        
+                        # 컬렉션별 락 추가
+                        self._collection_locks.update({
+                            'long_term_trades': threading.Lock(),
+                            'trade_conversion': threading.Lock()
+                        })
                         
                         self._initialized = True
                         self.logger.debug("MongoDBManager 인스턴스 초기화 완료")
@@ -302,7 +314,7 @@ class MongoDBManager:
         """컬렉션 설정 및 인덱스 생성"""
         try:
             # 컬렉션 초기화
-            self.trades = self.db['trades']
+            self.trades = self.db[MONGODB_CONFIG['collections']['trades']]  # 'trades' 컬렉션으로 통일
             self.market_data = self.db[MONGODB_CONFIG['collections']['market_data']]
             self.thread_status = self.db[MONGODB_CONFIG['collections']['thread_status']]
             self.system_config = self.db['system_config']
@@ -952,3 +964,76 @@ class MongoDBManager:
                 'fear_and_greed': [],
                 'last_updated': TimeUtils.get_current_kst()
             }
+
+    def save_long_term_trade(self, trade_data: Dict[str, Any]) -> bool:
+        """장기 투자 거래 정보 저장"""
+        try:
+            with self._get_collection_lock('long_term_trades'):
+                trade_data['last_updated'] = TimeUtils.get_current_kst()
+                if '_id' not in trade_data:
+                    trade_data['created_at'] = TimeUtils.get_current_kst()
+                    result = self.long_term_trades.insert_one(trade_data)
+                    return bool(result.inserted_id)
+                else:
+                    result = self.long_term_trades.update_one(
+                        {'_id': trade_data['_id']},
+                        {'$set': trade_data}
+                    )
+                    return bool(result.modified_count > 0)
+        except Exception as e:
+            self.logger.error(f"장기 투자 거래 저장 실패: {str(e)}")
+            return False
+
+    def save_trade_conversion(self, conversion_data: Dict[str, Any]) -> bool:
+        """거래 전환 기록 저장"""
+        try:
+            with self._get_collection_lock('trade_conversion'):
+                conversion_data.update({
+                    'created_at': TimeUtils.get_current_kst(),
+                    'last_updated': TimeUtils.get_current_kst()
+                })
+                result = self.trade_conversion.insert_one(conversion_data)
+                return bool(result.inserted_id)
+        except Exception as e:
+            self.logger.error(f"거래 전환 기록 저장 실패: {str(e)}")
+            return False
+
+    def get_active_long_term_trades(self, exchange: str) -> List[Dict[str, Any]]:
+        """활성 상태인 장기 투자 거래 목록 조회"""
+        try:
+            with self._get_collection_lock('long_term_trades'):
+                return list(self.long_term_trades.find({
+                    'exchange': exchange,
+                    'status': 'active'
+                }))
+        except Exception as e:
+            self.logger.error(f"활성 장기 투자 거래 조회 실패: {str(e)}")
+            return []
+
+    def get_long_term_trade(self, trade_id: str) -> Optional[Dict[str, Any]]:
+        """특정 장기 투자 거래 정보 조회"""
+        try:
+            with self._get_collection_lock('long_term_trades'):
+                return self.long_term_trades.find_one({'_id': trade_id})
+        except Exception as e:
+            self.logger.error(f"장기 투자 거래 조회 실패 (ID: {trade_id}): {str(e)}")
+            return None
+
+    def get_scheduled_tasks(self, task_type: str = None):
+        """스케줄 작업 조회"""
+        query = {'status': 'active'}
+        if task_type:
+            query['type'] = task_type
+        return self.scheduled_tasks.find(query)
+
+    def update_scheduled_task_status(self, task_name: str, status: str):
+        """스케줄 작업 상태 업데이트"""
+        return self.scheduled_tasks.update_one(
+            {'_id': task_name},
+            {
+                '$set': {
+                    'status': status,
+                    'last_updated': TimeUtils.get_current_kst()
+                }
+            }
+        )
