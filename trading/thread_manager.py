@@ -56,6 +56,7 @@ class ThreadManager:
         self.threads = []
         self.running = False
         self.db = MongoDBManager(exchange_name=self.investment_center.exchange_name)
+        self.exchange_name = self.investment_center.exchange_name
         self.logger = logging.getLogger('investment_center')
         self.stop_flag = threading.Event()
         # 공유 락 초기화
