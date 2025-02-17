@@ -364,7 +364,7 @@ class ThreadManager:
                         })
 
                 self.logger.info(
-                    f"Thread {self.thread_id} 투자 한도 업데이트 "
+                    f"Thread {self.exchange_name} 투자 한도 업데이트 "
                     f"(테스트 모드: {is_test_mode}): "
                     f"최대 투자금: {self.max_investment:,}원, "
                     f"마켓당 투자금: {self.investment_each:,}원, "
