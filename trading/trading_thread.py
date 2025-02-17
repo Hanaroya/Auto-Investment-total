@@ -163,9 +163,9 @@ class TradingThread(threading.Thread):
                 else:
                     # 테스트 모드일 경우 기존 로직 유지
                     total_max_investment = system_config.get('total_max_investment', 1000000)
-                    self.total_max_investment = floor(total_max_investment * 0.8)
-                    self.max_investment = floor(self.total_max_investment * 0.1)
-                    self.investment_each = floor(self.total_max_investment / 20)
+                    self.total_max_investment = total_max_investment
+                    self.max_investment = floor((self.total_max_investment * 0.8) * 0.1)
+                    self.investment_each = floor((self.total_max_investment * 0.8) / 20)
                 
                 # 포트폴리오 업데이트
                 existing_portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
@@ -178,8 +178,8 @@ class TradingThread(threading.Thread):
                         {'$set': {
                             'test_mode': is_test_mode,
                             'investment_amount': self.total_max_investment,
-                            'available_investment': self.total_max_investment,
-                            'current_amount': self.total_max_investment,
+                            'available_investment': self.total_max_investment * 0.8,
+                            'current_amount': self.total_max_investment * 0.8,
                             'reserve_amount': floor(self.total_max_investment * 0.2),
                             'profit_earned': profit_earned,
                             'last_updated': TimeUtils.get_current_kst()
