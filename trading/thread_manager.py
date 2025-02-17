@@ -63,7 +63,8 @@ class ThreadManager:
             'candle_data': threading.Lock(),
             'trade': threading.Lock(),
             'market_data': threading.Lock(),
-            'long_term_trades': threading.Lock()
+            'long_term_trades': threading.Lock(),
+            'portfolio': threading.Lock()
         }
 
         # 시그널 핸들러 등록
