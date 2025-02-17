@@ -173,24 +173,56 @@ class TradingThread(threading.Thread):
                     # 기존 profit_earned 값 보존
                     profit_earned = existing_portfolio.get('profit_earned', 0)
                     
+                    # 현재 활성 거래들의 총 투자 금액 계산
+                    active_trades = self.db.trades.find({
+                        'exchange': self.exchange_name,
+                        'status': 'active'
+                    })
+                    active_long_term_trades = self.db.long_term_trades.find({
+                        'exchange': self.exchange_name,
+                        'status': 'active'
+                    })
+                    
+                    total_invested = sum(trade.get('investment_amount', 0) for trade in active_trades)
+                    total_invested += sum(trade.get('investment_amount', 0) for trade in active_long_term_trades)
+                    
+                    # 가용 금액 계산 (전체 투자 가능 금액 - 현재 투자된 금액)
+                    available_amount = floor(self.total_max_investment * 0.8)
+                    current_amount = floor(self.total_max_investment * 0.8) + profit_earned - total_invested
+                    
                     self.db.portfolio.update_one(
                         {'exchange': self.exchange_name},
                         {'$set': {
                             'test_mode': is_test_mode,
                             'investment_amount': self.total_max_investment,
-                            'available_investment': floor(self.total_max_investment * 0.8),
-                            'current_amount': floor(self.total_max_investment * 0.8) + profit_earned,
+                            'available_investment': available_amount,
+                            'current_amount': current_amount,
                             'reserve_amount': floor(self.total_max_investment * 0.2),
                             'profit_earned': profit_earned,
                             'last_updated': TimeUtils.get_current_kst()
                         }}
                     )
-                
+                else:
+                    self.db.portfolio.insert_one({
+                        'exchange': self.exchange_name,
+                        'current_amount': floor(self.total_max_investment * 0.8),
+                        'available_amount': floor(self.total_max_investment * 0.8),
+                        'reserve_amount': floor(self.total_max_investment * 0.2),
+                        'investment_amount': self.total_max_investment,
+                        'profit_earned': 0,
+                        'market_list': [],
+                        'last_updated': TimeUtils.get_current_kst(),
+                        'test_mode': is_test_mode,
+                        'global_tradeable': False
+                    })
+
                 self.logger.info(
                     f"Thread {self.thread_id} 투자 한도 업데이트 "
                     f"(테스트 모드: {is_test_mode}): "
                     f"최대 투자금: {self.max_investment:,}원, "
-                    f"마켓당 투자금: {self.investment_each:,}원"
+                    f"마켓당 투자금: {self.investment_each:,}원, "
+                    f"현재 투자된 금액: {total_invested:,}원, "
+                    f"가용 금액: {available_amount:,}원"
                 )
                 
         except Exception as e:
@@ -217,6 +249,10 @@ class TradingThread(threading.Thread):
                     initial_delay = (self.thread_id - 4) * 1
                 
                 time.sleep(initial_delay)
+
+                now = datetime.now()
+                if now.minute % 5 == 0:
+                    self.update_investment_limits()
                 
                 for market in self.markets:
                     if self.stop_flag.is_set():
