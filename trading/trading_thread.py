@@ -622,7 +622,7 @@ class TradingThread(threading.Thread):
                         # 장기 투자 전환 조건 개선
                         should_convert_to_long_term = (
                             # 기본 손실 조건
-                            current_profit_rate <= -3 and  
+                            (loss_prevention_condition or stagnation_sell_condition or ma_condition) and  
                             not active_trade.get('is_long_term', False) and
                             self.get_total_investment() < self.total_max_investment and
                             
