@@ -258,7 +258,7 @@ class ThreadManager:
             try:
                 while self.running and not self.stop_flag.is_set():
                     now = datetime.now()
-                    if now.minute % 10 == 0:
+                    if now.minute % 10 == 0 and 10 > now.second > 0:
                         self.update_investment_limits()
                     time.sleep(1)
             except KeyboardInterrupt:
@@ -334,9 +334,10 @@ class ThreadManager:
                     available_amount = floor(self.total_max_investment * 0.8)
                     current_amount = floor(self.total_max_investment * 0.8) + profit_earned - total_invested
                     
-                    self.db.portfolio.update_one(
-                        {'exchange': self.exchange_name},
-                        {'$set': {
+                    with self.shared_locks['portfolio']:
+                        self.db.portfolio.update_one(
+                            {'exchange': self.exchange_name},
+                            {'$set': {
                             'test_mode': is_test_mode,
                             'investment_amount': self.total_max_investment,
                             'available_investment': available_amount,
@@ -347,18 +348,19 @@ class ThreadManager:
                         }}
                     )
                 else:
-                    self.db.portfolio.insert_one({
-                        'exchange': self.exchange_name,
-                        'current_amount': floor(self.total_max_investment * 0.8),
-                        'available_amount': floor(self.total_max_investment * 0.8),
-                        'reserve_amount': floor(self.total_max_investment * 0.2),
-                        'investment_amount': self.total_max_investment,
-                        'profit_earned': 0,
-                        'market_list': [],
-                        'last_updated': TimeUtils.get_current_kst(),
-                        'test_mode': is_test_mode,
-                        'global_tradeable': False
-                    })
+                    with self.shared_locks['portfolio']:
+                        self.db.portfolio.insert_one({
+                            'exchange': self.exchange_name,
+                            'current_amount': floor(self.total_max_investment * 0.8),
+                            'available_amount': floor(self.total_max_investment * 0.8),
+                            'reserve_amount': floor(self.total_max_investment * 0.2),
+                            'investment_amount': self.total_max_investment,
+                            'profit_earned': 0,
+                            'market_list': [],
+                            'last_updated': TimeUtils.get_current_kst(),
+                            'test_mode': is_test_mode,
+                            'global_tradeable': False
+                        })
 
                 self.logger.info(
                     f"Thread {self.thread_id} 투자 한도 업데이트 "
