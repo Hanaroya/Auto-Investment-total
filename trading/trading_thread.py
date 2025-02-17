@@ -403,8 +403,9 @@ class TradingThread(threading.Thread):
                     # 포트폴리오가 없으면 생성하고 global_tradeable을 false로 설정
                     self.db.portfolio.insert_one({
                         'exchange': self.exchange_name,
-                        'current_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
-                        'available_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
+                        'current_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000) * 0.8),
+                        'available_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000) * 0.8),
+                        'reserve_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000) * 0.2),
                         'invested_amount': 0,
                         'profit_earned': 0,
                         'market_list': [],
