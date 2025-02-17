@@ -431,49 +431,57 @@ class TradingThread(threading.Thread):
                             market_condition=market_condition,
                             trends=trends
                         ):
-                            # 매도 주문 실행
-                            self._execute_long_term_sell(
-                                trade=long_term_trade,
-                                current_price=current_price,
-                                reason="목표 수익 달성 또는 시장 상황"
-                            )
-                            continue
+                            # 매도 신호 처리
+                            sell_reason = "장기 투자 목표 달성 또는 손절"
+                            if self.trading_manager.process_sell_signal(
+                                market=market,
+                                exchange=self.exchange_name,
+                                thread_id=self.thread_id,
+                                signal_strength=market_condition.get('overall_signal', 0.0),
+                                price=current_price,
+                                strategy_data={
+                                    'trade_type': 'long_term',
+                                    'trade_id': str(long_term_trade['_id']),
+                                    'profit_rate': ((current_price - long_term_trade['average_price']) / long_term_trade['average_price']) * 100,
+                                    'market_condition': market_condition,
+                                    'trends': trends
+                                },
+                                sell_message=sell_reason,
+                                test_mode=self.config.get('test_mode', True)
+                            ):
+                                self.logger.info(f"{market} 장기 투자 매도 신호 처리 완료")
+                            else:
+                                # 2. 추가 매수 조건 확인
+                                last_investment = long_term_trade.get('last_investment_time')
+                                if last_investment:
+                                    time_diff = TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(last_investment)
+                                    if time_diff.total_seconds() >= 3600:  # 1시간 이상 경과
+                                        # 최소 투자금의 2배 계산
+                                        min_trade_amount = self.config.get('min_trade_amount', 5000)
+                                        investment_amount = min_trade_amount * 2
+                                        buy_reason = "장기 투자 추가 매수"
 
-                        # 2. 추가 매수 처리
-                        self.long_term_manager.process_additional_investment(
-                            trade=long_term_trade,
-                            current_price=current_price,
-                            market_condition=market_condition,
-                            trends=trends
-                        )
+                                        # 투자 가능한 최대 금액 확인 및 시장 상황에 관계 없이 지속적으로 투자 
+                                        portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
+                                        if portfolio and portfolio.get('available_amount', 0) >= investment_amount:
+                                            self.trading_manager.process_buy_signal(
+                                                market=market,
+                                                exchange=self.exchange_name,
+                                                thread_id=self.thread_id,
+                                                signal_strength=market_condition.get('overall_signal', 0.0),
+                                                price=current_price,
+                                                strategy_data={
+                                                    **long_term_trade,
+                                                    'investment_amount': investment_amount,
+                                                    'trade_type': 'long_term_additional'
+                                                },
+                                                test_mode=self.config.get('test_mode', True),
+                                                buy_message=buy_reason
+                                            )
+                                            self.logger.info(f"{market} 장기 투자 추가 매수 처리 완료 - 투자금액: {investment_amount:,}원")
 
                     except Exception as e:
                         self.logger.error(f"장기 투자 처리 중 오류 ({market}): {str(e)}")
-                        continue
-
-                # 단기 거래 손실 시 장기 전환 검토
-                
-                with self.shared_locks['trade']:
-                    active_trades = self.db.trades.find({
-                        'market': market,
-                        'exchange': self.exchange_name,
-                        'status': 'active',
-                        'thread_id': self.thread_id,
-                        'is_long_term': {'$ne': True}
-                    })
-
-                for trade in active_trades:
-                    try:
-                        # 장기 투자 전환 조건 확인
-                        if self.long_term_manager.convert_to_long_term(
-                            trade=trade,
-                            market_condition=market_condition,
-                            trends=trends
-                        ):
-                            self.logger.info(f"{market} 거래가 장기 투자로 전환됨")
-                            
-                    except Exception as e:
-                        self.logger.error(f"장기 전환 검토 중 오류 ({market}): {str(e)}")
                         continue
 
             # 분석 결과 저장 및 거래 신호 처리

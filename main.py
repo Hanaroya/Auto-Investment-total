@@ -98,16 +98,6 @@ class CryptoTradingBot:
                 minute=0
             )
             
-            # 장기 투자 체크 - 매시 정각에 실행
-            self.scheduler.schedule_task(
-                'long_term_investment_check',
-                lambda: self.investment_center.trading_manager.check_long_term_investments(
-                    exchange=self.investment_center.exchange_name
-                ),
-                hour=-1,  # 매시간 실행
-                minute=0  # 정각에 실행
-            )
-            
             # 스케줄러 스레드 시작
             self.investment_center.thread_manager.start_scheduler(self.scheduler)
             self.logger.info("스케줄러 작업 등록 완료")

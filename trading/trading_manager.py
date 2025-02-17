@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 import yaml
 from strategy.StrategyBase import StrategyManager
+from trading.long_term_trading_manager import LongTermTradingManager
 from trade_market_api.UpbitCall import UpbitCall
 import os
 from math import floor
@@ -23,6 +24,8 @@ class TradingManager:
         self.config = self._load_config()
         self.messenger = Messenger(self.config)
         self.logger = logging.getLogger('investment-center')
+        self.exchange_name = exchange_name  
+        self.long_term_trading_manager = LongTermTradingManager(self.db, self.exchange_name, self.config)
         self.upbit = UpbitCall(
             self.config['api_keys']['upbit']['access_key'],
             self.config['api_keys']['upbit']['secret_key'],
@@ -898,7 +901,6 @@ class TradingManager:
                 trade_time = TimeUtils.from_mongo_date(trade['timestamp'])
                 if trade_time.tzinfo is None:  # naive datetime인 경우
                     trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))
-                    
                 now = TimeUtils.get_current_kst()  # 현재 시간 KST
                 
                 self.logger.warning(f"시간 정보 비교 - trade_time: {trade_time} ({type(trade_time)}, tz: {trade_time.tzinfo})")
@@ -1371,31 +1373,3 @@ class TradingManager:
         except Exception as e:
             self.logger.error(f"최저가 초기화 중 오류 발생: {str(e)}")
             raise
-
-    async def check_long_term_investments(self, exchange: str):
-        """장기 투자 상태 체크 및 추가 투자 처리"""
-        try:
-            # 활성 장기 투자 조회
-            active_trades = self.db.long_term_trades.find({
-                'status': 'active',
-                'exchange': exchange
-            })
-
-            for trade in active_trades:
-                try:
-                    # 마지막 투자로부터 1시간 경과 확인
-                    last_investment = trade.get('last_investment_time')
-                    if last_investment:
-                        time_diff = TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(last_investment)
-                        if time_diff.total_seconds() < 3600:  # 1시간 = 3600초
-                            continue
-
-                    # 추가 투자 실행
-                    await self.process_long_term_investment(trade)
-
-                except Exception as e:
-                    self.logger.error(f"장기 투자 처리 중 오류 ({trade['market']}): {str(e)}")
-                    continue
-
-        except Exception as e:
-            self.logger.error(f"장기 투자 체크 중 오류: {str(e)}")

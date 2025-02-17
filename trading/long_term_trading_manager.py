@@ -157,11 +157,28 @@ class LongTermTradingManager:
             self.logger.error(f"거래량 안정성 확인 중 오류: {str(e)}")
             return False
             
-    def process_additional_investment(self, trade: dict, current_price: float, 
-                                    market_condition: dict, trends: dict) -> bool:
-        """추가 투자 처리"""
+    def process_additional_investment(self, trade: dict, current_price: float = None, 
+                                    market_condition: dict = None, trends: dict = None) -> bool:
+        """추가 투자 처리
+        Args:
+            trade (dict): 거래 정보
+            current_price (float, optional): 현재 가격. None일 경우 실시간 조회
+            market_condition (dict, optional): 시장 상황 데이터. None일 경우 실시간 분석
+            trends (dict, optional): 시장 트렌드 데이터. None일 경우 실시간 분석
+        Returns:
+            bool: 투자 가능 여부 (True: 투자 조건 적합, False: 부적합)
+        """
         try:
             # 1. 기본 정보 계산
+            if current_price is None:
+                current_price = self.exchange.get_current_price(trade['market'])
+            
+            if market_condition is None:
+                market_condition = self.market_analyzer.get_market_condition()
+            
+            if trends is None:
+                trends = self.market_analyzer.get_market_trends(trade['market'])
+            
             current_profit_rate = ((current_price - trade['average_price']) 
                                  / trade['average_price']) * 100
             total_investment = trade.get('total_investment', 0)
@@ -184,26 +201,11 @@ class LongTermTradingManager:
                 current_profit_rate=current_profit_rate
             )
             
-            # 4. 추가 매수 금액 계산 및 실행
-            if market_score >= 0.7:
-                additional_amount = self._calculate_additional_amount(
-                    trade=trade,
-                    market_score=market_score,
-                    current_price=current_price
-                )
-                
-                if additional_amount > 0:
-                    return self._execute_additional_purchase(
-                        market=trade['market'],
-                        trade=trade,
-                        amount=additional_amount,
-                        current_price=current_price
-                    )
-                    
-            return False
+            # 4. 투자 가능 여부 반환
+            return market_score >= 0.7
             
         except Exception as e:
-            self.logger.error(f"추가 투자 처리 중 오류: {str(e)}")
+            self.logger.error(f"추가 투자 조건 확인 중 오류: {str(e)}")
             return False
             
     def _evaluate_market_for_addition(self, market_condition: dict,
@@ -268,50 +270,7 @@ class LongTermTradingManager:
         except Exception as e:
             self.logger.error(f"추가 매수 금액 계산 중 오류: {str(e)}")
             return 0
-            
-    def _execute_additional_purchase(self, market: str, trade: dict,
-                                   amount: float, current_price: float) -> bool:
-        """추가 매수 실행"""
-        try:
-            quantity = amount / current_price
-            
-            # 주문 실행
-            order_result = self.exchange.place_buy_order(
-                market=market,
-                price=current_price,
-                quantity=quantity,
-                order_type='additional'
-            )
-            
-            if order_result:
-                new_position = {
-                    'price': current_price,
-                    'amount': amount,
-                    'quantity': quantity,
-                    'timestamp': TimeUtils.get_current_kst()
-                }
-                
-                self.db.long_term_trades.update_one(
-                    {'_id': trade['_id']},
-                    {
-                        '$push': {'positions': new_position},
-                        '$inc': {'total_investment': amount},
-                        '$set': {
-                            'last_updated': TimeUtils.get_current_kst(),
-                            'average_price': (trade['average_price'] * trade['total_investment'] + 
-                                            current_price * amount) / (trade['total_investment'] + amount)
-                        }
-                    }
-                )
-                
-                self.logger.info(f"{market} 장기 투자 추가 매수 성공: {amount:,}원 @ {current_price:,}원")
-                return True
-                
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"추가 매수 실행 중 오류: {str(e)}")
-            return False
+
 
     def check_sell_conditions(self, trade: dict, current_price: float,
                             market_condition: dict, trends: dict) -> bool:
@@ -499,122 +458,3 @@ class LongTermTradingManager:
         except Exception as e:
             self.logger.error(f"장기 투자 목록 조회 실패: {str(e)}")
             return []
-            
-    def check_additional_investment(self, trade: Dict) -> bool:
-        """추가 투자 가능 여부 확인
-        
-        Args:
-            trade: 장기 투자 거래 정보
-            
-        Returns:
-            bool: 추가 투자 가능 여부
-        """
-        try:
-            # 마지막 투자로부터 1시간 경과 확인
-            last_investment = trade.get('last_investment_time')
-            if last_investment:
-                time_diff = TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(last_investment)
-                if time_diff.total_seconds() < 3600:  # 1시간 = 3600초
-                    return False
-                    
-            # 투자 한도 확인
-            current_investment = trade.get('total_investment', 0)
-            next_investment = self.min_trade_amount * 2  # 최소 투자금액의 2배
-            
-            if current_investment + next_investment > self.max_investment:
-                return False
-                
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"추가 투자 가능 여부 확인 중 오류: {str(e)}")
-            return False
-            
-    def process_additional_investment(self, trade: Dict) -> bool:
-        """추가 투자 처리
-        
-        Args:
-            trade: 장기 투자 거래 정보
-            
-        Returns:
-            bool: 추가 투자 성공 여부
-        """
-        try:
-            if not self.check_additional_investment(trade):
-                return False
-                
-            # 추가 투자 금액 계산
-            additional_amount = self.min_trade_amount * 2
-            
-            # 투자 실행 (trading_manager 사용)
-            if self.trading_manager:
-                investment_result = self.trading_manager.process_buy_signal(
-                    market=trade['market'],
-                    exchange=self.exchange_name,
-                    thread_id=trade['thread_id'],
-                    signal_strength=1.0,
-                    price=trade.get('current_price', 0),
-                    strategy_data={
-                        'investment_amount': additional_amount,
-                        'is_long_term': True,
-                        'existing_trade_id': trade['_id']
-                    },
-                    buy_message="장기 투자 추가"
-                )
-                
-                if investment_result:
-                    # 투자 정보 업데이트
-                    self.db.long_term_trades.update_one(
-                        {'_id': trade['_id']},
-                        {
-                            '$set': {
-                                'last_investment_time': TimeUtils.get_current_kst(),
-                                'total_investment': trade['total_investment'] + additional_amount
-                            }
-                        }
-                    )
-                    return True
-                    
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"추가 투자 처리 중 오류: {str(e)}")
-            return False
-
-    def register_scheduler_tasks(self, scheduler):
-        """스케줄러 작업 등록
-        
-        Args:
-            scheduler: SimpleScheduler 인스턴스
-        """
-        try:
-            # 1시간마다 장기 투자 체크 (매시 정각)
-            scheduler.schedule_task(
-                'long_term_investment_check',
-                self.check_long_term_investments,
-                hour=-1,  # 매시간 실행
-                minute=0  # 정각에 실행
-            )
-            
-            self.logger.info("장기 투자 스케줄러 작업 등록 완료")
-            
-        except Exception as e:
-            self.logger.error(f"스케줄러 작업 등록 실패: {str(e)}")
-
-    async def check_long_term_investments(self):
-        """장기 투자 상태 체크 및 추가 투자 처리"""
-        try:
-            active_trades = self.get_active_trades()
-            self.logger.info(f"활성 장기 투자 거래 수: {len(active_trades)}")
-            
-            for trade in active_trades:
-                # 추가 투자 가능 여부 확인
-                if self.check_additional_investment(trade):
-                    # 추가 투자 실행
-                    if await self.process_additional_investment(trade):
-                        self.logger.info(f"장기 투자 추가 완료: {trade['market']}")
-                    else:
-                        self.logger.warning(f"장기 투자 추가 실패: {trade['market']}")
-                    
-        except Exception as e:
-            self.logger.error(f"장기 투자 체크 중 오류: {str(e)}") 
