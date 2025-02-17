@@ -150,7 +150,7 @@ class TradingManager:
                     'timestamp': kst_now,
                     'averaging_down_count': 0,
                     'user_call': False,
-                    'is_tradeable': True,
+                    'is_tradeable': False,
                     'is_long_term_trade': False
                 }
                 
