@@ -381,6 +381,24 @@ class TradingThread(threading.Thread):
             self.logger.warning(f"{market}: 현재 가격 - {current_price}")
             self.trading_manager.update_strategy_data(market=market, exchange=self.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
 
+            # 전역 거래 가능 여부 확인
+            with self.shared_locks['portfolio']:
+                portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
+                if not portfolio.get('global_tradeable', True):
+                    self.logger.info(f"전체 마켓 거래 중지 상태")
+                    return
+
+            # 개별 마켓 거래 가능 여부 확인
+            with self.shared_locks['trade']:
+                market_trade = self.db.trades.find_one({
+                    'market': market,
+                    'exchange': self.exchange_name,
+                    'status': 'active'
+                })
+                if market_trade and not market_trade.get('is_tradeable', True):
+                    self.logger.info(f"{market}: 거래 중지 상태")
+                    return
+
             # 장기 투자 거래 확인 및 처리
             with self.shared_locks['long_term_trades']:
                 long_term_trades = self.db.long_term_trades.find({
@@ -1321,6 +1339,56 @@ class TradingThread(threading.Thread):
 
         except Exception as e:
             self.logger.error(f"장기 투자 매도 실행 중 오류: {str(e)}")
+            return False
+
+    def set_market_tradeable(self, market: str, tradeable: bool, reason: str = None) -> bool:
+        """
+        특정 마켓 거래 가능 여부 설정
+        """
+        try:
+            update_result = self.db.trades.update_many(
+                {
+                    'market': market,
+                    'exchange': self.exchange_name,
+                    'status': 'active'
+                },
+                {
+                    '$set': {
+                        'is_tradeable': tradeable,
+                        'tradeable_update_reason': reason,
+                        'tradeable_updated_at': TimeUtils.get_current_kst()
+                    }
+                }
+            )
+            
+            self.logger.info(f"{market} 거래 {'가능' if tradeable else '중지'} 설정 완료: {reason}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"마켓 거래 가능 여부 설정 중 오류: {str(e)}")
+            return False
+
+    def set_global_tradeable(self, tradeable: bool, reason: str = None) -> bool:
+        """
+        전체 마켓 거래 가능 여부 설정
+        """
+        try:
+            self.db.portfolio.update_one(
+                {'exchange': self.exchange_name},
+                {
+                    '$set': {
+                        'global_tradeable': tradeable,
+                        'global_tradeable_reason': reason,
+                        'global_tradeable_updated_at': TimeUtils.get_current_kst()
+                    }
+                }
+            )
+            
+            self.logger.info(f"전체 마켓 거래 {'가능' if tradeable else '중지'} 설정 완료: {reason}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"전체 거래 가능 여부 설정 중 오류: {str(e)}")
             return False
         
         
