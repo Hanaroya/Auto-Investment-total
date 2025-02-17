@@ -131,8 +131,6 @@ class InvestmentCenter:
             manager.add_strategy(strategy)
             
         return manager
-        
-    
 
     def _check_api_status(self) -> bool:
         """API 상태 확인"""

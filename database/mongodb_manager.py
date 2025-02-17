@@ -353,6 +353,7 @@ class MongoDBManager:
             if not existing_config:
                 initial_config = {
                     'exchange': self.exchange_name,
+                    'test_mode': True,  # 테스트 모드 필드 추가
                     'initial_investment': float(os.getenv('INITIAL_INVESTMENT', 1000000)),
                     'min_trade_amount': float(os.getenv('MIN_TRADE_AMOUNT', 5000)),
                     'max_thread_investment': float(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
@@ -365,6 +366,7 @@ class MongoDBManager:
                 self.logger.info("시스템 설정 초기화 완료")
                 
                 # 설정값 로깅
+                self.logger.info(f"테스트 모드: {initial_config['test_mode']}")
                 self.logger.info(f"초기 투자금: {initial_config['initial_investment']:,}원")
                 self.logger.info(f"최소 거래금액: {initial_config['min_trade_amount']:,}원")
                 self.logger.info(f"스레드당 최대 투자금: {initial_config['max_thread_investment']:,}원")
