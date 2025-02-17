@@ -433,7 +433,7 @@ class TradingThread(threading.Thread):
                     'exchange': self.exchange_name,
                     'status': 'active'
                 })
-                if market_trade and market_trade.get('is_tradeable', False):  # 기본값을 False로 변경
+                if market_trade and 'is_tradeable' in market_trade and market_trade.get('is_tradeable', False):  # 기본값을 False로 변경
                     self.logger.info(f"{market}: 거래 중지 상태")
                     return
 
