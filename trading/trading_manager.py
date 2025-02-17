@@ -149,7 +149,9 @@ class TradingManager:
                     'test_mode': is_test,
                     'timestamp': kst_now,
                     'averaging_down_count': 0,
-                    'user_call': False
+                    'user_call': False,
+                    'is_tradeable': True,
+                    'is_long_term_trade': False
                 }
                 
                 # 새 거래 데이터 저장

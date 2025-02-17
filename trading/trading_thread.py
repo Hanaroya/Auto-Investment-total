@@ -398,7 +398,7 @@ class TradingThread(threading.Thread):
             # 전역 거래 가능 여부 확인
             with self.shared_locks['portfolio']:
                 portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
-                if not portfolio.get('global_tradeable', True):
+                if not portfolio.get('global_tradeable', False):
                     self.logger.info(f"전체 마켓 거래 중지 상태")
                     return
 
@@ -409,7 +409,7 @@ class TradingThread(threading.Thread):
                     'exchange': self.exchange_name,
                     'status': 'active'
                 })
-                if market_trade and not market_trade.get('is_tradeable', True):
+                if market_trade and not market_trade.get('is_tradeable', False):
                     self.logger.info(f"{market}: 거래 중지 상태")
                     return
 

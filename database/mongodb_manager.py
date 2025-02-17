@@ -380,8 +380,8 @@ class MongoDBManager:
             raise
 
     def _initialize_portfolio(self):
-        """포트폴리오 초기 설정
-        포트폴리오가 없는 경우에만 초기화합니다.
+        """포트폴리오 초기화
+        포트폴리오가 초기화되지 않은 경우에만 초기 설정을 삽입합니다.
         """
         try:
             # 기존 포트폴리오 확인
@@ -396,13 +396,28 @@ class MongoDBManager:
                     'current_amount': float(os.getenv('TOTAL_MAX_INVESTMENT', 1000000) * 0.8),
                     'profit_earned': 0,
                     'created_at': TimeUtils.get_current_kst(),
-                    'last_updated': TimeUtils.get_current_kst()
+                    'last_updated': TimeUtils.get_current_kst(),
+                    'global_tradeable': False
                 }
+                
                 self.portfolio.insert_one(initial_portfolio)
                 self.logger.info("포트폴리오 초기화 완료")
-            else:
-                self.logger.info("기존 포트폴리오가 존재합니다. 초기화를 건너뜁니다.")
                 
+                # 설정값 로깅
+                self.logger.info(f"초기 투자금: {initial_portfolio['current_amount']:,}원")
+                self.logger.info(f"가용 금액: {initial_portfolio['available_amount']:,}원")
+                self.logger.info(f"전역 거래 가능 여부: {initial_portfolio['global_tradeable']}")
+            else:
+                # 기존 포트폴리오에 global_tradeable 필드가 없다면 추가
+                if 'global_tradeable' not in existing_portfolio:
+                    self.portfolio.update_one(
+                        {'exchange': self.exchange_name},
+                        {'$set': {'global_tradeable': False}}
+                    )
+                    self.logger.info("기존 포트폴리오에 global_tradeable 필드 추가")
+                
+                self.logger.info("기존 포트폴리오가 존재합니다. 초기화를 건너뜁니다.")
+            
         except Exception as e:
             self.logger.error(f"포트폴리오 초기화 실패: {str(e)}")
             raise
