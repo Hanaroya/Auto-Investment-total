@@ -679,7 +679,7 @@ class TradingThread(threading.Thread):
                                     'target_profit_rate': 5,  # 5% 목표 수익률
                                     'positions': [{
                                         'price': active_trade['price'],
-                                        'amount': active_trade['amount'],
+                                        'investment_amount': active_trade['investment_amount'],
                                         'timestamp': TimeUtils.get_current_kst()
                                     }],
                                     'from_short_term': True,
