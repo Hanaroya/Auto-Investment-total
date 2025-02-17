@@ -257,6 +257,9 @@ class ThreadManager:
             # 메인 루프
             try:
                 while self.running and not self.stop_flag.is_set():
+                    now = datetime.now()
+                    if now.minute % 10 == 0:
+                        self.update_investment_limits()
                     time.sleep(1)
             except KeyboardInterrupt:
                 self.logger.info("키보드 인터럽트 감지")
@@ -268,6 +271,106 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"스레드 시작 실패: {str(e)}")
             self.stop_all_threads()
+
+    def update_investment_limits(self):
+        """system_config에서 투자 한도를 업데이트"""
+        try:
+            system_config = self.db.system_config.find_one({'exchange': self.exchange_name})
+            if system_config:
+                # 테스트 모드 확인
+                is_test_mode = system_config.get('test_mode', True)
+                
+                if not is_test_mode:
+                    # 실제 거래소 잔고 조회
+                    try:
+                        exchange_balance = self.investment_center.exchange.get_balance()
+                        if exchange_balance:
+                            total_balance = float(exchange_balance.get('total_balance', 0))
+                            available_balance = float(exchange_balance.get('available_balance', 0))
+                            
+                            # system_config 업데이트
+                            self.db.system_config.update_one(
+                                {'exchange': self.exchange_name},
+                                {'$set': {
+                                    'total_max_investment': total_balance,
+                                    'available_balance': available_balance,
+                                    'last_balance_update': TimeUtils.get_current_kst()
+                                }}
+                            )
+                            
+                            self.total_max_investment = floor(total_balance * 0.8)
+                            self.max_investment = floor(self.total_max_investment * 0.1)
+                            self.investment_each = floor(self.total_max_investment / 20)
+                    except Exception as e:
+                        self.logger.error(f"실제 거래소 잔고 조회 중 오류: {str(e)}")
+                        return
+                else:
+                    # 테스트 모드일 경우 기존 로직 유지
+                    total_max_investment = system_config.get('total_max_investment', 1000000)
+                    self.total_max_investment = total_max_investment
+                    self.max_investment = floor((self.total_max_investment * 0.8) * 0.1)
+                    self.investment_each = floor((self.total_max_investment * 0.8) / 20)
+                
+                # 포트폴리오 업데이트
+                existing_portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
+                if existing_portfolio:
+                    # 기존 profit_earned 값 보존
+                    profit_earned = existing_portfolio.get('profit_earned', 0)
+                    
+                    # 현재 활성 거래들의 총 투자 금액 계산
+                    active_trades = self.db.trades.find({
+                        'exchange': self.exchange_name,
+                        'status': 'active'
+                    })
+                    active_long_term_trades = self.db.long_term_trades.find({
+                        'exchange': self.exchange_name,
+                        'status': 'active'
+                    })
+                    
+                    total_invested = sum(trade.get('investment_amount', 0) for trade in active_trades)
+                    total_invested += sum(trade.get('investment_amount', 0) for trade in active_long_term_trades)
+                    
+                    # 가용 금액 계산 (전체 투자 가능 금액 - 현재 투자된 금액)
+                    available_amount = floor(self.total_max_investment * 0.8)
+                    current_amount = floor(self.total_max_investment * 0.8) + profit_earned - total_invested
+                    
+                    self.db.portfolio.update_one(
+                        {'exchange': self.exchange_name},
+                        {'$set': {
+                            'test_mode': is_test_mode,
+                            'investment_amount': self.total_max_investment,
+                            'available_investment': available_amount,
+                            'current_amount': current_amount,
+                            'reserve_amount': floor(self.total_max_investment * 0.2),
+                            'profit_earned': profit_earned,
+                            'last_updated': TimeUtils.get_current_kst()
+                        }}
+                    )
+                else:
+                    self.db.portfolio.insert_one({
+                        'exchange': self.exchange_name,
+                        'current_amount': floor(self.total_max_investment * 0.8),
+                        'available_amount': floor(self.total_max_investment * 0.8),
+                        'reserve_amount': floor(self.total_max_investment * 0.2),
+                        'investment_amount': self.total_max_investment,
+                        'profit_earned': 0,
+                        'market_list': [],
+                        'last_updated': TimeUtils.get_current_kst(),
+                        'test_mode': is_test_mode,
+                        'global_tradeable': False
+                    })
+
+                self.logger.info(
+                    f"Thread {self.thread_id} 투자 한도 업데이트 "
+                    f"(테스트 모드: {is_test_mode}): "
+                    f"최대 투자금: {self.max_investment:,}원, "
+                    f"마켓당 투자금: {self.investment_each:,}원, "
+                    f"현재 투자된 금액: {total_invested:,}원, "
+                    f"가용 금액: {available_amount:,}원"
+                )
+                
+        except Exception as e:
+            self.logger.error(f"투자 한도 업데이트 중 오류: {str(e)}")
 
     def split_markets(self, markets: List) -> List[List]:
         """
