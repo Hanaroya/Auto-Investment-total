@@ -15,6 +15,7 @@ from trading.trading_manager import TradingManager
 import asyncio
 import os
 from utils.logger_config import setup_logger
+import schedule
 
 class ExchangeFactory:
     """
@@ -79,6 +80,9 @@ class InvestmentCenter:
         # 기타 속성 초기화
         self.is_running = False
         self.exchange_name = exchange_name  # 거래소 이름 저장
+        
+        # 잔고 업데이트 스케줄러 시작
+        self.start_balance_update_scheduler()
 
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
@@ -335,6 +339,81 @@ class InvestmentCenter:
         except Exception as e:
             self.logger.error(f"초기화 중 오류 발생: {str(e)}")
             raise
+
+    def update_exchange_balance(self):
+        """실제 거래소 잔고 조회 및 업데이트"""
+        try:
+            system_config = self.db.system_config.find_one({'exchange': self.exchange_name})
+            if not system_config:
+                self.logger.error("시스템 설정을 찾을 수 없습니다.")
+                return False
+
+            # 테스트 모드 확인
+            is_test_mode = system_config.get('test_mode', True)
+            if is_test_mode:
+                self.logger.info("테스트 모드에서는 실제 잔고를 조회하지 않습니다.")
+                return True
+
+            # 실제 거래소 잔고 조회
+            exchange_balance = self.exchange.get_balance()
+            if not exchange_balance:
+                self.logger.error("거래소 잔고 조회 실패")
+                return False
+
+            total_balance = float(exchange_balance.get('total_balance', 0))
+            available_balance = float(exchange_balance.get('available_balance', 0))
+
+            # system_config 업데이트
+            self.db.system_config.update_one(
+                {'exchange': self.exchange_name},
+                {'$set': {
+                    'total_max_investment': total_balance,
+                    'available_balance': available_balance,
+                    'last_balance_update': TimeUtils.get_current_kst()
+                }}
+            )
+
+            # portfolio 업데이트
+            self.db.portfolio.update_one(
+                {'exchange': self.exchange_name},
+                {'$set': {
+                    'current_amount': total_balance,
+                    'available_amount': available_balance,
+                    'last_balance_update': TimeUtils.get_current_kst()
+                }}
+            )
+
+            self.logger.info(
+                f"거래소 잔고 업데이트 완료 - "
+                f"총 잔고: {total_balance:,.0f}원, "
+                f"가용 잔고: {available_balance:,.0f}원"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"거래소 잔고 업데이트 중 오류: {str(e)}")
+            return False
+
+    def start_balance_update_scheduler(self):
+        """잔고 업데이트 스케줄러 시작"""
+        try:
+            system_config = self.db.system_config.find_one({'exchange': self.exchange_name})
+            if not system_config or system_config.get('test_mode', True):
+                return
+
+            def update_balance_job():
+                self.update_exchange_balance()
+
+            # 10분마다 잔고 업데이트
+            schedule.every(10).minutes.do(update_balance_job)
+            
+            # 최초 1회 실행
+            update_balance_job()
+
+            self.logger.info("잔고 업데이트 스케줄러 시작")
+
+        except Exception as e:
+            self.logger.error(f"잔고 업데이트 스케줄러 시작 중 오류: {str(e)}")
 
 if __name__ == "__main__":
     # 사용 예시
