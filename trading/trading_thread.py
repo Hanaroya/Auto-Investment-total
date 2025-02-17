@@ -178,8 +178,8 @@ class TradingThread(threading.Thread):
                         {'$set': {
                             'test_mode': is_test_mode,
                             'investment_amount': self.total_max_investment,
-                            'available_investment': self.total_max_investment * 0.8,
-                            'current_amount': self.total_max_investment * 0.8,
+                            'available_investment': floor(self.total_max_investment * 0.8),
+                            'current_amount': floor(self.total_max_investment * 0.8) + profit_earned,
                             'reserve_amount': floor(self.total_max_investment * 0.2),
                             'profit_earned': profit_earned,
                             'last_updated': TimeUtils.get_current_kst()
