@@ -434,7 +434,6 @@ class TradingThread(threading.Thread):
                                                 'investment_amount': investment_amount,
                                                 'trade_type': 'long_term_additional'
                                             },
-                                            test_mode=self.config.get('test_mode', True),
                                             buy_message=buy_reason
                                         )
                                         self.logger.info(f"{market} 장기 투자 추가 매수 처리 완료 - 투자금액: {investment_amount:,}원")
