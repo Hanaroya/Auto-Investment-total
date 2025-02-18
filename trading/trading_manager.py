@@ -692,8 +692,8 @@ class TradingManager:
             long_term_details = []
             for trade in long_term_trades:
                 current_price = self.upbit.get_current_price(trade['market'])
-                total_amount = sum(pos['amount'] for pos in trade.get('positions', []))
-                current_value = total_amount * current_price
+                total_volume = sum(pos['executed_volume'] for pos in trade.get('positions', []))
+                current_value = total_volume * current_price
                 profit_rate = ((current_value - trade['total_investment']) / trade['total_investment']) * 100
                 
                 long_term_details.append({
@@ -745,6 +745,23 @@ class TradingManager:
             # 파일 정리
             if filename and os.path.exists(filename):
                 os.remove(filename)
+
+    def create_long_term_message(self, trade_data: Dict, conversion_price: float, reason: str) -> str:
+        """장기 투자 전환 메시지 생성
+        
+        장기 투자 전환 시점의 전략 데이터를 기반으로 메시지를 생성합니다.
+        """
+        strategy_data = trade_data['strategy_data']
+        kst_now = TimeUtils.get_current_kst()
+
+        message = (
+            f"------------------------------------------------\n"
+            f"거래종목: {trade_data['market']}, 장기 투자 전환\n"
+            f" 전환 시간: {TimeUtils.format_kst(kst_now)}\n"
+            f" 전환 가격: {conversion_price:,}\n"
+            f" 전환 사유: {reason}\n"
+        )
+        return message
 
     def create_buy_message(self, trade_data: Dict, buy_message: str = None) -> str:
         """매수 메시지 생성
@@ -992,8 +1009,8 @@ class TradingManager:
             long_term_details = []
             for trade in long_term_trades:
                 current_price = self.upbit.get_current_price(trade['market'])
-                total_amount = sum(pos['amount'] for pos in trade.get('positions', []))
-                current_value = total_amount * current_price
+                total_volume = sum(pos['executed_volume'] for pos in trade.get('positions', []))
+                current_value = total_volume * current_price
                 profit_rate = ((current_value - trade['total_investment']) / trade['total_investment']) * 100
                 
                 long_term_details.append({

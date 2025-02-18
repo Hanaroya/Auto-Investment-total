@@ -398,7 +398,7 @@ class LongTermTradingManager:
             self.logger.error(f"투자 지속 시간 계산 중 오류: {str(e)}")
             return timedelta(0)
 
-    async def add_position(self, trade_id: str, current_price: float) -> bool:
+    def add_position(self, trade: dict, current_price: float, amount: float):
         """기존 장기 투자에 새로운 포지션 추가
         
         Args:
@@ -409,38 +409,42 @@ class LongTermTradingManager:
             bool: 포지션 추가 성공 여부
         """
         try:
-            trade = self.db.get_long_term_trade(trade_id)
-            if not trade:
-                self.logger.error(f"장기 투자 거래를 찾을 수 없음: {trade_id}")
-                return False
-                
-            # 추가 투자금 계산 (이전 투자금의 2배)
-            new_investment = trade['initial_investment'] * 2
+            # 매수 수량 계산
+            fee_rate = 0.0005  # 수수료율 0.05%
+            available_amount = amount * (1 - fee_rate)  # 수수료를 제외한 실제 매수 가능 금액
+            executed_volume = available_amount / current_price  # 매수 수량
             
-            # 새로운 포지션 추가
+            # 새로운 포지션 정보
             new_position = {
                 'price': current_price,
-                'amount': new_investment / current_price,
+                'amount': amount,
+                'executed_volume': executed_volume,
                 'timestamp': TimeUtils.get_current_kst()
             }
             
-            # 평균 매수가 재계산
-            total_amount = sum(pos['amount'] for pos in trade['positions']) + new_position['amount']
-            total_value = sum(pos['amount'] * pos['price'] for pos in trade['positions'])
-            new_average = (total_value + (new_position['amount'] * new_position['price'])) / total_amount
+            # 기존 거래 정보 업데이트
+            self.db.long_term_trades.update_one(
+                {'_id': trade['_id']},
+                {
+                    '$push': {'positions': new_position},
+                    '$inc': {
+                        'total_investment': amount,
+                        'executed_volume': executed_volume  # 전체 executed_volume 증가
+                    },
+                    '$set': {
+                        'last_investment_time': TimeUtils.get_current_kst(),
+                        'average_price': (trade.get('average_price', 0) * trade.get('executed_volume', 0) + current_price * executed_volume) / (trade.get('executed_volume', 0) + executed_volume)
+                    }
+                }
+            )
             
-            # 거래 정보 업데이트
-            trade['positions'].append(new_position)
-            trade['total_investment'] += new_investment
-            trade['average_price'] = new_average
-            trade['last_updated'] = TimeUtils.get_current_kst()
-            
-            return self.db.save_long_term_trade(trade)
+            self.logger.info(f"{trade['market']} 새로운 포지션 추가 완료 (가격: {current_price:,}원, 수량: {executed_volume:.8f})")
+            return True
             
         except Exception as e:
-            self.logger.error(f"포지션 추가 실패: {str(e)}")
+            self.logger.error(f"포지션 추가 중 오류: {str(e)}")
             return False
-            
+
     def calculate_current_profit_rate(self, trade: Dict[str, Any], current_price: float) -> float:
         """현재 수익률 계산
         
