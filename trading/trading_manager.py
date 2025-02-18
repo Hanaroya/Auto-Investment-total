@@ -1141,7 +1141,7 @@ class TradingManager:
                 active_trades = self.db.trades.find(
                     {
                         'market': market,     
-                        'status': 'active'
+                        'status': 'active' or 'converted'
                     }
                 )
                 current_price = price
@@ -1174,7 +1174,18 @@ class TradingManager:
                     )
                     
                     self.logger.debug(f"가격 정보 업데이트 완료: {market} - 현재가: {current_price:,}원")
-                    
+
+                    long_term_trades = self.db.long_term_trades.find({'original_trade_id': active_trade['_id']})
+                    if long_term_trades:
+                        self.db.long_term_trades.update_one(
+                            {'_id': long_term_trades['_id']},
+                            {'$set': {
+                                'status': 'active',
+                                'price': current_price,
+                                'profit_rate': profit_rate,
+                                'last_updated': TimeUtils.get_current_kst()
+                            }}
+                        )
             except Exception as db_error:
                 self.logger.error(f"MongoDB 저장 중 오류 발생: {str(db_error)}")
                 

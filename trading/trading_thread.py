@@ -309,7 +309,7 @@ class TradingThread(threading.Thread):
             # 현재 투자 상태 확인
             active_trades = self.db.trades.find({
                 'thread_id': self.thread_id, 
-                'status': 'active'
+                'status': 'active' or 'converted'
             })
             current_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
 
@@ -675,6 +675,8 @@ class TradingThread(threading.Thread):
                                     'status': 'active',
                                     'initial_investment': active_trade['investment_amount'],
                                     'total_investment': active_trade['investment_amount'],
+                                    'price': current_price,
+                                    'profit_rate': current_profit_rate,
                                     'average_price': active_trade['price'],
                                     'executed_volume': active_trade.get('executed_volume', 0),
                                     'target_profit_rate': 5,  # 5% 목표 수익률
