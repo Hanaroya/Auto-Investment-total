@@ -111,7 +111,7 @@ class ThreadManager:
             
             trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name)
             
-            if existing_trades or existing_long_term_trades:
+            if existing_trades:
                 upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],
                                   self.config['api_keys']['upbit']['secret_key'])
                 
@@ -132,7 +132,8 @@ class ThreadManager:
                     except Exception as e:
                         self.logger.error(f"일반 거래 강제 매도 처리 중 오류 발생: {str(e)}")
                         continue
-                
+                    
+            if existing_long_term_trades:
                 # 장기 투자 거래 강제 매도
                 for trade in existing_long_term_trades:
                     try:
