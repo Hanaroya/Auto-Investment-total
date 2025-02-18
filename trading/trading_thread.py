@@ -649,7 +649,7 @@ class TradingThread(threading.Thread):
                                 'thread_id': self.thread_id,
                                 'original_trade': active_trade,
                                 'conversion_price': current_price,
-                                'conversion_reason': f"{active_trade['profit_rate']}% 손실로 인한 장기 투자 전환",
+                                'conversion_reason': f"{round(active_trade['profit_rate'], 2)}% 손실로 인한 장기 투자 전환",
                                 'test_mode': active_trade.get('test_mode', False)
                             }
                             

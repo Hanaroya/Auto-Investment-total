@@ -65,19 +65,18 @@ class TradingManager:
             fee_amount = investment_amount * fee_rate
             actual_investment = investment_amount - fee_amount
 
-            # 물타기 여부 확인 및 기존 거래 정보 조회
-            is_long_term_trade = strategy_data.get('is_long_term_trade', False)
+            # 장기 투자 여부 확인 및 기존 거래 정보 조회
+            long_term_trade = self.db.long_term_trades.find_one({
+                    'market': market,
+                    'exchange': exchange,
+                    'status': 'active'
+                })
             existing_trade = None
-            if is_long_term_trade:
+            if long_term_trade:
                 existing_trade = self.db.trades.find_one({
                     'market': market,
                     'exchange': exchange,
                     'status': 'converted'
-                })
-                long_term_trade = self.db.long_term_trades.find_one({
-                    'market': market,
-                    'exchange': exchange,
-                    'status': 'active'
                 })
                 self.logger.info(f"물타기 신호 감지: {market} - 현재 수익률: {existing_trade.get('profit_rate', 0):.2f}%")
 
@@ -103,7 +102,7 @@ class TradingManager:
                     'price': price
                 }
 
-            if is_long_term_trade and existing_trade:
+            if existing_trade:
                 # 기존 거래 정보 업데이트 (장기 투자)
                 total_investment = existing_trade['total_investment'] + investment_amount
                 total_volume = existing_trade['executed_volume'] + order_result['executed_volume']
@@ -129,6 +128,18 @@ class TradingManager:
                 self.db.long_term_trades.update_one(
                     {'_id': existing_trade['_id']},
                     {'$set': update_data}
+                )
+
+                update_data2 = {
+                    'investment_amount': total_investment,
+                    'actual_investment': existing_trade['actual_investment'] + actual_investment,
+                    'executed_volume': total_volume,
+                    'price': round(average_price, 9),
+                }
+
+                self.db.trades.update_one(
+                    {'_id': existing_trade['_id']},
+                    {'$set': update_data2}
                 )
                 
                 trade_data = {**existing_trade, **update_data}
@@ -322,6 +333,7 @@ class TradingManager:
             
             # trades 컬렉션에서 완료된 거래 삭제
             self.db.trades.delete_one({'_id': active_trade['_id']})
+            self.db.long_term_trades.delete_one({'original_trade_id': active_trade['_id']})
             self.logger.info(f"거래 내역 기록 완료 및 활성 거래 삭제: {market}")
 
             if order_result:
@@ -760,16 +772,17 @@ class TradingManager:
         장기 투자 전환 시점의 전략 데이터를 기반으로 메시지를 생성합니다.
         """
         strategy_data = trade_data['strategy_data']
-        kst_now = TimeUtils.get_current_kst()
+        kst_now = TimeUtils.get_current_kst()        
+        is_test = self.config.get('test_mode', True)
 
-        message = (
+        message = f"{'[TEST MODE] ' if is_test else ''}" + (
             f"------------------------------------------------\n"
             f"거래종목: {trade_data['market']}, 장기 투자 전환\n"
             f" 전환 시간: {TimeUtils.format_kst(kst_now)}\n"
             f" 전환 가격: {conversion_price:,}\n"
             f" 전환 사유: {reason}\n"
-        )
-        
+        ) + "\n------------------------------------------------"
+
         self.messenger.send_message(message=message, messenger_type="slack")
 
     def create_buy_message(self, trade_data: Dict, buy_message: str = None) -> str:
@@ -904,8 +917,8 @@ class TradingManager:
         """
         try:
             self.logger.info("시간별 리포트 생성 시작")
-            now = TimeUtils.get_current_kst()
-            current_time = now.strftime('%Y-%m-%d %H:00')
+            kst_now = TimeUtils.get_current_kst()
+            current_time = kst_now.strftime('%Y-%m-%d %H:00')
             message = ""
             
             # 변수 초기화
@@ -927,12 +940,11 @@ class TradingManager:
             for trade in active_trades:
                 # timestamp를 KST로 변환
                 trade_time = TimeUtils.from_mongo_date(trade['timestamp'])
-                if trade_time.tzinfo is None:  # naive datetime인 경우
-                    trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))
-                now = TimeUtils.get_current_kst()  # 현재 시간 KST
+                if trade_time.tzinfo is None:
+                    trade_time = trade_time.replace(tzinfo=timezone.utc)
                 
-                self.logger.warning(f"시간 정보 비교 - trade_time: {trade_time} ({type(trade_time)}, tz: {trade_time.tzinfo})")
-                self.logger.warning(f"시간 정보 비교 - now: {now} ({type(now)}, tz: {now.tzinfo})")
+                # 현재 시간도 UTC로 통일
+                now = kst_now.astimezone(timezone.utc)
                 
                 hold_time = now - trade_time
                 hours = hold_time.total_seconds() / 3600
