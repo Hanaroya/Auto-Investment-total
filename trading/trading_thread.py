@@ -408,33 +408,37 @@ class TradingThread(threading.Thread):
                                 self.logger.info(f"{market} 장기 투자 매도 신호 처리 완료")
                         
                         # 2. 추가 매수 조건 확인
-                        last_investment = long_term_trade.get('last_investment_time')
-                        if last_investment:
-                            time_diff = TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(last_investment)
-                            if time_diff.total_seconds() >= 3600:  # 1시간 이상 경과
-                                # 최소 투자금의 2배 계산
-                                min_trade_amount = self.config.get('min_trade_amount', 5000)
-                                investment_amount = min_trade_amount * 2
-                                buy_reason = "장기 투자 추가 매수"
+                        if long_term_trade.get('positions'):  # positions 배열이 존재하는지 확인
+                            # 마지막 position의 timestamp 가져오기
+                            last_position = long_term_trade['positions'][-1]
+                            last_investment_time = last_position.get('timestamp')
+                            
+                            if last_investment_time:
+                                time_diff = TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(last_investment_time)
+                                if time_diff.total_seconds() >= 3600:  # 1시간 이상 경과
+                                    # 최소 투자금의 2배 계산
+                                    min_trade_amount = self.config.get('min_trade_amount', 5000)
+                                    investment_amount = min_trade_amount * 2
+                                    buy_reason = "장기 투자 추가 매수"
 
-                                # 투자 가능한 최대 금액 확인 및 시장 상황에 관계 없이 지속적으로 투자 
-                                portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
-                                if portfolio and portfolio.get('available_amount', 0) >= investment_amount:
-                                    self.trading_manager.process_buy_signal(
-                                        market=market,
-                                        exchange=self.exchange_name,
-                                        thread_id=self.thread_id,
-                                        signal_strength=market_condition.get('overall_signal', 0.0),
-                                        price=current_price,
-                                        strategy_data={
-                                            **long_term_trade,
-                                            'investment_amount': investment_amount,
-                                            'trade_type': 'long_term_additional'
-                                        },
-                                        test_mode=self.config.get('test_mode', True),
-                                        buy_message=buy_reason
-                                    )
-                                    self.logger.info(f"{market} 장기 투자 추가 매수 처리 완료 - 투자금액: {investment_amount:,}원")
+                                    # 투자 가능한 최대 금액 확인 및 시장 상황에 관계 없이 지속적으로 투자 
+                                    portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
+                                    if portfolio and portfolio.get('available_amount', 0) >= investment_amount:
+                                        self.trading_manager.process_buy_signal(
+                                            market=market,
+                                            exchange=self.exchange_name,
+                                            thread_id=self.thread_id,
+                                            signal_strength=market_condition.get('overall_signal', 0.0),
+                                            price=current_price,
+                                            strategy_data={
+                                                **long_term_trade,
+                                                'investment_amount': investment_amount,
+                                                'trade_type': 'long_term_additional'
+                                            },
+                                            test_mode=self.config.get('test_mode', True),
+                                            buy_message=buy_reason
+                                        )
+                                        self.logger.info(f"{market} 장기 투자 추가 매수 처리 완료 - 투자금액: {investment_amount:,}원")
 
                     except Exception as e:
                         self.logger.error(f"장기 투자 처리 중 오류 ({market}): {str(e)}")
