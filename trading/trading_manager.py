@@ -1138,12 +1138,10 @@ class TradingManager:
                     self.logger.warning(f"{market} 전략 데이터 변경 없음")
                 
                 # 활성 거래 조회 및 업데이트
-                active_trades = self.db.trades.find(
-                    {
-                        'market': market,     
-                        'status': {'$in': ['active', 'converted']}
-                    }
-                )
+                active_trades = list(self.db.trades.find({
+                    'market': market,     
+                    'status': {'$in': ['active', 'converted']}
+                }))
                 current_price = price
                 
                 for active_trade in active_trades:
@@ -1175,10 +1173,14 @@ class TradingManager:
                     
                     self.logger.debug(f"가격 정보 업데이트 완료: {market} - 현재가: {current_price:,}원")
 
-                    long_term_trades = self.db.long_term_trades.find({'original_trade_id': active_trade['_id']})
-                    if long_term_trades:
+                    # 장기 투자 거래 조회 및 업데이트
+                    long_term_trade = self.db.long_term_trades.find_one({
+                        'original_trade_id': active_trade['_id']
+                    })
+                    
+                    if long_term_trade:
                         self.db.long_term_trades.update_one(
-                            {'_id': long_term_trades['_id']},
+                            {'_id': long_term_trade['_id']},
                             {'$set': {
                                 'status': 'active',
                                 'price': current_price,
@@ -1200,9 +1202,9 @@ class TradingManager:
             List[Dict]: 활성 거래 목록
         """
         try:
-            # 직접 컬렉션 접근
-            active_trades = self.db.trades.find({"status": "active"})
-            return list(active_trades)
+            # 커서를 리스트로 변환하여 반환
+            active_trades = list(self.db.trades.find({"status": "active"}))
+            return active_trades
         except Exception as e:
             self.logger.error(f"활성 거래 조회 중 오류: {str(e)}")
             return []

@@ -363,7 +363,7 @@ class TradingThread(threading.Thread):
                 market_trade = self.db.trades.find_one({
                     'market': market,
                     'exchange': self.exchange_name,
-                    'status': 'active'
+                    'status': {'$in': ['active', 'converted']}
                 })
                 if market_trade and 'is_tradeable' in market_trade and market_trade.get('is_tradeable', False):  # 기본값을 False로 변경
                     self.logger.info(f"{market}: 거래 중지 상태")
@@ -447,7 +447,7 @@ class TradingThread(threading.Thread):
                     active_trade = self.db.trades.find_one({
                         'market': market,
                         'exchange': self.exchange_name,
-                        'status': 'active'
+                        'status': {'$in': ['active', 'converted']}
                     })
                     
                     self.logger.info(f"Thread {self.thread_id}: {market} - Active trade check result: {active_trade is not None}")
