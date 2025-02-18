@@ -26,11 +26,14 @@ class TradingManager:
         self.logger = logging.getLogger('investment-center')
         self.exchange_name = exchange_name  
         self.long_term_trading_manager = LongTermTradingManager(self.db, self.exchange_name, self.config)
+        self.test_mode = self.config.get('mode') == 'test' or self.db.get_portfolio('test_mode') 
         self.upbit = UpbitCall(
             self.config['api_keys']['upbit']['access_key'],
             self.config['api_keys']['upbit']['secret_key'],
-            is_test=True
+            is_test=self.test_mode
         )
+        
+
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
         try:
@@ -54,10 +57,7 @@ class TradingManager:
                 return False
 
             # 테스트 모드 확인
-            is_test = (
-                self.config.get('mode') == 'test' or 
-                self.config.get('api_keys', {}).get('upbit', {}).get('test_mode', True)
-            )
+            is_test = self.test_mode
             
             # 수수료 계산
             fee_rate = self.config['api_keys']['upbit'].get('fee', 0.05) / 100  # 0.05% -> 0.0005
@@ -253,10 +253,7 @@ class TradingManager:
             profit_rate = (profit_amount / active_trade.get('investment_amount', 0)) * 100
 
             # 테스트 모드 확인
-            is_test = (
-                self.config.get('mode') == 'test' or 
-                self.config.get('api_keys', {}).get('upbit', {}).get('test_mode', True)
-            )
+            is_test = self.test_mode
 
             order_result = None
             if not is_test:
@@ -773,7 +770,7 @@ class TradingManager:
         """
         strategy_data = trade_data['strategy_data']
         kst_now = TimeUtils.get_current_kst()        
-        is_test = self.config.get('test_mode', True)
+        is_test = self.test_mode
 
         message = f"{'[TEST MODE] ' if is_test else ''}" + (
             f"------------------------------------------------\n"
@@ -1278,7 +1275,7 @@ class TradingManager:
         """
         try:
             # 테스트 모드 확인
-            is_test = self.config.get('test_mode', True)
+            is_test = self.test_mode
             self.logger.info(f"매수 주문 시작 - 마켓: {market}, 가격: {price:,}, 즉시체결: {immediate}")
             
             # 전략/시장 데이터 조회
@@ -1338,7 +1335,7 @@ class TradingManager:
         """
         try:
             # 테스트 모드 확인
-            is_test = self.config.get('test_mode', True)
+            is_test = self.test_mode
             self.logger.info(f"매도 주문 시작 - 마켓: {market}, 가격: {price:,}, 즉시체결: {immediate}")
             
             # 활성 거래 확인
