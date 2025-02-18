@@ -414,8 +414,15 @@ class TradingThread(threading.Thread):
                             last_investment_time = last_position.get('timestamp')
                             
                             if last_investment_time:
-                                time_diff = TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(last_investment_time)
-                                if time_diff.total_seconds() >= 3600:  # 1시간 이상 경과
+                                # MongoDB의 datetime 객체를 한국 시간으로 변환
+                                current_time = TimeUtils.get_current_kst()
+                                last_time = TimeUtils.from_mongo_date(last_investment_time)
+                                
+                                # 디버깅을 위한 로깅 추가
+                                self.logger.debug(f"{market} - 마지막 투자 시간: {last_time}, 현재 시간: {current_time}")
+                                self.logger.debug(f"경과 시간(초): {(current_time - last_time).total_seconds()}")
+                                
+                                if (current_time - last_time).total_seconds() >= 3600:  # 1시간(3600초) 이상 경과
                                     # 최소 투자금의 2배 계산
                                     min_trade_amount = self.config.get('min_trade_amount', 5000)
                                     investment_amount = min_trade_amount * 2
