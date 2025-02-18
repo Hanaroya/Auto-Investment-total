@@ -938,15 +938,16 @@ class TradingManager:
             
             # 각 마켓별 상세 정보
             for trade in active_trades:
-                # timestamp를 KST로 변환
+                # timestamp를 KST로 변환하고 timezone 정보 추가
                 trade_time = TimeUtils.from_mongo_date(trade['timestamp'])
                 if trade_time.tzinfo is None:
-                    trade_time = trade_time.replace(tzinfo=timezone.utc)
+                    trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))  # KST
                 
-                # 현재 시간도 UTC로 통일
-                now = kst_now.astimezone(timezone.utc)
+                # 현재 시간도 KST로 통일
+                if kst_now.tzinfo is None:
+                    kst_now = kst_now.replace(tzinfo=timezone(timedelta(hours=9)))
                 
-                hold_time = now - trade_time
+                hold_time = kst_now - trade_time
                 hours = hold_time.total_seconds() / 3600
                 
                 # 현재 가격 조회
@@ -1029,6 +1030,10 @@ class TradingManager:
             # 장기 투자 상세 정보
             long_term_details = []
             for trade in long_term_trades:
+                # created_at에 timezone 정보 추가
+                if trade['created_at'].tzinfo is None:
+                    trade['created_at'] = trade['created_at'].replace(tzinfo=timezone(timedelta(hours=9)))
+                
                 current_price = self.upbit.get_current_price(trade['market'])
                 total_volume = sum(pos['executed_volume'] for pos in trade.get('positions', []))
                 current_value = total_volume * current_price
@@ -1040,7 +1045,7 @@ class TradingManager:
                     'current_value': current_value,
                     'profit_rate': profit_rate,
                     'position_count': len(trade.get('positions', [])),
-                    'days_active': (TimeUtils.get_current_kst() - trade['created_at']).days
+                    'days_active': (kst_now - trade['created_at']).days
                 })
             
             # 장기 투자 요약 정보
@@ -1080,7 +1085,7 @@ class TradingManager:
             self.logger.info(f"시간별 리포트 생성 및 전송 완료: {current_time}")
             
         except Exception as e:
-            self.logger.error(f"시간별 리포트 생성 중 오류 발생: {e}")
+            self.logger.error(f"시간별 리포트 생성 중 오류 발생: {str(e)}")
             raise
 
     def update_strategy_data(self, market: str, exchange: str, thread_id: int, price: float, strategy_results: Dict):
@@ -1175,7 +1180,7 @@ class TradingManager:
 
                     # 장기 투자 거래 조회 및 업데이트
                     long_term_trade = self.db.long_term_trades.find_one({
-                        'original_trade_id': active_trade['_id']
+                        'market': market
                     })
                     
                     if long_term_trade:
