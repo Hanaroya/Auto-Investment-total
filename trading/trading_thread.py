@@ -607,7 +607,7 @@ class TradingThread(threading.Thread):
                             if current_profit_rate >= 1.0:
                                 sell_reason.append("목표 수익(1%) 달성")
                             else:
-                                sell_reason.append("수익 실현({}%+)".format(profit_threshold))
+                                sell_reason.append("수익 실현({}%+)".format(round(profit_threshold, 2)))
                         if loss_prevention_condition:
                             sell_reason.append("손실 방지")
                         if market_condition_sell:
