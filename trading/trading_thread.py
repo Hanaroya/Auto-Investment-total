@@ -422,8 +422,7 @@ class TradingThread(threading.Thread):
                                     buy_reason = "장기 투자 추가 매수"
 
                                     # 투자 가능한 최대 금액 확인 및 시장 상황에 관계 없이 지속적으로 투자 
-                                    portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
-                                    if portfolio and portfolio.get('available_amount', 0) >= investment_amount:
+                                    if current_investment < (self.total_max_investment * 0.8):
                                         self.trading_manager.process_buy_signal(
                                             market=market,
                                             exchange=self.exchange_name,
