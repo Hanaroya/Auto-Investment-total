@@ -5,7 +5,7 @@ from utils.time_utils import TimeUtils
 from decimal import Decimal
 import os
 from math import floor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 class LongTermTradingManager:
     """
@@ -285,7 +285,7 @@ class LongTermTradingManager:
                 base_target=base_profit_target,
                 market_condition=market_condition,
                 trends=trends,
-                investment_duration=self._get_investment_duration(trade)
+                investment_duration=self.calculate_investment_duration(trade)
             )
             
             # 2. 수익률 목표 달성 확인
@@ -316,15 +316,15 @@ class LongTermTradingManager:
     def _calculate_dynamic_profit_target(self, base_target: float,
                                        market_condition: dict,
                                        trends: dict,
-                                       investment_duration: int) -> float:
+                                       investment_duration: timedelta) -> float:
         """동적 목표 수익률 계산"""
         try:
             adjusted_target = base_target
             
             # 1. 투자 기간에 따른 조정
-            if investment_duration > 72:
+            if investment_duration.total_seconds() > 72 * 3600:
                 adjusted_target *= 0.9
-            elif investment_duration > 168:
+            elif investment_duration.total_seconds() > 168 * 3600:
                 adjusted_target *= 0.8
                 
             # 2. 시장 위험도에 따른 조정
@@ -374,20 +374,29 @@ class LongTermTradingManager:
             self.logger.error(f"수익률 안정성 확인 중 오류: {str(e)}")
             return False
 
-    def _get_investment_duration(self, trade: dict) -> int:
+    def calculate_investment_duration(self, trade: dict) -> timedelta:
         """투자 지속 시간 계산"""
         try:
-            start_time = trade.get('created_at')
-            if not start_time:
-                return 0
+            if 'created_at' not in trade:
+                return timedelta(0)
+                
+            created_at = trade['created_at']
+            if isinstance(created_at, str):
+                created_at = TimeUtils.from_string(created_at)
+            
+            # naive datetime을 aware datetime으로 변환
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
                 
             current_time = TimeUtils.get_current_kst()
-            duration = (current_time - start_time).total_seconds() / 3600
-            return int(duration)
+            if current_time.tzinfo is None:
+                current_time = current_time.replace(tzinfo=timezone.utc)
+                
+            return current_time - created_at
             
         except Exception as e:
             self.logger.error(f"투자 지속 시간 계산 중 오류: {str(e)}")
-            return 0
+            return timedelta(0)
 
     async def add_position(self, trade_id: str, current_price: float) -> bool:
         """기존 장기 투자에 새로운 포지션 추가
@@ -458,3 +467,24 @@ class LongTermTradingManager:
         except Exception as e:
             self.logger.error(f"장기 투자 목록 조회 실패: {str(e)}")
             return []
+
+    def calculate_dynamic_target_profit(self, duration: timedelta) -> float:
+        """투자 기간에 따른 동적 목표 수익률 계산"""
+        try:
+            # timedelta를 시간으로 변환 (total_seconds()를 사용하여 초를 시간으로 변환)
+            hours = duration.total_seconds() / 3600
+            
+            # 기본 목표 수익률 (5%)
+            base_target = 5.0
+            
+            # 24시간마다 0.5%씩 증가 (최대 20%까지)
+            additional_target = min((hours / 24) * 0.5, 15.0)
+            
+            target_profit = base_target + additional_target
+            
+            self.logger.debug(f"투자 시간: {hours:.1f}시간, 목표 수익률: {target_profit:.1f}%")
+            return target_profit
+            
+        except Exception as e:
+            self.logger.error(f"동적 목표 수익률 계산 중 오류: {str(e)}")
+            return 5.0  # 오류 발생시 기본값 반환

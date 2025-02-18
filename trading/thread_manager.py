@@ -105,12 +105,17 @@ class ThreadManager:
                 'status': 'active'
             })
             
-            trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name)  # 클래스 레벨로 이동
+            existing_long_term_trades = self.db.long_term_trades.find({
+                'status': 'active'
+            })
             
-            if existing_trades:
+            trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name)
+            
+            if existing_trades or existing_long_term_trades:
                 upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],
                                   self.config['api_keys']['upbit']['secret_key'])
                 
+                # 일반 거래 강제 매도
                 for trade in existing_trades:
                     try:
                         current_price = upbit.get_current_price(trade['market'])  
@@ -121,11 +126,33 @@ class ThreadManager:
                             signal_strength=0,
                             price=current_price,
                             strategy_data={'force_sell': True},
-                            sell_message="일반 매도"
+                            sell_message="강제 매도"
                         )
                         time.sleep(0.07)
                     except Exception as e:
-                        self.logger.error(f"강제 매도 처리 중 오류 발생: {str(e)}")
+                        self.logger.error(f"일반 거래 강제 매도 처리 중 오류 발생: {str(e)}")
+                        continue
+                
+                # 장기 투자 거래 강제 매도
+                for trade in existing_long_term_trades:
+                    try:
+                        current_price = upbit.get_current_price(trade['market'])
+                        trading_manager.process_sell_signal(
+                            market=trade['market'],
+                            exchange=trade['exchange'],
+                            thread_id=trade['thread_id'],
+                            signal_strength=0,
+                            price=current_price,
+                            strategy_data={
+                                'force_sell': True,
+                                'trade_type': 'long_term',
+                                'trade_id': str(trade['_id'])
+                            },
+                            sell_message="장기 투자 강제 매도"
+                        )
+                        time.sleep(0.07)
+                    except Exception as e:
+                        self.logger.error(f"장기 투자 강제 매도 처리 중 오류 발생: {str(e)}")
                         continue
                 
                 del upbit
@@ -179,6 +206,7 @@ class ThreadManager:
                 from database.mongodb_manager import MongoDBManager
                 db = MongoDBManager(exchange_name=self.investment_center.exchange_name)
                 
+                # 기존 컬렉션 정리
                 try:
                     db.cleanup_strategy_data(self.investment_center.exchange_name)
                     self.logger.info(f"strategy_data {self.investment_center.exchange_name} 거래소 전략 데이터 초기화 완료")
@@ -261,6 +289,11 @@ class ThreadManager:
                     now = datetime.now()
                     if now.minute % 10 == 0 and 10 > now.second > 0:
                         self.update_investment_limits()
+                        
+                    # 매시 정각에 장기 투자 거래 업데이트 실행
+                    if now.minute == 0 and 10 > now.second > 0:
+                        self.update_long_term_trades()
+                        
                     time.sleep(1)
             except KeyboardInterrupt:
                 self.logger.info("키보드 인터럽트 감지")
@@ -272,6 +305,68 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"스레드 시작 실패: {str(e)}")
             self.stop_all_threads()
+
+    def update_long_term_trades(self):
+        """장기 투자 거래 업데이트
+        trades 컬렉션에서 is_long_term이 true인 거래를 long_term_trades로 이동
+        """
+        try:
+            # is_long_term이 true인 trades 조회
+            long_term_trades = self.db.trades.find({
+                'is_long_term': True,
+                'exchange': self.exchange_name
+            })
+
+            for trade in long_term_trades:
+                # long_term_trades에 이미 존재하는지 확인
+                existing_long_term = self.db.long_term_trades.find_one({
+                    'market': trade['market'],
+                    'exchange': self.exchange_name,
+                    'original_trade_id': str(trade['_id'])
+                })
+
+                if not existing_long_term:
+                    # 장기 투자 거래 생성
+                    long_term_trade = {
+                        'market': trade['market'],
+                        'thread_id': trade['thread_id'],
+                        'exchange': self.exchange_name,
+                        'status': 'active',
+                        'initial_investment': trade.get('investment_amount', 0),
+                        'total_investment': trade.get('investment_amount', 0),
+                        'average_price': trade.get('price', 0),
+                        'target_profit_rate': 5,  # 5% 목표 수익률
+                        'positions': [{
+                            'position': 'long term',
+                            'price': trade.get('price', 0),
+                            'amount': trade.get('investment_amount', 0),
+                            'volume': trade.get('volume', 0),
+                            'timestamp': TimeUtils.get_current_kst()
+                        }],
+                        'from_short_term': True,
+                        'original_trade_id': str(trade['_id']),
+                        'test_mode': trade.get('test_mode', False),
+                        'created_at': TimeUtils.get_current_kst(),
+                        'last_investment_time': TimeUtils.get_current_kst()
+                    }
+                    
+                    # 장기 투자 거래 저장
+                    self.db.long_term_trades.insert_one(long_term_trade)
+                    self.logger.info(f"{trade['market']} 장기 투자로 이동 완료")
+
+                    # 기존 trade는 converted로 변경
+                    self.db.trades.update_one(
+                        {'_id': trade['_id']},
+                        {'$set': {
+                            'status': 'converted',
+                            'conversion_timestamp': TimeUtils.get_current_kst(),
+                            'conversion_price': trade.get('price', 0),
+                            'conversion_reason': f"{trade.get('profit_rate', 0)}% 손실로 인한 장기 투자 전환"
+                        }}
+                    )
+
+        except Exception as e:
+            self.logger.error(f"장기 투자 거래 업데이트 중 오류: {str(e)}")
 
     def update_investment_limits(self):
         """system_config에서 투자 한도를 업데이트"""

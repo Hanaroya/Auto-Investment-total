@@ -849,7 +849,7 @@ class MongoDBManager:
                 self.logger.error(f"portfolio 컬렉션 정리 실패: {str(e)}")
             
     def cleanup_trades(self, trading_manager: object):
-        """trades, trading_history, portfolio 컬렉션 정리"""
+        """trades, trading_history, trade_conversion, long_term_trades 컬렉션 정리"""
         with self._get_collection_lock('trades'):
             try:
                 # trades 컬렉션 정리
@@ -863,13 +863,35 @@ class MongoDBManager:
                 
                 self.logger.info("trades 컬렉션 재설정 완료")
                 
+                # trade_conversion 컬렉션 정리
+                self.db.drop_collection('trade_conversion')
+                self.logger.info("trade_conversion 컬렉션 삭제 완료")
+                
+                # trade_conversion 컬렉션 재생성 및 인덱스 설정
+                self.trade_conversion = self.db['trade_conversion']
+                self.trade_conversion.create_index([("market", 1), ("exchange", 1)])
+                self.trade_conversion.create_index([("created_at", -1)])
+                
+                self.logger.info("trade_conversion 컬렉션 재설정 완료")
+                
+                # long_term_trades 컬렉션 정리
+                self.db.drop_collection('long_term_trades')
+                self.logger.info("long_term_trades 컬렉션 삭제 완료")
+                
+                # long_term_trades 컬렉션 재생성 및 인덱스 설정
+                self.long_term_trades = self.db['long_term_trades']
+                self.long_term_trades.create_index([("market", 1), ("exchange", 1), ("status", 1)])
+                self.long_term_trades.create_index([("created_at", -1)])
+                
+                self.logger.info("long_term_trades 컬렉션 재설정 완료")
+                
                 # 오늘 날짜의 daily_profit 문서 확인
                 kst_now = TimeUtils.get_current_kst()
                 today = kst_now.replace(hour=0, minute=0, second=0, microsecond=0)
                 daily_profit_doc = self.daily_profit.find_one({'date': today})
                 
                 # daily_profit 문서가 없으면 일일 리포트 생성
-                if not daily_profit_doc:
+                if not daily_profit_doc or kst_now.hour <= 23:
                     trading_manager.generate_daily_report(self.exchange_name)
                     daily_profit_doc = self.daily_profit.find_one({'date': today})
                 
