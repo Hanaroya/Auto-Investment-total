@@ -309,7 +309,7 @@ class TradingThread(threading.Thread):
             # 현재 투자 상태 확인
             active_trades = self.db.trades.find({
                 'thread_id': self.thread_id, 
-                'status': 'active' or 'converted'
+                'status': {'$in': ['active', 'converted']}
             })
             current_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
 

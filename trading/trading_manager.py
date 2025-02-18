@@ -1141,7 +1141,7 @@ class TradingManager:
                 active_trades = self.db.trades.find(
                     {
                         'market': market,     
-                        'status': 'active' or 'converted'
+                        'status': {'$in': ['active', 'converted']}
                     }
                 )
                 current_price = price
