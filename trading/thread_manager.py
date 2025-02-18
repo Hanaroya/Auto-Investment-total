@@ -132,8 +132,11 @@ class ThreadManager:
                     except Exception as e:
                         self.logger.error(f"일반 거래 강제 매도 처리 중 오류 발생: {str(e)}")
                         continue
+                del upbit
                     
             if existing_long_term_trades:
+                upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],
+                                  self.config['api_keys']['upbit']['secret_key'])
                 # 장기 투자 거래 강제 매도
                 for trade in existing_long_term_trades:
                     try:
