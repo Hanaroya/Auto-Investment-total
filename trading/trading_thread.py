@@ -692,16 +692,12 @@ class TradingThread(threading.Thread):
                                 
                                 if self.db.save_long_term_trade(long_term_trade):
                                     # 장기 투자 전환 메시지 생성 및 전송
-                                    conversion_message = self.trading_manager.create_long_term_message(
+                                    self.trading_manager.create_long_term_message(
                                         trade_data=active_trade,
                                         conversion_price=current_price,
                                         reason=conversion_data['conversion_reason']
                                     )
-                                    self.messenger.send_message(
-                                        message=conversion_message,
-                                        messenger_type="slack"
-                                    )
-                                    
+
                                     self.logger.info(f"{market}: 장기 투자 전환 완료 (거래 ID: {active_trade['_id']})")
                                     self.long_term_trades[market] = long_term_trade
                     

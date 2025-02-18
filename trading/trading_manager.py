@@ -761,7 +761,8 @@ class TradingManager:
             f" 전환 가격: {conversion_price:,}\n"
             f" 전환 사유: {reason}\n"
         )
-        return message
+        
+        self.messenger.send_message(message=message, messenger_type="slack")
 
     def create_buy_message(self, trade_data: Dict, buy_message: str = None) -> str:
         """매수 메시지 생성
