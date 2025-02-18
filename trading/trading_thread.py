@@ -422,18 +422,27 @@ class TradingThread(threading.Thread):
                                     buy_reason = "장기 투자 추가 매수"
 
                                     # 투자 가능한 최대 금액 확인 및 시장 상황에 관계 없이 지속적으로 투자 
-                                    if current_investment < (self.total_max_investment * 0.8):
+                                    portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
+                                    if portfolio and portfolio.get('available_amount', 0) >= investment_amount:
+                                        strategy_data = {
+                                            'investment_amount': investment_amount,
+                                            'trade_type': 'long_term_additional',
+                                            'is_long_term_trade': True,
+                                            'total_investment': long_term_trade.get('total_investment', 0),
+                                            'average_price': long_term_trade.get('average_price', 0),
+                                            'executed_volume': long_term_trade.get('executed_volume', 0),
+                                            'positions': long_term_trade.get('positions', []),
+                                            'original_trade_id': long_term_trade.get('original_trade_id'),
+                                            'target_profit_rate': long_term_trade.get('target_profit_rate', 5)
+                                        }
+
                                         self.trading_manager.process_buy_signal(
                                             market=market,
                                             exchange=self.exchange_name,
                                             thread_id=self.thread_id,
                                             signal_strength=market_condition.get('overall_signal', 0.0),
                                             price=current_price,
-                                            strategy_data={
-                                                **long_term_trade,
-                                                'investment_amount': investment_amount,
-                                                'trade_type': 'long_term_additional'
-                                            },
+                                            strategy_data=strategy_data,
                                             buy_message=buy_reason
                                         )
                                         self.logger.info(f"{market} 장기 투자 추가 매수 처리 완료 - 투자금액: {investment_amount:,}원")
