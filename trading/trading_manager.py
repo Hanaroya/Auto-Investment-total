@@ -66,10 +66,15 @@ class TradingManager:
             actual_investment = investment_amount - fee_amount
 
             # 물타기 여부 확인 및 기존 거래 정보 조회
-            is_averaging_down = strategy_data.get('is_averaging_down', False)
+            is_long_term_trade = strategy_data.get('is_long_term_trade', False)
             existing_trade = None
-            if is_averaging_down:
+            if is_long_term_trade:
                 existing_trade = self.db.trades.find_one({
+                    'market': market,
+                    'exchange': exchange,
+                    'status': 'converted'
+                })
+                long_term_trade = self.db.long_term_trades.find_one({
                     'market': market,
                     'exchange': exchange,
                     'status': 'active'
@@ -98,27 +103,30 @@ class TradingManager:
                     'price': price
                 }
 
-            if is_averaging_down and existing_trade:
-                # 기존 거래 정보 업데이트 (물타기)
-                total_investment = existing_trade['investment_amount'] + investment_amount
+            if is_long_term_trade and existing_trade:
+                # 기존 거래 정보 업데이트 (장기 투자)
+                total_investment = existing_trade['total_investment'] + investment_amount
                 total_volume = existing_trade['executed_volume'] + order_result['executed_volume']
-                average_price = (existing_trade['price'] * existing_trade['executed_volume'] + 
+                average_price = (existing_trade['average_price'] * existing_trade['executed_volume'] + 
                                price * order_result['executed_volume']) / total_volume
 
+                # 새로운 포지션 정보
+                new_position = {
+                    'price': price,
+                    'amount': investment_amount,
+                    'executed_volume': order_result['executed_volume'],
+                    'timestamp': kst_now
+                }
+
                 update_data = {
-                    'investment_amount': total_investment,
-                    'actual_investment': existing_trade['actual_investment'] + actual_investment,
+                    'total_investment': total_investment,
                     'executed_volume': total_volume,
-                    'price': round(average_price, 9),
-                    'averaging_down_count': existing_trade.get('averaging_down_count', 0) + 1,
-                    'last_averaging_down': {
-                        'price': price,
-                        'amount': investment_amount,
-                        'timestamp': kst_now
-                    }
+                    'average_price': round(average_price, 9),
+                    'last_updated': kst_now,
+                    '$push': {'positions': new_position}
                 }
                 
-                self.db.trades.update_one(
+                self.db.long_term_trades.update_one(
                     {'_id': existing_trade['_id']},
                     {'$set': update_data}
                 )
