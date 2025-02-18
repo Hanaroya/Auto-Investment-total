@@ -1062,7 +1062,7 @@ class TradingManager:
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 활성 투자: {long_term_summary['active_count']}건\n"
                 f"💵 총 투자금: ₩{long_term_summary['total_investment']:,}\n"
-                f"📈 평가금액: ₩{long_term_summary['total_current_value']:,}\n"
+                f"📈 평가금액: ₩{floor(long_term_summary['total_current_value']):,}\n"
                 f"📊 평균 수익률: {long_term_summary['avg_profit_rate']:+.2f}%\n\n"
                 f"📋 상세 현황:\n"
             )
@@ -1073,7 +1073,7 @@ class TradingManager:
                 message += (
                     f"• {detail['market']}\n"
                     f"  └ 투자금: ₩{detail['total_investment']:,}\n"
-                    f"  └ 평가금: ₩{detail['current_value']:,}\n"
+                    f"  └ 평가금: ₩{floor(detail['current_value']):,}\n"
                     f"  └ 수익률: {detail['profit_rate']:+.2f}%\n"
                     f"  └ 포지션: {detail['position_count']}개\n"
                     f"  └ 경과일: {detail['days_active']}일\n\n"
