@@ -110,28 +110,30 @@ class TradingManager:
                                price * order_result['executed_volume']) / total_volume
 
                 # 새로운 포지션 정보
-                new_position = long_term_trade['positions'] + [
-                    {
-                        'price': price,
-                        'amount': investment_amount,
-                        'executed_volume': order_result['executed_volume'],
-                        'timestamp': kst_now
-                    }
-                ]
-
-                update_data = {
-                    'total_investment': total_investment,
-                    'executed_volume': total_volume,
-                    'average_price': round(average_price, 9),
-                    'last_updated': kst_now,
-                    'positions': new_position
+                new_position = {
+                    'price': price,
+                    'amount': investment_amount,
+                    'executed_volume': order_result['executed_volume'],
+                    'timestamp': kst_now
                 }
-                
+
+                # positions 배열에 새로운 포지션 추가
                 self.db.long_term_trades.update_one(
-                    {'_id': existing_trade['_id']},
-                    {'$set': update_data}
+                    {'_id': long_term_trade['_id']},  # long_term_trade의 _id 사용
+                    {
+                        '$set': {
+                            'total_investment': total_investment,
+                            'executed_volume': total_volume,
+                            'average_price': round(average_price, 9),
+                            'last_updated': kst_now,
+                        },
+                        '$push': {
+                            'positions': new_position  # positions 배열에 새 포지션 추가
+                        }
+                    }
                 )
 
+                # trades 컬렉션 업데이트
                 update_data2 = {
                     'investment_amount': total_investment,
                     'actual_investment': existing_trade['actual_investment'] + actual_investment,
@@ -144,7 +146,12 @@ class TradingManager:
                     {'$set': update_data2}
                 )
                 
-                trade_data = {**existing_trade, **update_data}
+                # 업데이트된 거래 데이터 조회
+                trade_data = {
+                    **existing_trade,
+                    **update_data2,
+                    'positions': long_term_trade['positions'] + [new_position]
+                }
             else:
                 # 새로운 거래 데이터 생성
                 trade_data = {
@@ -795,10 +802,8 @@ class TradingManager:
             매수 메시지
         """
         strategy_data = trade_data['strategy_data']
-        buy_reason = ""
         # 구매 경로 확인
         if trade_data.get('averaging_down_count', 0) > 0:
-            buy_reason = "물타기"
             last_averaging = trade_data.get('last_averaging_down', {})
             additional_info = (
                 f" 물타기 횟수: {trade_data['averaging_down_count']}회\n"
@@ -806,21 +811,18 @@ class TradingManager:
                 f" 이전 매수가: {last_averaging.get('price', 0):,}원\n"
                 f" 추가 매수액: {last_averaging.get('amount', 0):,}원\n"
             )
-        else:
-            buy_reason = "상승세 감지" if strategy_data.get('uptrend_signal', 0) > 0.5 else "하락세 종료"
-            additional_info = ""
 
         kst_now = TimeUtils.get_current_kst()
 
         message = (
             f"------------------------------------------------\n"
-            f"거래종목: {trade_data['market']}, 구매 ({buy_reason})\n"
+            f"거래종목: {trade_data['market']}, 구매 ({buy_message})\n"
             f" 구매 시간: {TimeUtils.format_kst(kst_now)}\n"
             f" 구매 가격: {trade_data['price']:,}\n"
             f" 구매 신호: {trade_data['signal_strength']:.2f}\n"
             f" Trade-rank: {trade_data.get('thread_id', 'N/A')}\n"
             f" 투자 금액: W{trade_data.get('investment_amount', 0):,}\n"
-            f" 거래 사유: {buy_reason}\n"
+            f" 거래 사유: {buy_message}\n"
         )
 
         # 물타기 정보 추가
