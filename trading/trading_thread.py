@@ -428,31 +428,45 @@ class TradingThread(threading.Thread):
                                     investment_amount = min_trade_amount * 2
                                     buy_reason = "장기 투자 추가 매수"
 
-                                    # 투자 가능한 최대 금액 확인 및 시장 상황에 관계 없이 지속적으로 투자 
+                                    # 투자 가능한 최대 금액 확인
                                     portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
-                                    if portfolio and portfolio.get('available_amount', 0) >= investment_amount:
-                                        strategy_data = {
-                                            'investment_amount': investment_amount,
-                                            'trade_type': 'long_term_additional',
-                                            'is_long_term_trade': True,
-                                            'total_investment': long_term_trade.get('total_investment', 0),
-                                            'average_price': long_term_trade.get('average_price', 0),
-                                            'executed_volume': long_term_trade.get('executed_volume', 0),
-                                            'positions': long_term_trade.get('positions', []),
-                                            'original_trade_id': long_term_trade.get('original_trade_id'),
-                                            'target_profit_rate': long_term_trade.get('target_profit_rate', 5)
-                                        }
+                                    self.logger.debug(f"{market} - 포트폴리오 확인:")
+                                    self.logger.debug(f"  - 포트폴리오 존재: {portfolio is not None}")
 
-                                        self.trading_manager.process_buy_signal(
-                                            market=market,
-                                            exchange=self.exchange_name,
-                                            thread_id=self.thread_id,
-                                            signal_strength=market_condition.get('overall_signal', 0.0),
-                                            price=current_price,
-                                            strategy_data=strategy_data,
-                                            buy_message=buy_reason
-                                        )
-                                        self.logger.info(f"{market} 장기 투자 추가 매수 처리 완료 - 투자금액: {investment_amount:,}원")
+                                    if portfolio:
+                                        # available_investment 필드 사용
+                                        available_amount = portfolio.get('available_investment', 0)
+                                        self.logger.debug(f"  - 사용 가능 금액: {available_amount:,}원")
+                                        self.logger.debug(f"  - 필요 투자금액: {investment_amount:,}원")
+                                        self.logger.debug(f"  - 투자 가능 여부: {available_amount >= current_investment + investment_amount}")
+
+                                        if available_amount >= current_investment + investment_amount:
+                                            strategy_data = {
+                                                'investment_amount': investment_amount,
+                                                'trade_type': 'long_term_additional',
+                                                'is_long_term_trade': True,
+                                                'total_investment': long_term_trade.get('total_investment', 0),
+                                                'average_price': long_term_trade.get('average_price', 0),
+                                                'executed_volume': long_term_trade.get('executed_volume', 0),
+                                                'positions': long_term_trade.get('positions', []),
+                                                'original_trade_id': str(long_term_trade.get('_id')),
+                                                'target_profit_rate': long_term_trade.get('target_profit_rate', 5)
+                                            }
+
+                                            self.trading_manager.process_buy_signal(
+                                                market=market,
+                                                exchange=self.exchange_name,
+                                                thread_id=self.thread_id,
+                                                signal_strength=market_condition.get('overall_signal', 0.0),
+                                                price=current_price,
+                                                strategy_data=strategy_data,
+                                                buy_message=buy_reason
+                                            )
+                                            self.logger.info(f"{market} 장기 투자 추가 매수 완료 - 투자금액: {investment_amount:,}원")
+                                        else:
+                                            self.logger.warning(f"{market} - 추가 매수 불가: 투자 가능 금액 부족 (필요: {investment_amount:,}원, 가용: {available_amount:,}원)")
+                                    else:
+                                        self.logger.warning(f"{market} - 추가 매수 불가: 포트폴리오 정보 없음")
 
                     except Exception as e:
                         self.logger.error(f"장기 투자 처리 중 오류 ({market}): {str(e)}")
