@@ -102,11 +102,11 @@ class TradingManager:
                     'price': price
                 }
 
-            if existing_trade:
+            if existing_trade and long_term_trade:
                 # 기존 거래 정보 업데이트 (장기 투자)
-                total_investment = existing_trade['total_investment'] + investment_amount
-                total_volume = existing_trade['executed_volume'] + order_result['executed_volume']
-                average_price = (existing_trade['average_price'] * existing_trade['executed_volume'] + 
+                total_investment = long_term_trade['total_investment'] + investment_amount
+                total_volume = long_term_trade['executed_volume'] + order_result['executed_volume']
+                average_price = (long_term_trade['average_price'] * long_term_trade['executed_volume'] + 
                                price * order_result['executed_volume']) / total_volume
 
                 # 새로운 포지션 정보
