@@ -110,19 +110,21 @@ class TradingManager:
                                price * order_result['executed_volume']) / total_volume
 
                 # 새로운 포지션 정보
-                new_position = {
-                    'price': price,
-                    'amount': investment_amount,
-                    'executed_volume': order_result['executed_volume'],
-                    'timestamp': kst_now
-                }
+                new_position = long_term_trade['positions'] + [
+                    {
+                        'price': price,
+                        'amount': investment_amount,
+                        'executed_volume': order_result['executed_volume'],
+                        'timestamp': kst_now
+                    }
+                ]
 
                 update_data = {
                     'total_investment': total_investment,
                     'executed_volume': total_volume,
                     'average_price': round(average_price, 9),
                     'last_updated': kst_now,
-                    '$push': {'positions': new_position}
+                    'positions': new_position
                 }
                 
                 self.db.long_term_trades.update_one(

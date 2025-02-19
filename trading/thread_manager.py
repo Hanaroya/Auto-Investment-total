@@ -102,11 +102,7 @@ class ThreadManager:
 
             # 모든 거래 강제 판매
             existing_trades = self.db.trades.find({
-                'status': 'active'
-            })
-            
-            existing_long_term_trades = self.db.long_term_trades.find({
-                'status': 'active'
+                'status': {'$in': ['active', 'converted']}
             })
             
             trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name)
@@ -132,33 +128,6 @@ class ThreadManager:
                     except Exception as e:
                         self.logger.error(f"일반 거래 강제 매도 처리 중 오류 발생: {str(e)}")
                         continue
-                del upbit
-                    
-            if existing_long_term_trades:
-                upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],
-                                  self.config['api_keys']['upbit']['secret_key'])
-                # 장기 투자 거래 강제 매도
-                for trade in existing_long_term_trades:
-                    try:
-                        current_price = upbit.get_current_price(trade['market'])
-                        trading_manager.process_sell_signal(
-                            market=trade['market'],
-                            exchange=trade['exchange'],
-                            thread_id=trade['thread_id'],
-                            signal_strength=0,
-                            price=current_price,
-                            strategy_data={
-                                'force_sell': True,
-                                'trade_type': 'long_term',
-                                'trade_id': str(trade['_id'])
-                            },
-                            sell_message="장기 투자 강제 매도"
-                        )
-                        time.sleep(0.07)
-                    except Exception as e:
-                        self.logger.error(f"장기 투자 강제 매도 처리 중 오류 발생: {str(e)}")
-                        continue
-                
                 del upbit
 
             # 각 스레드 종료 대기
