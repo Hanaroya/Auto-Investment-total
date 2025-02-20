@@ -139,6 +139,7 @@ class TradingManager:
                     'actual_investment': existing_trade['actual_investment'] + actual_investment,
                     'executed_volume': total_volume,
                     'price': round(average_price, 9),
+                    'is_long_term_trade': True,
                 }
 
                 self.db.trades.update_one(
@@ -803,13 +804,17 @@ class TradingManager:
         """
         strategy_data = trade_data['strategy_data']
         # 구매 경로 확인
-        if trade_data.get('averaging_down_count', 0) > 0:
-            last_averaging = trade_data.get('last_averaging_down', {})
+        additional_info = None
+        if trade_data.get('is_long_term_trade', False):
+            long_term_trade = self.db.long_term_trades.find_one({
+                'market': trade_data['market'],
+                'status': 'active'
+            })
             additional_info = (
-                f" 물타기 횟수: {trade_data['averaging_down_count']}회\n"
-                f" 평균 매수가: {trade_data['price']:,}원\n"
-                f" 이전 매수가: {last_averaging.get('price', 0):,}원\n"
-                f" 추가 매수액: {last_averaging.get('amount', 0):,}원\n"
+                f" 장기 투자 횟수: {len(long_term_trade.get('positions', []))}회\n"
+                f" 평균 매수가: {long_term_trade.get('average_price', 0):,}원\n"
+                f" 이전 매수가: {long_term_trade.get('positions', [])[-1].get('price', 0):,}원\n"
+                f" 추가 매수액: {long_term_trade.get('positions', [])[-1].get('investment_amount', 0):,}원\n"
             )
 
         kst_now = TimeUtils.get_current_kst()
