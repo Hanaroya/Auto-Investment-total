@@ -84,7 +84,7 @@ class TradingThread(threading.Thread):
         
         # 각 인스턴스 생성
         self.market_analyzer = MarketAnalyzer(config=self.config, exchange_name=exchange_name)
-        self.trading_manager = TradingManager(exchange_name=exchange_name)
+        self.trading_manager = TradingManager(exchange_name=exchange_name, investment_center=investment_center)
         
         # system_config에서 설정값 가져오기
         system_config = self.db.system_config.find_one({'exchange': self.exchange_name})

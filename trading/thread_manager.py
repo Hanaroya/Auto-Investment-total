@@ -72,7 +72,7 @@ class ThreadManager:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
 
-        self.trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name)
+        self.trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name, investment_center=self.investment_center)
         self.scheduler_thread = None
         self.afr_monitor_thread = None
         self.afr_ready = threading.Event()  # AFR 데이터 준비 상태를 위한 이벤트 추가
@@ -105,7 +105,7 @@ class ThreadManager:
                 'status': {'$in': ['active', 'converted']}
             })
             
-            trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name)
+            trading_manager = TradingManager(exchange_name=self.investment_center.exchange_name, investment_center=self.investment_center)
             
             if existing_trades:
                 upbit = UpbitCall(self.config['api_keys']['upbit']['access_key'],

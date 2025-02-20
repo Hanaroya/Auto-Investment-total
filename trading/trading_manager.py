@@ -12,6 +12,7 @@ from trade_market_api.UpbitCall import UpbitCall
 import os
 from math import floor
 from utils.time_utils import TimeUtils
+from control_center.InvestmentCenter import InvestmentCenter
 
 class TradingManager:
     """
@@ -19,19 +20,15 @@ class TradingManager:
     
     거래 신호 처리 및 거래 데이터 관리를 담당합니다.
     """
-    def __init__(self, exchange_name: str):
+    def __init__(self, exchange_name: str, investment_center: InvestmentCenter):
         self.db = MongoDBManager(exchange_name=exchange_name)
         self.config = self._load_config()
         self.messenger = Messenger(self.config)
         self.logger = logging.getLogger('investment-center')
         self.exchange_name = exchange_name  
+        self.investment_center = investment_center
         self.long_term_trading_manager = LongTermTradingManager(self.db, self.exchange_name, self.config)
         self.test_mode = self.config.get('mode') == 'test' or self.db.get_portfolio('test_mode') 
-        self.upbit = UpbitCall(
-            self.config['api_keys']['upbit']['access_key'],
-            self.config['api_keys']['upbit']['secret_key'],
-            is_test=self.test_mode
-        )
         
 
     def _load_config(self) -> Dict:
@@ -83,7 +80,7 @@ class TradingManager:
             order_result = None
             if not is_test:
                 # 실제 매수 주문 실행
-                order_result = self.upbit.place_order(
+                order_result = self.investment_center.exchange.place_order(
                     market=market,
                     side='bid',
                     price=price,

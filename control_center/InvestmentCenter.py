@@ -69,7 +69,7 @@ class InvestmentCenter:
         self.market_analyzer = MarketAnalyzer(self.config, exchange_name)
         
         # 거래 매니저 초기화
-        self.trading_manager = TradingManager(exchange_name)
+        self.trading_manager = TradingManager(exchange_name, self)
         
         # 스레드 매니저 초기화
         self.thread_manager = ThreadManager(self.config, self)
