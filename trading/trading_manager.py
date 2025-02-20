@@ -821,7 +821,7 @@ class TradingManager:
 
         message = (
             f"------------------------------------------------\n"
-            f"거래종목: {trade_data['market']}, 구매 ({buy_message})\n"
+            f"거래종목: {trade_data['market']}, 구매\n"
             f" 구매 시간: {TimeUtils.format_kst(kst_now)}\n"
             f" 구매 가격: {trade_data['price']:,}\n"
             f" 구매 신호: {trade_data['signal_strength']:.2f}\n"
