@@ -329,22 +329,63 @@ class TradingThread(threading.Thread):
             # 전역 거래 가능 여부 확인
             with self.shared_locks['portfolio']:
                 portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
-                if portfolio is None:
-                    self.logger.error(f"포트폴리오 정보를 찾을 수 없습니다: {self.exchange_name}")
-                    # 포트폴리오가 없으면 생성하고 global_tradeable을 false로 설정
-                    self.db.portfolio.insert_one({
+                system_config = self.db.system_config.find_one({'exchange': self.exchange_name})
+                if portfolio is None and system_config is not None:
+                    self.logger.warning(f"포트폴리오 정보를 찾을 수 없습니다: {self.exchange_name}, 새로 생성합니다.")
+                    # 포트폴리오가 없으면 생성
+                    new_portfolio = {
                         'exchange': self.exchange_name,
-                        'current_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000) * 0.8),
-                        'available_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000) * 0.8),
-                        'reserve_amount': float(os.getenv('INITIAL_INVESTMENT', 1000000) * 0.2),
-                        'invested_amount': 0,
+                        'investment_amount': system_config.get('total_max_investment', 1000000),
+                        'available_investment': floor(system_config.get('total_max_investment', 1000000) * 0.8),
+                        'current_amount': floor(system_config.get('total_max_investment', 1000000) * 0.8),
+                        'reserve_amount': floor(system_config.get('total_max_investment', 1000000) * 0.2),
                         'profit_earned': 0,
                         'market_list': [],
                         'last_updated': TimeUtils.get_current_kst(),
+                        'test_mode': self.config.get('test_mode', True),
                         'global_tradeable': False  # 기본값을 False로 설정
-                    })
-                    self.logger.info(f"새로운 포트폴리오 생성 - global_tradeable: False")
-                
+                    }
+                    
+                    try:
+                        self.db.portfolio.insert_one(new_portfolio)
+                        self.logger.info(f"새로운 포트폴리오 생성 완료: {self.exchange_name}")
+                        portfolio = new_portfolio
+                    except Exception as e:
+                        self.logger.error(f"포트폴리오 생성 중 오류 발생: {str(e)}")
+                        return
+                elif portfolio is None and system_config is None:
+                    self.logger.error(f"포트폴리오 정보를 찾을 수 없습니다 새로 생성합니다, 시스템 설정도 없습니다 새로 생성합니다: {self.exchange_name}")
+                    initial_investment = float(os.getenv('INITIAL_INVESTMENT', 1000000))
+                    new_portfolio = {
+                        'exchange': self.exchange_name,
+                        'investment_amount': initial_investment,
+                        'available_investment': floor(initial_investment * 0.8),
+                        'current_amount': floor(initial_investment * 0.8),
+                        'reserve_amount': floor(initial_investment * 0.2),
+                        'profit_earned': 0,
+                        'market_list': [],
+                        'last_updated': TimeUtils.get_current_kst(),
+                        'test_mode': self.config.get('test_mode', True),
+                        'global_tradeable': False
+                    }
+                    new_system_config = {
+                        'exchange': self.exchange_name,
+                        'total_max_investment': initial_investment,
+                        'min_trade_amount': floor(os.getenv('MIN_TRADE_AMOUNT', 5000)),
+                        'max_thread_investment': floor(os.getenv('MAX_THREAD_INVESTMENT', 80000)),
+                        'reserve_amount': floor(initial_investment * 0.2),
+                        'total_max_investment': initial_investment,
+                        'emergency_stop': False,
+                        'created_at': TimeUtils.get_current_kst(),
+                        'last_updated': TimeUtils.get_current_kst()
+                    }
+                    try:
+                        self.db.system_config.insert_one(new_system_config)
+                        self.db.portfolio.insert_one(new_portfolio)
+                        self.logger.info(f"새로운 시스템 설정 생성 완료: {self.exchange_name}")
+                    except Exception as e:
+                        self.logger.error(f"시스템 설정 생성 중 오류 발생: {str(e)}")
+                        return
                 # global_tradeable 필드가 없으면 False로 업데이트
                 if 'global_tradeable' not in portfolio:
                     self.db.portfolio.update_one({
