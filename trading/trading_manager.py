@@ -392,7 +392,7 @@ class TradingManager:
         try:
             self.logger.info("일일 리포트 생성 시작")
             
-            # 오늘 날짜 기준으로 거래 내역 조회
+            # 오늘 날짜 기준 (KST)으로 거래 내역 조회
             kst_today = TimeUtils.get_current_kst().replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
@@ -400,7 +400,7 @@ class TradingManager:
 
             portfolio = self.db.get_portfolio(exchange)
         
-            # 거래 내역 조회 - MongoDB 쿼리 수정
+            # 거래 내역 조회 - timezone 정보 포함하여 쿼리
             trading_history = list(self.db.trading_history.find({
                 'sell_timestamp': {
                     '$gte': kst_today,
@@ -421,6 +421,7 @@ class TradingManager:
                 # 1. 거래 내역 시트
                 if trading_history:
                     history_df = pd.DataFrame(trading_history)
+                    # datetime 객체를 KST로 변환
                     history_df['거래일자'] = pd.to_datetime(history_df['sell_timestamp']).apply(
                         lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
                     )
@@ -487,17 +488,22 @@ class TradingManager:
                 if active_trades:
                     holdings_df = pd.DataFrame(active_trades)
                     
-                    # 보유 현황 데이터 가공
+                    # 보유 시간 계산 시 timezone 고려
+                    holdings_df['보유기간'] = holdings_df['timestamp'].apply(
+                        lambda x: (TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(x)).total_seconds() / 3600
+                    )
+                    
                     holdings_display = pd.DataFrame({
                         '거래종목': holdings_df['market'],
                         'RANK': holdings_df['thread_id'],
-                        '매수시간': pd.to_datetime(holdings_df['timestamp']).apply(
+                        '매수시간': holdings_df['timestamp'].apply(
                             lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
                         ),
                         '매수가': holdings_df['price'].map('{:,.0f}'.format),
                         '현재가': holdings_df['current_price'].map('{:,.0f}'.format),
                         '수익률': holdings_df['profit_rate'].map('{:+.2f}%'.format),
-                        '투자금액': holdings_df['investment_amount']  # 숫자 형태 유지
+                        '투자금액': holdings_df['investment_amount'],
+                        '보유시간': holdings_df['보유기간'].map('{:.1f}시간'.format)
                     })
                     
                     # 보유 현황 시트에 데이터 저장
@@ -760,6 +766,8 @@ class TradingManager:
                     f"  └ 경과일: {detail['days_active']}일\n\n"
                 )
             
+            return filename
+
         except Exception as e:
             self.logger.error(f"일일 리포트 생성 중 오류: {str(e)}")
             # 리포트 전송 실패 시 상태 업데이트
