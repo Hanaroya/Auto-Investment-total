@@ -661,7 +661,8 @@ class TradingThread(threading.Thread):
                             # 기본 손실 조건
                             (loss_prevention_condition or stagnation_sell_condition or ma_condition) and  
                             active_trade.get('is_long_term', False) == False and
-                            self.get_total_investment() < self.total_max_investment * 0.8
+                            self.get_total_investment() < self.total_max_investment * 0.8 and 
+                            current_profit_rate < 0.0 # 손실 발생 시 장기 투자 전환
                         )
 
                         # 매도 조건 통합 (물타기 관련 조건 제거)
