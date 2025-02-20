@@ -418,7 +418,7 @@ class TradingManager:
             filename = f"투자현황-{kst_today.strftime('%Y%m%d')}.xlsx"
             
             # 현재 활성 거래 조회
-            active_trades = list(self.db.trades.find({"status": "active"}))
+            active_trades = list(self.db.trades.find({"status": {"$in": ["active", "converted"]}}))
             
             with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
                 # 1. 거래 내역 시트

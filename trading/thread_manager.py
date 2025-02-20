@@ -389,15 +389,10 @@ class ThreadManager:
                     # 현재 활성 거래들의 총 투자 금액 계산
                     active_trades = self.db.trades.find({
                         'exchange': self.exchange_name,
-                        'status': 'active'
-                    })
-                    active_long_term_trades = self.db.long_term_trades.find({
-                        'exchange': self.exchange_name,
-                        'status': 'active'
+                        'status': {'$in': ['active', 'converted']}
                     })
                     
                     total_invested = sum(trade.get('investment_amount', 0) for trade in active_trades)
-                    total_invested += sum(trade.get('investment_amount', 0) for trade in active_long_term_trades)
                     
                     # 가용 금액 계산 (전체 투자 가능 금액 - 현재 투자된 금액)
                     available_amount = floor(self.total_max_investment * 0.8)
