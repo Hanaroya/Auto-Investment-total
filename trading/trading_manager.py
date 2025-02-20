@@ -52,8 +52,8 @@ class TradingManager:
             self.logger.debug(f"현재 KST 시간: {TimeUtils.format_kst(kst_now)}")
             
             # 투자 가능 금액 확인
-            if not self.check_investment_limit(thread_id):
-                self.logger.warning(f"투자 한도 초과: thread_id={thread_id}")
+            if not self.check_investment_limit():
+                self.logger.warning(f"전체 투자 한도 초과: thread_id={thread_id}")
                 return False
 
             # 테스트 모드 확인
@@ -1215,7 +1215,7 @@ class TradingManager:
             self.logger.error(f"활성 거래 조회 중 오류: {str(e)}")
             return []
 
-    def check_investment_limit(self, thread_id: int) -> bool:
+    def check_investment_limit(self) -> bool:
         """
         스레드별 투자 한도를 확인합니다.
         TradingThread에서 이미 max_investment를 체크하므로,
@@ -1229,23 +1229,23 @@ class TradingManager:
         """
         try:
             # 환경 변수에서 설정값 가져오기
-            max_thread_investment = float(os.getenv('MAX_THREAD_INVESTMENT', 80000))  # 스레드당 8만원
-            total_max_investment = float(os.getenv('TOTAL_MAX_INVESTMENT', 800000))   # 전체 80만원
-            min_trade_amount = float(os.getenv('MIN_TRADE_AMOUNT', 5000))            # 최소 거래금액
-            reserve_amount = float(os.getenv('RESERVE_AMOUNT', 200000))              # 예비금
+            portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
+            system_config = self.db.system_config.find_one({'exchange': self.exchange_name})
+            total_max_investment = portfolio.get('available_investment', 800000)
+            reserve_amount = portfolio.get('reserve_amount', 200000)
+            min_trade_amount = system_config.get('min_trade_amount', 5000)
             
             # 현재 스레드의 활성 거래들 조회
             thread_trades = self.db.trades.find({
-                'thread_id': thread_id,
-                'status': 'active'
+                'status': {'$in': ['active', 'converted']}
             })
             
             # 스레드별 투자 총액 계산
             thread_investment = sum(trade.get('investment_amount', 0) for trade in thread_trades)
             
             # 스레드별 한도 체크
-            if thread_investment >= max_thread_investment:
-                self.logger.warning(f"Thread {thread_id}의 투자 한도 초과: {thread_investment:,}원/{max_thread_investment:,}원")
+            if thread_investment >= total_max_investment:
+                self.logger.warning(f"전체 투자 한도 초과: {thread_investment:,}원/{total_max_investment:,}원")
                 return False
             
             # 전체 활성 거래들 조회
