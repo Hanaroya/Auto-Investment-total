@@ -429,7 +429,7 @@ class TradingThread(threading.Thread):
                     if active_trade:
                         if active_trade.get('status') == 'converted':
                             with self.shared_locks['long_term_trades']:
-                                long_term_trade = self.db.long_term_trades.find({
+                                long_term_trade = self.db.long_term_trades.find_one({
                                     'market': market,
                                     'exchange': self.exchange_name,
                                     'status': 'active'
@@ -565,7 +565,6 @@ class TradingThread(threading.Thread):
                         user_call_sell_condition = active_trade.get('user_call', False)
 
                         #6. 장기 투자 전환 조건 확인
-                        # 1. 매도 조건 확인
                         long_term_sell_condition = (
                             active_trade.get('is_long_term', False) == True and
                             long_term_trade and
