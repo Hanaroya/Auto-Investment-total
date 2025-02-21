@@ -695,7 +695,7 @@ class TradingThread(threading.Thread):
                                     sell_message=signals['sell_reason']
                                 ):
                                     self.logger.info(f"{market} 장기 투자 매도 신호 처리 완료")
-                            elif active_trade.get('is_long_term', False) == False:
+                            elif active_trade.get('is_long_term', False) == False and not long_term_sell_condition:
                                 self.logger.debug(f"장기 투자 매도 조건 외 충족: {market}")
                                 if self.trading_manager.process_sell_signal(
                                     market=market,
