@@ -28,6 +28,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from trade_market_api.MarketDataConverter import MarketDataConverter
+from monitoring.memory_monitor import MemoryProfiler, memory_profiler
 
 class ThreadLock:
     """싱글톤 패턴으로 구현된 스레드 락 관리자
@@ -124,7 +125,9 @@ class UpbitCall:
         self.session = None
         self.thread_id = None  # 스레드 식별용
         self.last_ubmi_fetch_time = None
-
+        self.memory_profiler = MemoryProfiler() 
+        
+    @memory_profiler.profile_memory 
     def _setup_logger(self) -> logging.Logger:
         """로깅 설정
         
@@ -155,6 +158,7 @@ class UpbitCall:
         
         return logger
 
+    @memory_profiler.profile_memory
     def _get_auth_header(self, query: Optional[Dict] = None) -> Dict:
         """
         인증 헤더 생성
@@ -177,6 +181,7 @@ class UpbitCall:
         jwt_token = jwt.encode(payload, self.secret_key)
         return {'Authorization': f'Bearer {jwt_token}'}
 
+    @memory_profiler.profile_memory
     def get_krw_markets(self) -> List[str]:
         """원화 마켓 목록 조회 (거래량 순)
         
@@ -211,6 +216,7 @@ class UpbitCall:
             self.logger.error(f"원화 마켓 목록 조회 실패: {str(e)}")
             return []
 
+    @memory_profiler.profile_memory
     def _has_sufficient_data(self, candle_data: List[Dict], market: str) -> bool:
         """충분한 캔들 데이터가 있는지 확인"""
         required_candles = 50  # 필요한 최소 캔들 수
@@ -219,6 +225,7 @@ class UpbitCall:
             return False
         return True
 
+    @memory_profiler.profile_memory
     def get_candle(self, market: str, interval: str = '1', count: int = 300) -> List[Dict]:
         """
         캔들 데이터를 가져옵니다.
@@ -311,6 +318,7 @@ class UpbitCall:
             self.logger.error(f"Thread {threading.current_thread().name} - 캔들 데이터 조회 중 오류: {str(e)}")
             return []
 
+    @memory_profiler.profile_memory
     def get_current_price(self, symbol: str) -> float:
         """현재가 조회
         
@@ -329,6 +337,7 @@ class UpbitCall:
             self.logger.error(f"현재가 조회 실패: {str(e)}")
             return 0.0
 
+    @memory_profiler.profile_memory
     def place_order(self, symbol: str, side: str, volume: float, price: Optional[float] = None) -> Dict:
         """주문 실행
         
@@ -374,6 +383,7 @@ class UpbitCall:
             self.logger.error(f"주문 실패: {str(e)}")
             return {}
 
+    @memory_profiler.profile_memory
     def cancel_order(self, uuid: str) -> Dict:
         """주문 취소
         
@@ -402,6 +412,7 @@ class UpbitCall:
             self.logger.error(f"주문 취소 실패: {str(e)}")
             return {}
 
+    @memory_profiler.profile_memory
     def get_order_status(self, uuid: str) -> Dict:
         """주문 상태 조회
         
@@ -430,6 +441,7 @@ class UpbitCall:
             self.logger.error(f"주문 상태 조회 실패: {str(e)}")
             return {}
 
+    @memory_profiler.profile_memory
     def calculate_rsi(self, data: List[float], period: int = 14) -> float:
         """RSI 계산
         
@@ -455,6 +467,7 @@ class UpbitCall:
             self.logger.error(f"RSI 계산 실패: {str(e)}")
             return 0.0
 
+    @memory_profiler.profile_memory
     @with_thread_lock("buy")
     async def buy_market_order(self, market: str, price: float) -> Dict:
         """시장가 매수
@@ -494,6 +507,7 @@ class UpbitCall:
             self.logger.error(f"매수 주문 중 오류 발생: {str(e)}")
             return {}
 
+    @memory_profiler.profile_memory
     @with_thread_lock("sell")
     async def sell_market_order(self, market: str, volume: float) -> Dict:
         """시장가 매도
@@ -533,6 +547,7 @@ class UpbitCall:
             self.logger.error(f"매도 주문 중 오류 발생: {str(e)}")
             return {}
 
+    @memory_profiler.profile_memory
     def _create_jwt_token(self, query: Dict) -> str:
         """JWT 토큰 생성
         
@@ -551,6 +566,7 @@ class UpbitCall:
         
         return jwt.encode(payload, self.secret_key)
 
+    @memory_profiler.profile_memory
     def _create_query_hash(self, query: Dict) -> str:
         """쿼리 해시 생성
         
@@ -565,6 +581,7 @@ class UpbitCall:
         m.update(query_string)
         return m.hexdigest()
 
+    @memory_profiler.profile_memory
     async def initialize(self, thread_id: int, loop=None):
         """비동기 초기화"""
         self.thread_id = thread_id
@@ -574,12 +591,14 @@ class UpbitCall:
                 loop=loop
             )
 
+    @memory_profiler.profile_memory
     async def close(self):
         """세션 정리"""
         if self.session:
             await self.session.close()
             self.session = None
 
+    @memory_profiler.profile_memory
     def should_fetch_ubmi(self) -> bool:
         """UBMI 데이터를 가져올 시간인지 확인"""
         current_time = TimeUtils.get_current_kst()
@@ -592,6 +611,7 @@ class UpbitCall:
         time_diff = (current_time - self.last_ubmi_fetch_time).total_seconds()
         return (current_time.minute % 5 == 0 and time_diff >= 300)
     
+    @memory_profiler.profile_memory
     def _setup_chrome_options(self) -> Options:
         """크롬 드라이버 옵션 설정"""
         options = Options()
@@ -611,6 +631,7 @@ class UpbitCall:
         options.add_argument("--window-size=1,1")  # 최소 창 크기
         return options
     
+    @memory_profiler.profile_memory
     @with_thread_lock("ubmi")
     async def fetch_ubmi_data(self) -> Tuple[Optional[float], Optional[float], Optional[float]]:
         """UBMI 데이터 크롤링"""
@@ -667,6 +688,7 @@ class UpbitCall:
                 except Exception as e:
                     self.logger.error(f"드라이버 종료 중 오류: {str(e)}")
 
+    @memory_profiler.profile_memory
     async def update_market_data(self, db_manager) -> bool:
         """UBMI 데이터 업데이트 및 DB 저장"""
         try:
@@ -694,6 +716,7 @@ class UpbitCall:
             self.logger.error(f"UBMI 데이터 업데이트 중 오류: {str(e)}")
             return False
 
+    @memory_profiler.profile_memory
     async def get_AFR_value(self) -> Dict:
         """
         거래소별 AFR 데이터 조회
@@ -722,6 +745,7 @@ class UpbitCall:
             self.logger.error(f"AFR 데이터 조회 중 오류: {str(e)}")
             return None
 
+    @memory_profiler.profile_memory
     @with_thread_lock("feargreed")
     async def get_feargreed_data(self, url: str = "https://www.ubcindex.com/feargreed") -> List[Dict[str, Any]]:
         """Fear & Greed 데이터 크롤링

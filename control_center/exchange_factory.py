@@ -1,13 +1,14 @@
 
 from typing import Dict, Any
 from trade_market_api.UpbitCall import UpbitCall
-
+from monitoring.memory_monitor import MemoryProfiler, memory_profiler
 class ExchangeFactory:
     """
     거래소 객체 생성을 담당하는 팩토리 클래스
     각 거래소별 구현체를 생성하고 설정을 주입
     """
     @staticmethod
+    @memory_profiler.profile_memory
     def create_exchange(exchange_name: str, config: Dict) -> Any:
         mode = config.get('mode', 'market')  # 기본 모드는 실제 거래
         if exchange_name.lower() == "upbit":

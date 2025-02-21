@@ -13,6 +13,7 @@ from database.mongodb_manager import MongoDBManager
 from trading.trading_strategy import TradingStrategy
 import asyncio
 from trading.long_term_trading_manager import LongTermTradingManager
+from monitoring.memory_monitor import MemoryProfiler, memory_profiler
 
 class TradingError(Exception):
     """거래 관련 기본 예외 클래스"""
@@ -126,7 +127,10 @@ class TradingThread(threading.Thread):
             exchange_name=exchange_name,
             config=self.config
         )
+        self.memory_profiler = MemoryProfiler()
 
+
+    @memory_profiler.profile_memory
     def run(self):
         """스레드 실행"""
         try:
@@ -177,6 +181,7 @@ class TradingThread(threading.Thread):
                 self.loop.close()
             self.logger.info(f"Thread {self.thread_id} 정리 작업 완료")
 
+    @memory_profiler.profile_memory
     async def process_single_market(self, market: str):
         """단일 마켓 처리"""
         try:
@@ -933,6 +938,7 @@ class TradingThread(threading.Thread):
             error_location = traceback.extract_tb(sys.exc_info()[2])[-1]
             self.logger.error(f"Error processing {market}: {str(e)} at {error_location.filename}:{error_location.lineno} in {error_location.name}")
 
+    @memory_profiler.profile_memory
     def _analyze_market_condition(self, current_afr: float, current_change: float, 
                                 current_fear_greed: float, afr_history: list,
                                 change_history: list, fear_greed_history: list) -> dict:
@@ -1023,6 +1029,7 @@ class TradingThread(threading.Thread):
                 'message': "분석 오류"
             }
 
+    @memory_profiler.profile_memory
     def _analyze_multi_timeframe_trends(self, candles_1m, candles_15m, candles_240m):
         """여러 시간대의 추세를 분석"""
         try:
@@ -1052,7 +1059,8 @@ class TradingThread(threading.Thread):
         except Exception as e:
             self.logger.error(f"추세 분석 중 오류: {str(e)}")
             return None
-        
+    
+    @memory_profiler.profile_memory
     def _calculate_trend_and_volatility(self, candles):
         """단일 시간대의 추세와 변동성 계산"""
         try:
@@ -1096,7 +1104,8 @@ class TradingThread(threading.Thread):
         except Exception as e:
             self.logger.error(f"추세/변동성 계산 중 오류: {str(e)}")
             return {'trend': 0, 'volatility': 0, 'ma20': None, 'price_vs_ma': 0}
-        
+    
+    @memory_profiler.profile_memory
     def _get_market_condition(self, exchange: str, market: str) -> dict:
         """시장 상태 조회"""
         try:
@@ -1146,7 +1155,8 @@ class TradingThread(threading.Thread):
         except Exception as e:
             self.logger.error(f"시장 상태 조회 중 오류 ({market}): {str(e)}")
             return None
-        
+    
+    @memory_profiler.profile_memory
     def get_total_investment(self) -> float:
         """전체 투자금액 계산 (단기 + 장기)"""
         try:
@@ -1167,6 +1177,7 @@ class TradingThread(threading.Thread):
             self.logger.error(f"투자금액 계산 중 오류: {str(e)}")
             return 0
 
+    @memory_profiler.profile_memory
     def set_market_tradeable(self, market: str, tradeable: bool, reason: str = None) -> bool:
         """
         특정 마켓 거래 가능 여부 설정
@@ -1194,6 +1205,7 @@ class TradingThread(threading.Thread):
             self.logger.error(f"마켓 거래 가능 여부 설정 중 오류: {str(e)}")
             return False
 
+    @memory_profiler.profile_memory
     def set_global_tradeable(self, tradeable: bool, reason: str = None) -> bool:
         """
         전체 마켓 거래 가능 여부 설정

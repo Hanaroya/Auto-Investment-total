@@ -16,6 +16,7 @@ import os
 import schedule
 from .trading_thread import TradingThread
 from .afr_monitor_thread import AFRMonitorThread
+from monitoring.memory_monitor import MemoryProfiler, memory_profiler
 
 class SchedulerThread(threading.Thread):
     """스케줄러 전용 스레드"""
@@ -24,7 +25,7 @@ class SchedulerThread(threading.Thread):
         self.scheduler = scheduler
         self.stop_flag = stop_flag
         self.logger = logging.getLogger('investment-center')
-
+        
     def run(self):
         """스케줄러 실행"""
         self.logger.info("스케줄러 스레드 시작")
@@ -76,13 +77,16 @@ class ThreadManager:
         self.scheduler_thread = None
         self.afr_monitor_thread = None
         self.afr_ready = threading.Event()  # AFR 데이터 준비 상태를 위한 이벤트 추가
+        self.memory_profiler = MemoryProfiler()
 
+    @memory_profiler.profile_memory
     def signal_handler(self, signum, frame):
         """시그널 핸들러"""
         self.logger.info(f"Signal {signum} received, initiating shutdown...")
         self.stop_flag.set()
         self.stop_all_threads()
 
+    @memory_profiler.profile_memory
     def stop_all_threads(self):
         """모든 스레드 강제 종료"""
         try:
@@ -210,6 +214,7 @@ class ThreadManager:
             except:
                 sys.exit(1)
 
+    @memory_profiler.profile_memory
     def start_threads(self, markets: List[str], thread_count: int = 10):
         """스레드 시작"""
         try:
@@ -279,6 +284,7 @@ class ThreadManager:
             self.logger.error(f"스레드 시작 실패: {str(e)}")
             self.stop_all_threads()
 
+    @memory_profiler.profile_memory
     def update_long_term_trades(self):
         """장기 투자 거래 업데이트
         trades 컬렉션에서 is_long_term이 true인 거래를 long_term_trades로 이동
@@ -341,6 +347,7 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"장기 투자 거래 업데이트 중 오류: {str(e)}")
 
+    @memory_profiler.profile_memory
     def update_investment_limits(self):
         """system_config에서 투자 한도를 업데이트"""
         try:
@@ -438,6 +445,7 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"투자 한도 업데이트 중 오류: {str(e)}")
 
+    @memory_profiler.profile_memory
     def split_markets(self, markets: List) -> List[List]:
         """
         전체 마켓 목록을 10개의 균등한 그룹으로 분할합니다.
@@ -472,6 +480,7 @@ class ThreadManager:
             self.logger.error(f"마켓 분할 중 오류: {str(e)}")
             raise
 
+    @memory_profiler.profile_memory
     async def check_thread_health(self):
         """
         각 스레드의 상태를 모니터링하고 문제가 있는 스레드를 감지합니다.
@@ -510,6 +519,7 @@ class ThreadManager:
             self.logger.error(f"스레드 상태 확인 중 오류 발생: {str(e)}")
             return False
 
+    @memory_profiler.profile_memory
     async def cleanup_market_data(self):
         """마켓 데이터 정리"""
         try:
@@ -518,6 +528,7 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"Error cleaning up market data: {str(e)}")
 
+    @memory_profiler.profile_memory
     def handle_interrupt(self, signum=None, frame=None):
         """키보드 인터럽트나 시그널 처리"""
         self.logger.info("Interrupt received, starting cleanup process...")
@@ -528,6 +539,7 @@ class ThreadManager:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
+    @memory_profiler.profile_memory
     def start_scheduler(self, scheduler):
         """스케줄러 스레드 시작"""
         try:
@@ -537,6 +549,7 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"스케줄러 스레드 시작 실패: {str(e)}")
 
+    @memory_profiler.profile_memory
     def update_market_distribution(self, exchange: str):
         """4시간마다 마켓 목록을 재조회하고 스레드에 재분배"""
         try:
@@ -576,6 +589,7 @@ class ThreadManager:
         except Exception as e:
             self.logger.error(f"마켓 목록 재분배 중 오류: {str(e)}")
 
+    @memory_profiler.profile_memory 
     async def watch_orders(self):
         """주문 감시 스레드"""
         while True:

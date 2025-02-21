@@ -17,6 +17,7 @@ import os
 from utils.logger_config import setup_logger
 import schedule
 from control_center.exchange_factory import ExchangeFactory
+from monitoring.memory_monitor import MemoryProfiler, memory_profiler
 
 class InvestmentCenter:
     """
@@ -59,7 +60,9 @@ class InvestmentCenter:
         self.is_running = False
         # 잔고 업데이트 스케줄러 시작
         self.start_balance_update_scheduler()
+        self.memory_profiler = MemoryProfiler()
 
+    @memory_profiler.profile_memory
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
         config_path = Path("resource/application.yml")
@@ -69,6 +72,7 @@ class InvestmentCenter:
         except Exception as e:
             raise RuntimeError(f"설정 파일 로드 실패: {str(e)}")
 
+    @memory_profiler.profile_memory
     def _initialize_exchange(self, exchange_name: str) -> Any:
         """거래소 초기화"""
         try:
@@ -79,6 +83,7 @@ class InvestmentCenter:
             self.logger.error(f"거래소 초기화 실패: {str(e)}")
             raise
 
+    @memory_profiler.profile_memory
     def _initialize_messenger(self) -> Messenger:
         """메신저 초기화"""
         try:
@@ -89,6 +94,7 @@ class InvestmentCenter:
             self.logger.error(f"메신저 초기화 실패: {str(e)}")
             raise
 
+    @memory_profiler.profile_memory
     def _initialize_strategies(self) -> StrategyManager:
         """전략 초기화"""
         manager = StrategyManager()
@@ -112,6 +118,7 @@ class InvestmentCenter:
             
         return manager
 
+    @memory_profiler.profile_memory
     def _check_api_status(self) -> bool:
         """API 상태 확인"""
         try:
@@ -120,6 +127,7 @@ class InvestmentCenter:
         except Exception:
             return False
 
+    @memory_profiler.profile_memory
     def _handle_emergency(self) -> None:
         """비상 상황 처리"""
         self.logger.warning("비상 상황 발생: API 연결 실패")
@@ -184,6 +192,7 @@ class InvestmentCenter:
             self.is_running = False
             raise
 
+    @memory_profiler.profile_memory
     def stop(self):
         """
         투자 센터 종료
@@ -258,6 +267,7 @@ class InvestmentCenter:
         except Exception as e:
             self.logger.error(f"투자 센터 종료 중 오류: {str(e)}")
 
+    @memory_profiler.profile_memory
     def _initialize_system_state(self):
         """
         시스템 상태 초기화
@@ -278,6 +288,7 @@ class InvestmentCenter:
             self.logger.error(f"시스템 상태 초기화 실패: {str(e)}")
             raise
 
+    @memory_profiler.profile_memory
     def _cleanup(self):
         """
         정리 작업 수행
@@ -300,6 +311,7 @@ class InvestmentCenter:
         except Exception as e:
             self.logger.error(f"정리 작업 중 오류: {str(e)}")
 
+    @memory_profiler.profile_memory
     async def initialize(self):
         """초기화"""
         try:
@@ -316,6 +328,7 @@ class InvestmentCenter:
             self.logger.error(f"초기화 중 오류 발생: {str(e)}")
             raise
 
+    @memory_profiler.profile_memory
     def update_exchange_balance(self):
         """실제 거래소 잔고 조회 및 업데이트"""
         try:
@@ -370,6 +383,7 @@ class InvestmentCenter:
             self.logger.error(f"거래소 잔고 업데이트 중 오류: {str(e)}")
             return False
 
+    @memory_profiler.profile_memory
     def start_balance_update_scheduler(self):
         """잔고 업데이트 스케줄러 시작"""
         try:

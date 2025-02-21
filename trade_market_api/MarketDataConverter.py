@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, List, Optional
 import numpy as np
+from monitoring.memory_monitor import MemoryProfiler, memory_profiler
 
 class MarketDataConverter:
     """
@@ -9,6 +10,7 @@ class MarketDataConverter:
     """
     def __init__(self):
         # 필수 기술적 지표 컬럼 목록
+        self.memory_profiler = MemoryProfiler()
         self.required_columns = [
             'open', 'high', 'low', 'close', 'volume',  # OHLCV 기본 데이터
             'rsi', 'macd', 'signal', 'oscillator',     # RSI와 MACD 관련 지표
@@ -17,6 +19,7 @@ class MarketDataConverter:
             'stoch_k', 'stoch_d'                       # 스토캐스틱
         ]
 
+    @memory_profiler.profile_memory
     def convert_upbit_candle(self, candle_data: List[Dict]) -> List[Dict]:
         """
         업비트 캔들 데이터를 전략 분석에 적합한 형식으로 변환
@@ -84,6 +87,7 @@ class MarketDataConverter:
             print(f"First candle data: {candle_data[0] if candle_data else 'No data'}")
             return []
 
+    @memory_profiler.profile_memory
     def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         모든 기술적 지표를 한번에 계산하는 메서드
@@ -175,6 +179,7 @@ class MarketDataConverter:
             print(''.join(traceback.format_tb(e.__traceback__)))
             return df.fillna(0)
 
+    @memory_profiler.profile_memory
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """
         상대강도지수(RSI) 계산
@@ -210,6 +215,7 @@ class MarketDataConverter:
             print(f"RSI 계산 중 오류: {str(e)}")
             return pd.Series([50] * len(prices))  # 오류 시 중립값 반환
 
+    @memory_profiler.profile_memory
     def _calculate_macd(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         MACD(이동평균수렴확산) 지표 계산
@@ -248,6 +254,7 @@ class MarketDataConverter:
             df['oscillator'] = 0
             return df
 
+    @memory_profiler.profile_memory
     def _calculate_bollinger_bands(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         볼린저 밴드 계산
@@ -264,6 +271,7 @@ class MarketDataConverter:
         df['lower_band'] = df['middle_band'] - (std * 2)
         return df
 
+    @memory_profiler.profile_memory
     def _calculate_stochastic(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         스토캐스틱 지표 계산
@@ -306,6 +314,7 @@ class MarketDataConverter:
             df['stoch_d'] = 50
             return df
 
+    @memory_profiler.profile_memory
     def _calculate_trend_strength(self, df: pd.DataFrame) -> pd.Series:
         """
         추세 강도 계산 (-1: 강한 하락세, 1: 강한 상승세)
@@ -318,6 +327,7 @@ class MarketDataConverter:
             print(f"추세 강도 계산 중 오류: {str(e)}")
             return pd.Series([0] * len(df))
 
+    @memory_profiler.profile_memory
     def _calculate_ichimoku(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         일목균형표 계산
@@ -357,6 +367,7 @@ class MarketDataConverter:
                 df[col] = float(df['close'].iloc[0])
             return df
 
+    @memory_profiler.profile_memory
     def _calculate_market_sentiment(self, df: pd.DataFrame) -> pd.Series:
         """
         시장 심리 지수 계산
@@ -380,6 +391,7 @@ class MarketDataConverter:
             print(f"시장 심리 지수 계산 중 오류: {str(e)}")
             return pd.Series([0] * len(df))
 
+    @memory_profiler.profile_memory
     def _calculate_price_trend(self, df: pd.DataFrame) -> pd.Series:
         """
         가격 추세 계산 (-1 ~ 1)
@@ -407,6 +419,7 @@ class MarketDataConverter:
             print(f"가격 추세 계산 중 오류: {str(e)}")
             return pd.Series([0] * len(df))
 
+    @memory_profiler.profile_memory 
     def _calculate_volatility(self, df: pd.DataFrame) -> pd.Series:
         """
         변동성 계산 (0 ~ 1)

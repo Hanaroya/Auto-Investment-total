@@ -22,6 +22,7 @@ import pandas as pd
 from trade_market_api.UpbitCall import UpbitCall
 import asyncio
 import time
+from monitoring.memory_monitor import MemoryProfiler, memory_profiler
 
 class MarketAnalyzer:
     """
@@ -58,7 +59,9 @@ class MarketAnalyzer:
             'Uptrend_End': UptrendEndStrategy(),
             'Divergence': DivergenceStrategy()
         }
+        self.memory_profiler = MemoryProfiler()
 
+    @memory_profiler.profile_memory
     async def get_sorted_markets(self) -> List:
         """
         거래량 기준으로 정렬된 시장 목록을 반환합니다.
@@ -93,6 +96,7 @@ class MarketAnalyzer:
             self.logger.error(f"Error in get_sorted_markets: {e}")
             return []
 
+    @memory_profiler.profile_memory
     async def get_candle_data(self, market: str, interval: str = "240", max_retries: int = 3):
         """
         특정 시장의 캔들 데이터를 조회합니다.
@@ -125,6 +129,7 @@ class MarketAnalyzer:
                     continue
                 return None
 
+    @memory_profiler.profile_memory
     def convert_candle_data(self, raw_data: List[Dict]) -> List[Dict]:
         """
         원시 캔들 데이터를 분석하기 쉬운 형식으로 변환합니다.
@@ -147,6 +152,7 @@ class MarketAnalyzer:
             })
         return converted_data 
 
+    @memory_profiler.profile_memory
     def _process_strategy_result(self, result):
         """
         전략 분석 결과를 표준화된 형식으로 변환합니다.
@@ -161,6 +167,7 @@ class MarketAnalyzer:
             return {'signal': 'hold', 'strength': float(result)}
         return result
 
+    @memory_profiler.profile_memory 
     def analyze_market(self, market: str, candles: List[Dict]) -> Dict:
         """
         주어진 시장에 대해 모든 전략을 실행하여 종합적인 분석을 수행합니다.

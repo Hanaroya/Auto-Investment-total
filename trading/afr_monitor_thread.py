@@ -3,7 +3,7 @@ import logging
 import asyncio
 import time
 from datetime import datetime, timedelta, timezone
-
+from monitoring.memory_monitor import MemoryProfiler, memory_profiler
 class AFRMonitorThread(threading.Thread):
     """거래소별 AFR(Aggregated Funding Rate) 모니터링 스레드"""
     
@@ -16,7 +16,9 @@ class AFRMonitorThread(threading.Thread):
         self.logger = logging.getLogger('investment_center')
         self.last_check = {}     # 거래소별 마지막 체크 시간
         self.loop = None         # 비동기 이벤트 루프
-        
+        self.memory_profiler = MemoryProfiler()
+
+    @memory_profiler.profile_memory
     def run(self):
         """AFR 모니터링 실행"""
         self.logger.info("AFR 모니터링 스레드 시작")
