@@ -145,17 +145,19 @@ class LongTermTradingManager:
     def _check_volume_stability(self, market: str) -> bool:
         """거래량 안정성 확인"""
         try:
-            # 4시간 캔들 데이터 조회
+            # 4시간 캔들 데이터 조회 (최소 100개 필요)
             candles = self.exchange.get_candle(
                 market=market, 
                 interval='240', 
-                count=5
+                count=200
             )
             
-            if not candles or len(candles) < 5:
+            if not candles or len(candles) < 100:
                 return False
-                
-            volumes = [float(candle['volume']) for candle in candles]
+            
+            # 최근 15개 캔들만 사용
+            recent_candles = candles[-15:]
+            volumes = [float(candle['volume']) for candle in recent_candles]
             avg_volume = sum(volumes) / len(volumes)
             volume_changes = [abs((v - avg_volume) / avg_volume) for v in volumes]
             
