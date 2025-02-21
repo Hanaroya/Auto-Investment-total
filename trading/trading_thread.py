@@ -313,12 +313,6 @@ class TradingThread(threading.Thread):
             })
             current_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
 
-            # 최대 투자금 체크 및 시장 상태 확인
-            if current_investment >= self.total_max_investment:
-                self.logger.info(f"Thread {self.thread_id}: {market} - 거래 제한 "
-                               f"(투자금 초과: {current_investment >= self.total_max_investment})")
-                return
-
             # 마켓 분석 수행 시 시장 상태 정보 추가
             signals = self.market_analyzer.analyze_market(market, candles_1m)
             signals.update(market_condition)
@@ -867,6 +861,12 @@ class TradingThread(threading.Thread):
                                     self.logger.debug(f"경과 시간(초): {(current_time - last_time).total_seconds()}")
                                     
                                     if (current_time - last_time).total_seconds() >= 3600:  # 1시간(3600초) 이상 경과
+                                        # 최대 투자금 체크 및 시장 상태 확인
+                                        if current_investment >= self.total_max_investment:
+                                            self.logger.info(f"Thread {self.thread_id}: {market} - 거래 제한 "
+                                                        f"(투자금 초과: {current_investment >= self.total_max_investment})")
+                                            return
+
                                         # 최소 투자금의 2배 계산
                                         min_trade_amount = self.config.get('min_trade_amount', 5000)
                                         investment_amount = min_trade_amount * 2
