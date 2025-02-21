@@ -6,9 +6,7 @@ from messenger.Messenger import Messenger
 from datetime import datetime, timezone, timedelta
 import pandas as pd
 import yaml
-from strategy.StrategyBase import StrategyManager
 from trading.long_term_trading_manager import LongTermTradingManager
-from trade_market_api.UpbitCall import UpbitCall
 import os
 from math import floor
 from utils.time_utils import TimeUtils
@@ -28,8 +26,7 @@ class TradingManager:
         self.exchange_name = exchange_name  
         self.exchange = self._initialize_exchange(exchange_name)
         self.long_term_trading_manager = LongTermTradingManager(self.db, self.exchange_name, self.config)
-        self.test_mode = self.config.get('mode') == 'test' or self.db.get_portfolio('test_mode') 
-        
+        self.test_mode = self.config.get('mode') == 'test' or self.db.get_portfolio('test_mode')
 
     def _load_config(self) -> Dict:
         """설정 파일 로드"""
@@ -270,13 +267,11 @@ class TradingManager:
             profit_amount = actual_sell_amount - active_trade.get('investment_amount', 0)
             profit_rate = (profit_amount / active_trade.get('investment_amount', 0)) * 100
 
-            # 테스트 모드 확인
-            is_test = self.test_mode
-
             order_result = None
-            if not is_test:
+            # 테스트 모드 확인 (self.test_mode 사용)
+            if not self.test_mode:
                 # 실제 매도 주문 실행
-                order_result = self.upbit.place_order(
+                order_result = self.exchange.place_order(
                     market=market,
                     side='ask',
                     price=price,
@@ -304,7 +299,7 @@ class TradingManager:
                 'profit_rate': profit_rate,
                 'sell_order_id': order_result.get('uuid'),
                 'final_executed_volume': order_result.get('executed_volume', 0),
-                'test_mode': is_test,
+                'test_mode': self.test_mode,
                 'sell_fee_amount': floor(fee_amount),
                 'actual_sell_amount': floor(actual_sell_amount),
                 'total_fees': floor(total_fees),
@@ -340,7 +335,7 @@ class TradingManager:
                     'buy': active_trade.get('strategy_data', {}),
                     'sell': strategy_data
                 },
-                'test_mode': is_test
+                'test_mode': self.test_mode
             }
             
             # trading_history에 거래 내역 저장
@@ -374,7 +369,7 @@ class TradingManager:
                 self.db.update_portfolio(portfolio)
 
             # 메신저로 매도 알림
-            message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_sell_message(
+            message = f"{'[TEST MODE] ' if self.test_mode else ''}" + self.create_sell_message(
                 trade_data=active_trade, 
                 sell_price=price,
                 buy_price=active_trade['price'],
@@ -631,7 +626,7 @@ class TradingManager:
             
             for trade in active_trades:
                 investment_amount = trade.get('investment_amount', 0)
-                current_price = self.upbit.get_current_price(trade['market'])
+                current_price = self.exchange.get_current_price(trade['market'])
                 executed_volume = trade.get('executed_volume', 0)
                 
                 # 현재 가치 계산 (현재가 * 보유수량)
@@ -686,7 +681,7 @@ class TradingManager:
                         'market': trade['market'],
                         'amount': trade.get('executed_volume', 0),
                         'price': trade.get('price', 0),
-                        'current_price': self.upbit.get_current_price(trade['market']),
+                        'current_price': self.exchange.get_current_price(trade['market']),
                         'investment_amount': trade.get('investment_amount', 0),
                         'timestamp': TimeUtils.get_current_kst()
                     } for trade in active_trades
@@ -732,7 +727,7 @@ class TradingManager:
             # 장기 투자 상세 정보
             long_term_details = []
             for trade in long_term_trades:
-                current_price = self.upbit.get_current_price(trade['market'])
+                current_price = self.exchange.get_current_price(trade['market'])
                 total_volume = sum(pos['executed_volume'] for pos in trade.get('positions', []))
                 current_value = total_volume * current_price
                 profit_rate = ((current_value - trade['total_investment']) / trade['total_investment']) * 100
@@ -973,7 +968,7 @@ class TradingManager:
                 hours = hold_time.total_seconds() / 3600
                 
                 # 현재 가격 조회
-                current_price = self.upbit.get_current_price(trade['market'])
+                current_price = self.exchange.get_current_price(trade['market'])
                 investment_amount = trade.get('investment_amount', 0)
                 
                 # 수익률 계산
@@ -1056,7 +1051,7 @@ class TradingManager:
                 if trade['created_at'].tzinfo is None:
                     trade['created_at'] = trade['created_at'].replace(tzinfo=timezone(timedelta(hours=9)))
                 
-                current_price = self.upbit.get_current_price(trade['market'])
+                current_price = self.exchange.get_current_price(trade['market'])
                 total_volume = sum(pos['executed_volume'] for pos in trade.get('positions', []))
                 current_value = total_volume * current_price
                 profit_rate = ((current_value - trade['total_investment']) / trade['total_investment']) * 100
