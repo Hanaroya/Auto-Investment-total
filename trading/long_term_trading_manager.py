@@ -303,8 +303,7 @@ class LongTermTradingManager:
             
             # 2. 수익률 목표 달성 확인
             profit_target_reached = (
-                current_profit_rate >= adjusted_profit_target and
-                self._confirm_profit_stability(trade['market'], current_profit_rate, trends)
+                current_profit_rate >= adjusted_profit_target
             )
             
             # 3. 시장 상황 기반 매도 조건
