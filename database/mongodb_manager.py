@@ -102,7 +102,7 @@ class MongoDBManager:
                         self.logger.error(f"MongoDB 연결 실패: {str(e)}")
                         raise
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def update_system_config(self, config_data: Dict[str, Any]) -> bool:
         """시스템 설정 업데이트"""
         with self._get_collection_lock('system_config'):
@@ -112,13 +112,12 @@ class MongoDBManager:
                     {'$set': config_data},
                     upsert=True
                 )
-                # modified_count 또는 upserted_id가 있는 경우 성공
                 return bool(result.modified_count > 0 or result.upserted_id is not None)
             except Exception as e:
                 self.logger.error(f"시스템 설정 업데이트 중 오류: {str(e)}")
                 return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def test_connection(self):
         """동기식 연결 테스트"""
         try:
@@ -158,7 +157,7 @@ class MongoDBManager:
             self.logger.error(f"상세 오류: {str(e.__dict__)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def initialize(self):
         """동기식 초기화"""
         try:
@@ -187,7 +186,7 @@ class MongoDBManager:
             self.logger.error(f"MongoDB 연결 실패: {str(e)}")
             raise
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _check_docker_container(self):
         """도커 컨테이너 상태 확인 및 실행"""
         try:
@@ -242,7 +241,7 @@ class MongoDBManager:
             self.logger.error(f"도커 컨테이너 확인 중 오류 발생: {str(e)}")
             raise
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _create_mongodb_user(self):
         """MongoDB 사용자 생성"""
         try:
@@ -304,7 +303,7 @@ class MongoDBManager:
             self.logger.error(f"MongoDB 사용자 생성 실패: {str(e)}")
             raise
 
-    @memory_profiler.profile_memory 
+    @MemoryProfiler().profile_memory 
     def __del__(self):
         """소멸자에서 연결 종료
         MongoDB 연결을 종료하고 로깅합니다.
@@ -317,7 +316,7 @@ class MongoDBManager:
             if not hasattr(sys, 'is_finalizing'):
                 logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _setup_collections(self):
         """컬렉션 설정 및 인덱스 생성"""
         try:
@@ -351,7 +350,7 @@ class MongoDBManager:
             self.logger.error(f"컬렉션 설정 실패: {str(e)}")
             raise
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _initialize_system_config(self):
         """시스템 설정 초기화
         시스템 설정이 초기화되지 않은 경우에만 초기 설정을 삽입합니다.
@@ -388,7 +387,7 @@ class MongoDBManager:
             self.logger.error(f"시스템 설정 초기화 실패: {str(e)}")
             raise
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _initialize_portfolio(self):
         """포트폴리오 초기화
         포트폴리오가 초기화되지 않은 경우에만 초기 설정을 삽입합니다.
@@ -432,7 +431,7 @@ class MongoDBManager:
             self.logger.error(f"포트폴리오 초기화 실패: {str(e)}")
             raise
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def update_daily_profit_report_status(self, exchange: str, reported: bool = True) -> bool:
         """일일 수익 리포트 상태 업데이트"""
         try:
@@ -446,7 +445,7 @@ class MongoDBManager:
             self.logger.error(f"일일 수익 리포트 상태 업데이트 실패: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def update_daily_profit(self, profit_data: Dict[str, Any]) -> bool:
         """일일 수익 업데이트"""
         with self._get_collection_lock('daily_profit'):
@@ -458,7 +457,7 @@ class MongoDBManager:
                 self.logger.error(f"일일 수익 업데이트 실패: {str(e)}")
                 return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def update_portfolio(self, update_data: Dict[str, Any]) -> bool:
         """포트폴리오 업데이트"""
         with self._get_collection_lock('portfolio'):
@@ -474,7 +473,7 @@ class MongoDBManager:
                 self.logger.error(f"포트폴리오 업데이트 실패: {str(e)}")
                 return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_portfolio(self, exchange_name: str) -> Dict:
         """현재 포트폴리오 조회 및 없으면 생성"""
         try:
@@ -505,13 +504,13 @@ class MongoDBManager:
             self.logger.error(f"포트폴리오 조회/생성 실패: {str(e)}")
             return {}
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_collection(self, name):
         """비동기 컬렉션 반환"""
         return self.async_db[name]
 
     # 거래 관련 메서드
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def insert_trade(self, trade_data: Dict[str, Any]) -> str:
         """
         새로운 거래 기록을 데이터베이스에 추가합니다.
@@ -533,7 +532,7 @@ class MongoDBManager:
                 self.logger.error(f"거래 기록 추가 실패: {str(e)}")
                 return None
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_trade(self, query: Dict) -> Dict:
         """거래 기록 조회"""
         trade = self.trades.find_one(query)
@@ -542,7 +541,7 @@ class MongoDBManager:
             trade['timestamp'] = TimeUtils.from_mongo_date(trade['timestamp'])
         return trade
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def update_trade(self, trade_id: str, update_data: Dict[str, Any]) -> bool:
         """
         특정 거래 기록을 업데이트합니다.
@@ -566,7 +565,7 @@ class MongoDBManager:
                 return False
 
     # 시장 데이터 관련 메서드
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def update_market_data(self, exchange: str, market: str, market_data: Dict[str, Any]) -> bool:
         """
         특정 마켓의 시장 데이터를 업데이트합니다.
@@ -592,7 +591,7 @@ class MongoDBManager:
                 return False
 
     # 스레드 상태 관련 메서드
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def update_thread_status(self, thread_id: int, status_data: Dict[str, Any]) -> bool:
         """
         특정 스레드의 상태 정보를 업데이트합니다.
@@ -617,7 +616,7 @@ class MongoDBManager:
             return True if result.upserted_id or result.modified_count > 0 else False
 
     # 시스템 설정 관련 메서드
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_system_config(self, exchange_name: str) -> Dict[str, Any]:
         """
         시스템 설정을 가져옵니다.
@@ -628,7 +627,7 @@ class MongoDBManager:
         config = self.db.system_config.find_one({'exchange': exchange_name})
         return config if config else {}
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_sync_collection(self, name: str):
         """동기식 컬렉션 반환
         컬렉션이 없으면 새로 생성합니다.
@@ -662,7 +661,7 @@ class MongoDBManager:
             self.logger.error(f"컬렉션 '{name}' 가져오기/생성 실패: {str(e)}")
             raise
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def close(self):
         """
         MongoDB 연결 종료
@@ -675,7 +674,7 @@ class MongoDBManager:
         except Exception as e:
             logging.error(f"MongoDB 연결 종료 실패: {str(e)}")
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def save_strategy_data(self, market: str, exchange: str, strategy_data: Dict[str, Any]) -> bool:
         """마켓별 전략 데이터 저장
 
@@ -806,7 +805,7 @@ class MongoDBManager:
                 self.logger.error(f"전략 데이터 저장 실패 - market: {market}, exchange: {exchange}, 오류: {str(e)}")
                 return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_latest_strategy_data(self, market: str, exchange: str) -> Dict:
         """특정 마켓의 최신 전략 데이터 조회
 
@@ -837,7 +836,7 @@ class MongoDBManager:
             self.logger.error(f"전략 데이터 조회 실패 - market: {market}, exchange: {exchange}, 오류: {str(e)}")
             return {}
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def cleanup_strategy_data(self, exchange_name: str):
         """strategy_data 컬렉션 정리"""
         try:
@@ -846,7 +845,7 @@ class MongoDBManager:
         except Exception as e:
             self.logger.error(f"strategy_data 컬렉션 정리 실패: {str(e)}")
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def cleanup_portfolio(self, exchange: str):
         """portfolio 컬렉션 정리"""
         with self._get_collection_lock('portfolio'):
@@ -875,7 +874,7 @@ class MongoDBManager:
             except Exception as e:
                 self.logger.error(f"portfolio 컬렉션 정리 실패: {str(e)}")
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def cleanup_trades(self, trading_manager: object):
         """trades, trading_history, trade_conversion, long_term_trades 컬렉션 정리"""
         with self._get_collection_lock('trades'):
@@ -942,7 +941,7 @@ class MongoDBManager:
             except Exception as e:
                 self.logger.error(f"trades/trading_history/portfolio 컬렉션 정리 실패: {str(e)}")
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _get_collection_lock(self, collection_name: str) -> threading.Lock:
         """컬렉션별 락 반환
         
@@ -956,7 +955,7 @@ class MongoDBManager:
         self.logger.debug(f"Thread {threading.current_thread().name} getting lock for {collection_name}")
         return lock
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def update_market_index(self, data: Dict) -> bool:
         """
         시장 지표(AFR 등) 데이터 업데이트
@@ -997,7 +996,7 @@ class MongoDBManager:
             logging.getLogger('investment_center').error(f"시장 지표 데이터 업데이트 실패: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_market_index(self, exchange: str) -> Dict:
         """
         시장 지표 데이터 조회
@@ -1035,7 +1034,7 @@ class MongoDBManager:
                 'last_updated': TimeUtils.get_current_kst()
             }
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def save_long_term_trade(self, trade_data: Dict[str, Any]) -> bool:
         """장기 투자 거래 정보 저장"""
         try:
@@ -1055,7 +1054,7 @@ class MongoDBManager:
             self.logger.error(f"장기 투자 거래 저장 실패: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def save_trade_conversion(self, conversion_data: Dict[str, Any]) -> bool:
         """거래 전환 기록 저장"""
         try:
@@ -1070,7 +1069,7 @@ class MongoDBManager:
             self.logger.error(f"거래 전환 기록 저장 실패: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_active_long_term_trades(self, exchange: str) -> List[Dict[str, Any]]:
         """활성 상태인 장기 투자 거래 목록 조회"""
         try:
@@ -1083,7 +1082,7 @@ class MongoDBManager:
             self.logger.error(f"활성 장기 투자 거래 조회 실패: {str(e)}")
             return []
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_long_term_trade(self, trade_id: str) -> Optional[Dict[str, Any]]:
         """특정 장기 투자 거래 정보 조회"""
         try:
@@ -1093,7 +1092,7 @@ class MongoDBManager:
             self.logger.error(f"장기 투자 거래 조회 실패 (ID: {trade_id}): {str(e)}")
             return None
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def get_scheduled_tasks(self, task_type: str = None):
         """스케줄 작업 조회"""
         query = {'status': 'active'}
@@ -1101,7 +1100,7 @@ class MongoDBManager:
             query['type'] = task_type
         return self.scheduled_tasks.find(query)
 
-    @memory_profiler.profile_memory 
+    @MemoryProfiler().profile_memory 
     def update_scheduled_task_status(self, task_name: str, status: str):
         """스케줄 작업 상태 업데이트"""
         return self.scheduled_tasks.update_one(

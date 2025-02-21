@@ -25,7 +25,7 @@ class LongTermTradingManager:
         self.exchange = self._initialize_exchange(self.exchange_name)
         self.memory_profiler = MemoryProfiler()
     
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _initialize_exchange(self, exchange_name: str) -> Any:
         """거래소 초기화"""
         try:
@@ -36,7 +36,7 @@ class LongTermTradingManager:
             self.logger.error(f"거래소 초기화 실패: {str(e)}")
             raise
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def convert_to_long_term(self, trade: dict, market_condition: dict, trends: dict) -> bool:
         """단기 거래를 장기 거래로 전환"""
         try:
@@ -85,7 +85,7 @@ class LongTermTradingManager:
             self.logger.error(f"장기 투자 전환 중 오류: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _validate_conversion_conditions(self, trade: dict, market_condition: dict, trends: dict) -> bool:
         """장기 투자 전환 조건 검증"""
         try:
@@ -124,7 +124,7 @@ class LongTermTradingManager:
             self.logger.error(f"전환 조건 검증 중 오류: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _check_consecutive_losses(self, market: str) -> int:
         """연속 손실 거래 횟수 확인"""
         try:
@@ -147,7 +147,7 @@ class LongTermTradingManager:
             self.logger.error(f"연속 손실 거래 확인 중 오류: {str(e)}")
             return 0
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _check_volume_stability(self, market: str) -> bool:
         """거래량 안정성 확인"""
         try:
@@ -176,7 +176,7 @@ class LongTermTradingManager:
             self.logger.error(f"거래량 안정성 확인 중 오류: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def process_additional_investment(self, trade: dict, current_price: float = None, 
                                     market_condition: dict = None, trends: dict = None) -> bool:
         """추가 투자 처리
@@ -228,7 +228,7 @@ class LongTermTradingManager:
             self.logger.error(f"추가 투자 조건 확인 중 오류: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _evaluate_market_for_addition(self, market_condition: dict,
                                     trends: dict,
                                     current_profit_rate: float) -> float:
@@ -269,7 +269,7 @@ class LongTermTradingManager:
             self.logger.error(f"시장 평가 중 오류: {str(e)}")
             return 0
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _calculate_additional_amount(self, trade: dict,
                                    market_score: float,
                                    current_price: float) -> float:
@@ -293,7 +293,7 @@ class LongTermTradingManager:
             self.logger.error(f"추가 매수 금액 계산 중 오류: {str(e)}")
             return 0
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def check_sell_conditions(self, trade: dict, current_price: float,
                             market_condition: dict, trends: dict) -> bool:
         """매도 조건 확인"""
@@ -334,7 +334,7 @@ class LongTermTradingManager:
             self.logger.error(f"매도 조건 확인 중 오류: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _calculate_dynamic_profit_target(self, base_target: float,
                                        market_condition: dict,
                                        trends: dict,
@@ -369,7 +369,7 @@ class LongTermTradingManager:
             self.logger.error(f"동적 목표 수익률 계산 중 오류: {str(e)}")
             return base_target
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def _confirm_profit_stability(self, market: str,
                                 current_profit_rate: float,
                                 trends: dict) -> bool:
@@ -397,7 +397,7 @@ class LongTermTradingManager:
             self.logger.error(f"수익률 안정성 확인 중 오류: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def calculate_investment_duration(self, trade: dict) -> timedelta:
         """투자 지속 시간 계산"""
         try:
@@ -422,7 +422,7 @@ class LongTermTradingManager:
             self.logger.error(f"투자 지속 시간 계산 중 오류: {str(e)}")
             return timedelta(0)
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def add_position(self, trade: dict, current_price: float, amount: float):
         """기존 장기 투자에 새로운 포지션 추가
         
@@ -470,7 +470,7 @@ class LongTermTradingManager:
             self.logger.error(f"포지션 추가 중 오류: {str(e)}")
             return False
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def calculate_current_profit_rate(self, trade: Dict[str, Any], current_price: float) -> float:
         """현재 수익률 계산
         
@@ -490,7 +490,7 @@ class LongTermTradingManager:
             self.logger.error(f"수익률 계산 실패: {str(e)}")
             return 0.0
 
-    @memory_profiler.profile_memory 
+    @MemoryProfiler().profile_memory 
     def get_active_trades(self) -> List[Dict]:
         """활성 상태인 장기 투자 목록 조회"""
         try:
@@ -499,7 +499,7 @@ class LongTermTradingManager:
             self.logger.error(f"장기 투자 목록 조회 실패: {str(e)}")
             return []
 
-    @memory_profiler.profile_memory 
+    @MemoryProfiler().profile_memory 
     def calculate_dynamic_target_profit(self, duration: timedelta) -> float:
         """투자 기간에 따른 동적 목표 수익률 계산"""
         try:

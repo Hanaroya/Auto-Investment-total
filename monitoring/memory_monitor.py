@@ -1,4 +1,4 @@
-from memory_profiler import profile
+from memory_profiler import profile as memory_profiler
 import logging
 from functools import wraps
 import os
@@ -15,15 +15,8 @@ class MemoryProfiler:
         
     def profile_memory(self, func):
         """메모리 프로파일링 데코레이터"""
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # 프로파일링 시작
-            @profile(precision=4, stream=open(self._get_profile_path(), 'w+'))
-            def wrapped_func():
-                return func(*args, **kwargs)
-            
-            return wrapped_func()
-        return wrapper
+        profile_path = self._get_profile_path()
+        return memory_profiler(precision=4, stream=open(profile_path, 'w+'))(func)
     
     def _get_profile_path(self):
         """프로파일 결과 저장 경로"""

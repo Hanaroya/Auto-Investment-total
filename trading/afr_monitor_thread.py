@@ -18,7 +18,7 @@ class AFRMonitorThread(threading.Thread):
         self.loop = None         # 비동기 이벤트 루프
         self.memory_profiler = MemoryProfiler()
 
-    @memory_profiler.profile_memory
+    @MemoryProfiler().profile_memory
     def run(self):
         """AFR 모니터링 실행"""
         self.logger.info("AFR 모니터링 스레드 시작")
