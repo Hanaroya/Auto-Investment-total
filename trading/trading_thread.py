@@ -848,7 +848,7 @@ class TradingThread(threading.Thread):
 
                         # 장기 투자 추가 매수 조건 확인
                         try:
-                            if long_term_trade.get('positions'):  # positions 배열이 존재하는지 확인
+                            if long_term_trade and long_term_trade.get('positions'):  # positions 배열이 존재하는지 확인
                                 # 마지막 position의 timestamp 가져오기
                                 last_position = long_term_trade['positions'][-1]
                                 last_investment_time = last_position.get('timestamp')
