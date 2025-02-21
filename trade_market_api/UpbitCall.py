@@ -591,13 +591,10 @@ class UpbitCall:
         # 5분 간격으로 조회 (0, 5, 10, 15, ..., 55분)
         time_diff = (current_time - self.last_ubmi_fetch_time).total_seconds()
         return (current_time.minute % 5 == 0 and time_diff >= 300)
-
-    @with_thread_lock("ubmi")
-    async def fetch_ubmi_data(self) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-        """UBMI 데이터 크롤링"""
-        url = 'https://ubcindex.com/home'
+    
+    def _setup_chrome_options(self) -> Options:
+        """크롬 드라이버 옵션 설정"""
         options = Options()
-        
         # 완전한 백그라운드 실행을 위한 옵션들
         options.add_argument("--headless=new")  # 새로운 헤드리스 모드
         options.add_argument("--disable-gpu")   # GPU 하드웨어 가속 비활성화
@@ -612,6 +609,13 @@ class UpbitCall:
         options.add_argument("--log-level=3")  # 로그 레벨 최소화
         options.add_argument("--silent")       # 불필요한 출력 억제
         options.add_argument("--window-size=1,1")  # 최소 창 크기
+        return options
+    
+    @with_thread_lock("ubmi")
+    async def fetch_ubmi_data(self) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+        """UBMI 데이터 크롤링"""
+        url = 'https://ubcindex.com/home'
+        options = self._setup_chrome_options()
         
         driver = None
         try:
@@ -736,23 +740,7 @@ class UpbitCall:
                     ...
                 ]
         """
-        options = Options()
-        
-        # 완전한 백그라운드 실행을 위한 옵션들
-        options.add_argument("--headless=new")  # 새로운 헤드리스 모드
-        options.add_argument("--disable-gpu")   # GPU 하드웨어 가속 비활성화
-        options.add_argument("--no-sandbox")    # 샌드박스 비활성화
-        options.add_argument("--disable-dev-shm-usage")  # 공유 메모리 사용 비활성화
-        options.add_argument("--disable-extensions")     # 확장 프로그램 비활성화
-        options.add_argument("--disable-browser-side-navigation")  # 브라우저 측 탐색 비활성화
-        options.add_argument("--disable-infobars")      # 정보 표시줄 비활성화
-        options.add_argument("--disable-notifications")  # 알림 비활성화
-        options.add_argument("--disable-popup-blocking") # 팝업 차단
-        options.add_argument("--window-position=-32000,-32000")  # 화면 밖으로 이동
-        options.add_argument("--log-level=3")  # 로그 레벨 최소화
-        options.add_argument("--silent")       # 불필요한 출력 억제
-        options.add_argument("--window-size=1,1")  # 최소 창 크기
-        
+        options = self._setup_chrome_options()
         driver = None
         result_data = []
         
