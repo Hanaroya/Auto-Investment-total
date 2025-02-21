@@ -580,14 +580,14 @@ class TradingThread(threading.Thread):
 
                         # 매도 조건 통합 (물타기 관련 조건 제거)
                         should_sell = (
-                            profit_take_condition or
-                            loss_prevention_condition or
-                            market_condition_sell or
+                            (profit_take_condition and not long_term_sell_condition) or
+                            (loss_prevention_condition and not long_term_sell_condition) or
+                            (market_condition_sell and not long_term_sell_condition) or
                             user_call_sell_condition or
-                            stagnation_sell_condition or
-                            ma_condition or # MA 조건
+                            (stagnation_sell_condition and not long_term_sell_condition) or
+                            (ma_condition and not long_term_sell_condition) or # MA 조건
                             long_term_sell_condition # 장기투자 판매 조건
-                        ) and not should_convert_to_long_term
+                        ) 
 
                         # 매도 사유 저장 로직 수정
                         sell_reason = []
@@ -610,7 +610,7 @@ class TradingThread(threading.Thread):
                             sell_reason.append("장기 투자 목표 달성 또는 손절")
 
                         signals['sell_reason'] = ", ".join(sell_reason)
-                        
+                        self.logger.debug(f"매도 사유: {signals['sell_reason']} market: {market} should_sell: {should_sell}")
                         # 디버깅 로깅
                         self.logger.debug(f"{market} - 수익률: {current_profit_rate:.2f}%, "
                                         f"should_sell: {should_sell}, "
@@ -618,33 +618,7 @@ class TradingThread(threading.Thread):
                                         f"시장 위험도: {market_condition['risk_level']}, "
                                         f"마켓 공포지수: {market_fear_greed}")
                         
-                        if should_sell:
-                            self.logger.info(f"매도 신호 감지: {market} - Profit: {current_profit_rate:.2f}%, "
-                                        f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
-                            if long_term_sell_condition:
-                                if self.trading_manager.process_sell_signal(
-                                    market=market,
-                                    exchange=self.exchange_name,
-                                    thread_id=self.thread_id,
-                                    signal_strength=signals.get('overall_signal', 0.0),
-                                    price=current_price,
-                                    strategy_data=signals,
-                                    sell_message=signals['sell_reason']
-                                ):
-                                    self.logger.info(f"{market} 장기 투자 매도 신호 처리 완료")
-                            else:
-                                if self.trading_manager.process_sell_signal(
-                                    market=market,
-                                    exchange=self.exchange_name,
-                                    thread_id=self.thread_id,
-                                    signal_strength=signals.get('overall_signal', 0.0),
-                                    price=current_price,
-                                    strategy_data=signals,
-                                    sell_message=signals['sell_reason']
-                                ):
-                                    self.logger.info(f"매도 신호 처리 완료: {market}")
-                        
-                        elif should_convert_to_long_term:
+                        if should_convert_to_long_term:
                             # 장기 투자 전환
                             conversion_data = {
                                 'market': market,
@@ -704,7 +678,35 @@ class TradingThread(threading.Thread):
 
                                     self.logger.info(f"{market}: 장기 투자 전환 완료 (거래 ID: {active_trade['_id']})")
                                     self.long_term_trades[market] = long_term_trade
-                    
+                                return
+                        
+                        if should_sell:
+                            self.logger.info(f"매도 신호 감지: {market} - Profit: {current_profit_rate:.2f}%, "
+                                        f"Trend: {price_trend:.2f}, Volatility: {volatility:.2f}")
+                            if long_term_sell_condition:
+                                self.logger.debug(f"장기 투자 매도 조건 충족: {market}")
+                                if self.trading_manager.process_sell_signal(
+                                    market=market,
+                                    exchange=self.exchange_name,
+                                    thread_id=self.thread_id,
+                                    signal_strength=signals.get('overall_signal', 0.0),
+                                    price=current_price,
+                                    strategy_data=signals,
+                                    sell_message=signals['sell_reason']
+                                ):
+                                    self.logger.info(f"{market} 장기 투자 매도 신호 처리 완료")
+                            else:
+                                self.logger.debug(f"장기 투자 매도 조건 외 충족: {market}")
+                                if self.trading_manager.process_sell_signal(
+                                    market=market,
+                                    exchange=self.exchange_name,
+                                    thread_id=self.thread_id,
+                                    signal_strength=signals.get('overall_signal', 0.0),
+                                    price=current_price,
+                                    strategy_data=signals,
+                                    sell_message=signals['sell_reason']
+                                ):
+                                    self.logger.info(f"매도 신호 처리 완료: {market}")
                     elif active_trade == None or (active_trade.get('status') == 'converted' and long_term_trade != None):
                         # MA 대비 가격 확인
                         price_below_ma = -35 < trends['240m']['price_vs_ma'] <= -18 if trends['240m'].get('ma20') else False

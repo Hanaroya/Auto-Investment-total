@@ -237,12 +237,11 @@ class TradingManager:
         """
         try:
             # 활성 거래 조회
-            active_trades = self.get_active_trades()
+            active_trade = self.db.trades.find_one({
+                "market": market,
+                "exchange": exchange
+            })
             
-            # 해당 마켓의 활성 거래 찾기
-            active_trade = next((trade for trade in active_trades 
-                               if trade['market'] == market and trade['exchange'] == exchange), None)
-
             if not active_trade:
                 return False
 
@@ -258,10 +257,6 @@ class TradingManager:
             fee_amount = sell_amount * fee_rate
             actual_sell_amount = sell_amount - fee_amount  # 수수료를 제외한 실제 판매금액
 
-            if actual_sell_amount < active_trade.get('investment_amount', 0) and active_trade.get('profit_rate', 0) >= 0.1:
-                self.logger.warning(f"매도 금액이 투자 금액보다 작습니다: {market} - 매도 금액: {actual_sell_amount:,.0f}원, 투자 금액: {active_trade.get('investment_amount', 0):,.0f}원")
-                return False
-            
             # 수익률 계산 (수수료 포함)
             total_fees = active_trade.get('fee_amount', 0) + fee_amount  # 매수/매도 수수료 합계
             profit_amount = actual_sell_amount - active_trade.get('investment_amount', 0)
@@ -343,7 +338,7 @@ class TradingManager:
             
             # trades 컬렉션에서 완료된 거래 삭제
             self.db.trades.delete_one({'_id': active_trade['_id']})
-            self.db.long_term_trades.delete_one({'original_trade_id': active_trade['_id']})
+            self.db.long_term_trades.delete_one({'market': market, 'exchange': exchange})
             self.logger.info(f"거래 내역 기록 완료 및 활성 거래 삭제: {market}")
 
             if order_result:
