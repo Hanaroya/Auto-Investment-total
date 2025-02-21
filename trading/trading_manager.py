@@ -1,5 +1,5 @@
 import time
-from typing import Dict, List
+from typing import Dict, List, Any
 import logging
 from database.mongodb_manager import MongoDBManager
 from messenger.Messenger import Messenger
@@ -12,7 +12,7 @@ from trade_market_api.UpbitCall import UpbitCall
 import os
 from math import floor
 from utils.time_utils import TimeUtils
-from control_center.InvestmentCenter import InvestmentCenter
+from control_center.exchange_factory import ExchangeFactory
 
 class TradingManager:
     """
@@ -20,13 +20,13 @@ class TradingManager:
     
     거래 신호 처리 및 거래 데이터 관리를 담당합니다.
     """
-    def __init__(self, exchange_name: str, investment_center: InvestmentCenter):
+    def __init__(self, exchange_name: str):
         self.db = MongoDBManager(exchange_name=exchange_name)
         self.config = self._load_config()
         self.messenger = Messenger(self.config)
         self.logger = logging.getLogger('investment-center')
         self.exchange_name = exchange_name  
-        self.investment_center = investment_center
+        self.exchange = self._initialize_exchange(exchange_name)
         self.long_term_trading_manager = LongTermTradingManager(self.db, self.exchange_name, self.config)
         self.test_mode = self.config.get('mode') == 'test' or self.db.get_portfolio('test_mode') 
         
@@ -39,6 +39,17 @@ class TradingManager:
         except Exception as e:
             self.logger.error(f"설정 파일 로드 실패: {str(e)}")
             return {}
+    
+    def _initialize_exchange(self, exchange_name: str) -> Any:
+        """거래소 초기화"""
+        try:
+            exchange = ExchangeFactory.create_exchange(exchange_name, self.config)
+            self.logger.info(f"{exchange_name} 거래소 초기화 성공")
+            return exchange
+        except Exception as e:
+            self.logger.error(f"거래소 초기화 실패: {str(e)}")
+            raise
+
 
     def process_buy_signal(self, market: str, exchange: str, thread_id: int, signal_strength: float, 
                                price: float, strategy_data: Dict, buy_message: str = None):

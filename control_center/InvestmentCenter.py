@@ -16,29 +16,7 @@ import asyncio
 import os
 from utils.logger_config import setup_logger
 import schedule
-
-class ExchangeFactory:
-    """
-    거래소 객체 생성을 담당하는 팩토리 클래스
-    각 거래소별 구현체를 생성하고 설정을 주입
-    """
-    @staticmethod
-    def create_exchange(exchange_name: str, config: Dict) -> Any:
-        mode = config.get('mode', 'market')  # 기본 모드는 실제 거래
-        if exchange_name.lower() == "upbit":
-            if mode == 'test':
-                # 테스트 환경: 더미 API 키 사용
-                return UpbitCall(
-                    access_key="test_access_key",
-                    secret_key="test_secret_key"
-                )
-            # 실제 환경: 설정 파일의 API 키 사용
-            return UpbitCall(
-                access_key=config['api_keys']['upbit']['access_key'],
-                secret_key=config['api_keys']['upbit']['secret_key']
-            )
-        else:
-            raise ValueError(f"지원하지 않는 거래소입니다: {exchange_name}")
+from control_center.exchange_factory import ExchangeFactory
 
 class InvestmentCenter:
     """
@@ -69,7 +47,7 @@ class InvestmentCenter:
         self.market_analyzer = MarketAnalyzer(self.config, exchange_name)
         
         # 거래 매니저 초기화
-        self.trading_manager = TradingManager(exchange_name, self)
+        self.trading_manager = TradingManager(exchange_name)
         
         # 스레드 매니저 초기화
         self.thread_manager = ThreadManager(self.config, self)
@@ -79,8 +57,6 @@ class InvestmentCenter:
         
         # 기타 속성 초기화
         self.is_running = False
-        self.exchange_name = exchange_name  # 거래소 이름 저장
-        
         # 잔고 업데이트 스케줄러 시작
         self.start_balance_update_scheduler()
 
