@@ -443,8 +443,7 @@ class TradingThread(threading.Thread):
                                     'market_condition': market_condition,
                                     'trends': trends
                                 },
-                                sell_message=sell_reason,
-                                test_mode=self.config.get('test_mode', True)
+                                sell_message=sell_reason
                             ):
                                 self.logger.info(f"{market} 장기 투자 매도 신호 처리 완료")
                         
