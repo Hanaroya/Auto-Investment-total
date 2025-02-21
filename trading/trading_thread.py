@@ -626,16 +626,10 @@ class TradingThread(threading.Thread):
                                     market=market,
                                     exchange=self.exchange_name,
                                     thread_id=self.thread_id,
-                                    signal_strength=market_condition.get('overall_signal', 0.0),
+                                    signal_strength=signals.get('overall_signal', 0.0),
                                     price=current_price,
-                                    strategy_data={
-                                        'trade_type': 'long_term',
-                                        'trade_id': str(long_term_trade['_id']),
-                                        'profit_rate': ((current_price - long_term_trade['average_price']) / long_term_trade['average_price']) * 100,
-                                        'market_condition': market_condition,
-                                        'trends': trends
-                                    },
-                                    sell_message=sell_reason
+                                    strategy_data=signals,
+                                    sell_message=signals['sell_reason']
                                 ):
                                     self.logger.info(f"{market} 장기 투자 매도 신호 처리 완료")
                             else:
