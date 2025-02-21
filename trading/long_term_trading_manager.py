@@ -1,12 +1,11 @@
 import logging
 from typing import Dict, Any, Optional, List
-from database.mongodb_manager import MongoDBManager
 from utils.time_utils import TimeUtils
 from decimal import Decimal
 import os
 from math import floor
 from datetime import datetime, timedelta, timezone
-
+from control_center.exchange_factory import ExchangeFactory
 class LongTermTradingManager:
     """
     장기 투자 관리자
@@ -22,6 +21,18 @@ class LongTermTradingManager:
         self.exchange_name = exchange_name
         self.config = config
         self.logger = logging.getLogger(f"LongTermTradingManager")
+        self.exchange = self._initialize_exchange(self.exchange_name)
+
+    
+    def _initialize_exchange(self, exchange_name: str) -> Any:
+        """거래소 초기화"""
+        try:
+            exchange = ExchangeFactory.create_exchange(exchange_name, self.config)
+            self.logger.info(f"{exchange_name} 거래소 초기화 성공")
+            return exchange
+        except Exception as e:
+            self.logger.error(f"거래소 초기화 실패: {str(e)}")
+            raise
         
     def convert_to_long_term(self, trade: dict, market_condition: dict, trends: dict) -> bool:
         """단기 거래를 장기 거래로 전환"""
