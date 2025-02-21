@@ -432,8 +432,7 @@ class TradingThread(threading.Thread):
                                 long_term_trade = self.db.long_term_trades.find({
                                     'market': market,
                                     'exchange': self.exchange_name,
-                                    'status': 'active',
-                                    'thread_id': self.thread_id
+                                    'status': 'active'
                                 })
 
                     if active_trade:     
