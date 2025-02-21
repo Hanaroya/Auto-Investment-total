@@ -8,7 +8,7 @@ class ExchangeFactory:
     각 거래소별 구현체를 생성하고 설정을 주입
     """
     @staticmethod
-    @MemoryProfiler().profile_memory
+    
     def create_exchange(exchange_name: str, config: Dict) -> Any:
         mode = config.get('mode', 'market')  # 기본 모드는 실제 거래
         if exchange_name.lower() == "upbit":

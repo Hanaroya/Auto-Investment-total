@@ -49,7 +49,7 @@ class TradingManager:
             self.logger.error(f"거래소 초기화 실패: {str(e)}")
             raise
 
-    @MemoryProfiler().profile_memory
+    
     def process_buy_signal(self, market: str, exchange: str, thread_id: int, signal_strength: float, 
                                price: float, strategy_data: Dict, buy_message: str = None):
         """매수 신호 처리"""
@@ -229,7 +229,7 @@ class TradingManager:
             self.logger.error(f"Error in process_buy_signal: {e}")
             return False
 
-    @MemoryProfiler().profile_memory
+    
     def process_sell_signal(self, market: str, exchange: str, thread_id: int, signal_strength: float, 
                             price: float, strategy_data: Dict, sell_message: str = None):
         """매도 신호 처리
@@ -384,7 +384,7 @@ class TradingManager:
             self.logger.error(f"Error in process_sell_signal: {e}")
             return False
 
-    @MemoryProfiler().profile_memory
+    
     def generate_daily_report(self, exchange: str):
         """일일 리포트 생성
         
@@ -783,7 +783,7 @@ class TradingManager:
             if filename and os.path.exists(filename):
                 os.remove(filename)
 
-    @MemoryProfiler().profile_memory
+    
     def create_long_term_message(self, trade_data: Dict, conversion_price: float, reason: str) -> str:
         """장기 투자 전환 메시지 생성
         
@@ -803,7 +803,7 @@ class TradingManager:
 
         self.messenger.send_message(message=message, messenger_type="slack")
 
-    @MemoryProfiler().profile_memory
+    
     def create_buy_message(self, trade_data: Dict, buy_message: str = None) -> str:
         """매수 메시지 생성
         
@@ -864,7 +864,7 @@ class TradingManager:
         message += "\n------------------------------------------------"
         return message
 
-    @MemoryProfiler().profile_memory
+    
     def create_sell_message(self, trade_data: Dict, sell_price: float, buy_price: float,
                            sell_signal: float, fee_amount: float = 0, 
                            total_fees: float = 0, sell_message: str = None) -> str:
@@ -925,7 +925,7 @@ class TradingManager:
         message += "\n------------------------------------------------"
         return message
 
-    @MemoryProfiler().profile_memory
+    
     def generate_hourly_report(self, exchange: str):
         """시간별 리포트 생성
         
@@ -1108,7 +1108,7 @@ class TradingManager:
             self.logger.error(f"시간별 리포트 생성 중 오류 발생: {str(e)}")
             raise
 
-    @MemoryProfiler().profile_memory
+    
     def update_strategy_data(self, market: str, exchange: str, thread_id: int, price: float, strategy_results: Dict):
         """전략 분석 결과 업데이트
         
@@ -1220,7 +1220,7 @@ class TradingManager:
         except Exception as e:
             self.logger.error(f"전략 데이터 업데이트 중 오류 발생: {str(e)}", exc_info=True)
 
-    @MemoryProfiler().profile_memory
+    
     def get_active_trades(self) -> List[Dict]:
         """
         현재 활성화된 거래 목록을 조회합니다.
@@ -1236,7 +1236,7 @@ class TradingManager:
             self.logger.error(f"활성 거래 조회 중 오류: {str(e)}")
             return []
 
-    @MemoryProfiler().profile_memory
+    
     def check_investment_limit(self) -> bool:
         """
         스레드별 투자 한도를 확인합니다.
@@ -1288,7 +1288,7 @@ class TradingManager:
             self.logger.error(f"투자 한도 확인 중 오류 발생: {str(e)}")
             return False  # 오류 발생 시 안전을 위해 False 반환
 
-    @MemoryProfiler().profile_memory
+    
     async def user_call_buy(self, market: str, exchange: str, price: float, immediate: bool = False) -> Dict:
         """사용자 매수 주문
         
@@ -1349,7 +1349,7 @@ class TradingManager:
             self.logger.error(f"매수 주문 처리 중 오류: {str(e)}")
             return {'success': False, 'message': f'주문 처리 실패: {str(e)}'}
 
-    @MemoryProfiler().profile_memory
+    
     async def user_call_sell(self, market: str, exchange: str, price: float, immediate: bool = False) -> Dict:
         """사용자 매도 주문
         
@@ -1414,7 +1414,7 @@ class TradingManager:
             self.logger.error(f"매도 주문 처리 중 오류: {str(e)}")
             return {'success': False, 'message': f'주문 처리 실패: {str(e)}'}
 
-    @MemoryProfiler().profile_memory
+    
     async def _ensure_order_collection(self):
         """주문 컬렉션 초기화 확인"""
         try:
@@ -1431,7 +1431,7 @@ class TradingManager:
             self.logger.error(f"order_list 컬렉션 초기화 중 오류: {str(e)}")
             raise
 
-    @MemoryProfiler().profile_memory
+    
     def initialize_lowest_price(self, exchange: str):
         """최저가 초기화
         
