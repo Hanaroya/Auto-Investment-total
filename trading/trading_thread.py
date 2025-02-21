@@ -587,7 +587,7 @@ class TradingThread(threading.Thread):
                             (stagnation_sell_condition and not long_term_sell_condition) or
                             (ma_condition and not long_term_sell_condition) or # MA 조건
                             long_term_sell_condition # 장기투자 판매 조건
-                        ) 
+                        ) and not should_convert_to_long_term
 
                         # 매도 사유 저장 로직 수정
                         sell_reason = []
