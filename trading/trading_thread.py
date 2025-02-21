@@ -566,11 +566,15 @@ class TradingThread(threading.Thread):
 
                         #6. 장기 투자 전환 조건 확인
                         # 1. 매도 조건 확인
-                        long_term_sell_condition = self.long_term_manager.check_sell_conditions(
-                            trade=long_term_trade,
-                            current_price=current_price,
-                            market_condition=market_condition,
-                            trends=trends
+                        long_term_sell_condition = (
+                            active_trade.get('is_long_term', False) == True and
+                            long_term_trade and
+                            self.long_term_manager.check_sell_conditions(
+                                trade=long_term_trade,
+                                current_price=current_price,
+                                market_condition=market_condition,
+                                trends=trends
+                            )
                         )
 
                         # 장기 투자 전환 조건 개선
