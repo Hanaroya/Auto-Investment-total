@@ -431,6 +431,75 @@ class TradingThread(threading.Thread):
                                     'market': market,
                                     'exchange': self.exchange_name
                                 })
+                                # 장기 투자 추가 매수 조건 확인
+                            try:
+                                if long_term_trade and long_term_trade.get('positions'):  # positions 배열이 존재하는지 확인
+                                    # 마지막 position의 timestamp 가져오기
+                                    last_position = long_term_trade['positions'][-1]
+                                    last_investment_time = last_position.get('timestamp')
+                                    
+                                    if last_investment_time:
+                                        # MongoDB의 datetime 객체를 한국 시간으로 변환
+                                        current_time = TimeUtils.get_current_kst()
+                                        last_time = TimeUtils.from_mongo_date(last_investment_time)
+                                        
+                                        # 디버깅을 위한 로깅 추가
+                                        self.logger.debug(f"{market} - 마지막 투자 시간: {last_time}, 현재 시간: {current_time}")
+                                        self.logger.debug(f"경과 시간(초): {(current_time - last_time).total_seconds()}")
+                                        
+                                        if (current_time - last_time).total_seconds() >= 3600:  # 1시간(3600초) 이상 경과
+                                            # 최대 투자금 체크 및 시장 상태 확인
+                                            if current_investment >= self.total_max_investment:
+                                                self.logger.info(f"Thread {self.thread_id}: {market} - 거래 제한 "
+                                                            f"(투자금 초과: {current_investment >= self.total_max_investment})")
+                                                return
+
+                                            # 최소 투자금의 2배 계산
+                                            min_trade_amount = self.config.get('min_trade_amount', 5000)
+                                            investment_amount = min_trade_amount * 2
+                                            buy_reason = "장기 투자 추가 매수"
+
+                                            # 투자 가능한 최대 금액 확인
+                                            portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
+                                            self.logger.debug(f"{market} - 포트폴리오 확인:")
+                                            self.logger.debug(f"  - 포트폴리오 존재: {portfolio is not None}")
+
+                                            if portfolio:
+                                                # available_investment 필드 사용
+                                                available_amount = portfolio.get('available_investment', 0)
+                                                self.logger.debug(f"  - 사용 가능 금액: {available_amount:,}원")
+                                                self.logger.debug(f"  - 필요 투자금액: {investment_amount:,}원")
+                                                self.logger.debug(f"  - 투자 가능 여부: {available_amount >= current_investment + investment_amount}")
+
+                                                if available_amount >= current_investment + investment_amount:
+                                                    strategy_data = {
+                                                        'investment_amount': investment_amount,
+                                                        'trade_type': 'long_term_additional',
+                                                        'is_long_term_trade': True,
+                                                        'total_investment': long_term_trade.get('total_investment', 0),
+                                                        'average_price': long_term_trade.get('average_price', 0),
+                                                        'executed_volume': long_term_trade.get('executed_volume', 0),
+                                                        'positions': long_term_trade.get('positions', []),
+                                                        'original_trade_id': str(long_term_trade.get('_id')),
+                                                        'target_profit_rate': long_term_trade.get('target_profit_rate', 5)
+                                                    }
+
+                                                    self.trading_manager.process_buy_signal(
+                                                        market=market,
+                                                        exchange=self.exchange_name,
+                                                        thread_id=self.thread_id,
+                                                        signal_strength=market_condition.get('overall_signal', 0.0),
+                                                        price=current_price,
+                                                        strategy_data=strategy_data,
+                                                        buy_message=buy_reason
+                                                    )
+                                                    self.logger.info(f"{market} 장기 투자 추가 매수 완료 - 투자금액: {investment_amount:,}원")
+                                                else:
+                                                    self.logger.warning(f"{market} - 추가 매수 불가: 투자 가능 금액 부족 (필요: {investment_amount:,}원, 가용: {available_amount:,}원)")
+                                            else:
+                                                self.logger.warning(f"{market} - 추가 매수 불가: 포트폴리오 정보 없음")
+                            except Exception as e:
+                                self.logger.error(f"장기 투자 처리 중 오류 ({market}): {str(e)}")
 
                     if active_trade:     
                         current_profit_rate = active_trade.get('profit_rate', 0)
@@ -712,7 +781,7 @@ class TradingThread(threading.Thread):
                                     sell_message=signals['sell_reason']
                                 ):
                                     self.logger.info(f"매도 신호 처리 완료: {market}")
-                    elif active_trade == None or (active_trade.get('status') == 'converted' and long_term_trade != None):
+                    else:
                         # MA 대비 가격 확인
                         price_below_ma = -35 < trends['240m']['price_vs_ma'] <= -18 if trends['240m'].get('ma20') else False
                         
@@ -842,77 +911,6 @@ class TradingThread(threading.Thread):
                                 self.db.strategy_data.delete_one({'market': market, 'exchange': self.exchange_name})
                         else:
                             self.logger.debug(f"매수 조건 미충족: {market} - Signal: {signals.get('overall_signal')}, Investment: {current_investment}/{self.max_investment}")
-
-                        # 장기 투자 추가 매수 조건 확인
-                        try:
-                            if long_term_trade and long_term_trade.get('positions'):  # positions 배열이 존재하는지 확인
-                                # 마지막 position의 timestamp 가져오기
-                                last_position = long_term_trade['positions'][-1]
-                                last_investment_time = last_position.get('timestamp')
-                                
-                                if last_investment_time:
-                                    # MongoDB의 datetime 객체를 한국 시간으로 변환
-                                    current_time = TimeUtils.get_current_kst()
-                                    last_time = TimeUtils.from_mongo_date(last_investment_time)
-                                    
-                                    # 디버깅을 위한 로깅 추가
-                                    self.logger.debug(f"{market} - 마지막 투자 시간: {last_time}, 현재 시간: {current_time}")
-                                    self.logger.debug(f"경과 시간(초): {(current_time - last_time).total_seconds()}")
-                                    
-                                    if (current_time - last_time).total_seconds() >= 3600:  # 1시간(3600초) 이상 경과
-                                        # 최대 투자금 체크 및 시장 상태 확인
-                                        if current_investment >= self.total_max_investment:
-                                            self.logger.info(f"Thread {self.thread_id}: {market} - 거래 제한 "
-                                                        f"(투자금 초과: {current_investment >= self.total_max_investment})")
-                                            return
-
-                                        # 최소 투자금의 2배 계산
-                                        min_trade_amount = self.config.get('min_trade_amount', 5000)
-                                        investment_amount = min_trade_amount * 2
-                                        buy_reason = "장기 투자 추가 매수"
-
-                                        # 투자 가능한 최대 금액 확인
-                                        portfolio = self.db.portfolio.find_one({'exchange': self.exchange_name})
-                                        self.logger.debug(f"{market} - 포트폴리오 확인:")
-                                        self.logger.debug(f"  - 포트폴리오 존재: {portfolio is not None}")
-
-                                        if portfolio:
-                                            # available_investment 필드 사용
-                                            available_amount = portfolio.get('available_investment', 0)
-                                            self.logger.debug(f"  - 사용 가능 금액: {available_amount:,}원")
-                                            self.logger.debug(f"  - 필요 투자금액: {investment_amount:,}원")
-                                            self.logger.debug(f"  - 투자 가능 여부: {available_amount >= current_investment + investment_amount}")
-
-                                            if available_amount >= current_investment + investment_amount:
-                                                strategy_data = {
-                                                    'investment_amount': investment_amount,
-                                                    'trade_type': 'long_term_additional',
-                                                    'is_long_term_trade': True,
-                                                    'total_investment': long_term_trade.get('total_investment', 0),
-                                                    'average_price': long_term_trade.get('average_price', 0),
-                                                    'executed_volume': long_term_trade.get('executed_volume', 0),
-                                                    'positions': long_term_trade.get('positions', []),
-                                                    'original_trade_id': str(long_term_trade.get('_id')),
-                                                    'target_profit_rate': long_term_trade.get('target_profit_rate', 5)
-                                                }
-
-                                                self.trading_manager.process_buy_signal(
-                                                    market=market,
-                                                    exchange=self.exchange_name,
-                                                    thread_id=self.thread_id,
-                                                    signal_strength=market_condition.get('overall_signal', 0.0),
-                                                    price=current_price,
-                                                    strategy_data=strategy_data,
-                                                    buy_message=buy_reason
-                                                )
-                                                self.logger.info(f"{market} 장기 투자 추가 매수 완료 - 투자금액: {investment_amount:,}원")
-                                            else:
-                                                self.logger.warning(f"{market} - 추가 매수 불가: 투자 가능 금액 부족 (필요: {investment_amount:,}원, 가용: {available_amount:,}원)")
-                                        else:
-                                            self.logger.warning(f"{market} - 추가 매수 불가: 포트폴리오 정보 없음")
-
-                        except Exception as e:
-                            self.logger.error(f"장기 투자 처리 중 오류 ({market}): {str(e)}")
                 except Exception as e:
                     self.logger.error(f"거래 신호 처리 중 오류 발생: {str(e)}", exc_info=True)
 
