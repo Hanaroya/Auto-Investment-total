@@ -411,8 +411,7 @@ class TradingThread(threading.Thread):
                     # 현재 마켓의 활성 거래 확인 및 로깅
                     active_trade = self.db.trades.find_one({
                         'market': market,
-                        'exchange': self.exchange_name,
-                        'status': {'$in': ['active', 'converted']}
+                        'exchange': self.exchange_name
                     })
                     
                     self.logger.info(f"Thread {self.thread_id}: {market} - Active trade check result: {active_trade is not None}")
@@ -425,8 +424,7 @@ class TradingThread(threading.Thread):
                             with self.shared_locks['long_term_trades']:
                                 long_term_trade = self.db.long_term_trades.find_one({
                                     'market': market,
-                                    'exchange': self.exchange_name,
-                                    'status': 'active'
+                                    'exchange': self.exchange_name
                                 })
 
                     if active_trade:     
