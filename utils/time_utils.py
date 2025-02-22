@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 class TimeUtils:
@@ -22,8 +22,15 @@ class TimeUtils:
             datetime: KST로 변환된 datetime 객체
         """
         if dt.tzinfo is None:  # naive datetime인 경우
-            dt = pytz.utc.localize(dt)  # UTC로 가정하고 변환
+            dt = cls.KST.localize(dt)  # KST로 가정하고 변환
         return dt.astimezone(cls.KST)
+    
+    @classmethod
+    def get_past_kst(cls, days=0, hours=0, minutes=0) -> datetime:
+        """현재 시간으로부터 지정된 시간만큼 이전의 KST datetime을 반환"""
+        current = cls.get_current_kst()
+        delta = timedelta(days=days, hours=hours, minutes=minutes)
+        return current - delta
     
     @classmethod
     def format_kst(cls, dt: datetime, format_str: str = '%Y-%m-%d %H:%M:%S %Z') -> str:
@@ -66,4 +73,11 @@ class TimeUtils:
         """MongoDB의 UTC datetime을 KST datetime으로 변환"""
         if dt.tzinfo is None:
             dt = pytz.utc.localize(dt)
-        return dt.astimezone(cls.KST) 
+        return dt.astimezone(cls.KST)
+    
+    @classmethod
+    def ensure_aware(cls, dt: datetime) -> datetime:
+        """naive datetime을 aware datetime으로 변환 (KST 기준)"""
+        if dt.tzinfo is None:
+            return cls.KST.localize(dt)
+        return dt.astimezone(cls.KST)

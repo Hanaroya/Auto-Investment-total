@@ -397,25 +397,22 @@ class TradingManager:
         try:
             self.logger.info("일일 리포트 생성 시작")
             
-            # 오늘 날짜 기준 (KST)으로 거래 내역 조회
-            kst_today = TimeUtils.get_current_kst().replace(
-                hour=0, minute=0, second=0, microsecond=0
+            # KST 시간으로 오늘 날짜 설정
+            kst_today = TimeUtils.ensure_aware(
+                TimeUtils.get_current_kst().replace(hour=0, minute=0, second=0, microsecond=0)
             )
             kst_tomorrow = kst_today + timedelta(days=1)
 
             portfolio = self.db.get_portfolio(exchange)
         
-            # 거래 내역 조회 - timezone 정보 포함하여 쿼리
+            # 거래 내역 조회 시 timezone 정보 포함
             trading_history = list(self.db.trading_history.find({
                 'sell_timestamp': {
-                    '$gte': kst_today,
-                    '$lt': kst_tomorrow
+                    '$gte': TimeUtils.to_mongo_date(kst_today),
+                    '$lt': TimeUtils.to_mongo_date(kst_tomorrow)
                 },
                 'exchange': exchange
-            }).sort([
-                ('sell_timestamp', 1),  # 시간순 정렬
-                ('market', 1)           # 마켓별 정렬
-            ]))
+            }))
             
             filename = f"투자현황-{kst_today.strftime('%Y%m%d')}.xlsx"
             
