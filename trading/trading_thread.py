@@ -128,6 +128,7 @@ class TradingThread(threading.Thread):
             config=self.config
         )
         self.memory_profiler = MemoryProfiler()
+        self.long_term_trading_period = self.config.get('api_keys.{}.long_term_trading_period'.format(self.exchange_name), 4)
 
 
     
@@ -447,7 +448,8 @@ class TradingThread(threading.Thread):
                                         self.logger.debug(f"{market} - 마지막 투자 시간: {last_time}, 현재 시간: {current_time}")
                                         self.logger.debug(f"경과 시간(초): {(current_time - last_time).total_seconds()}")
                                         
-                                        if (current_time - last_time).total_seconds() >= 3600:  # 1시간(3600초) 이상 경과
+                                        if (current_time - last_time).total_seconds() >= 3600 * self.long_term_trading_period:  
+                                            # long_term_trading_period 시간 이상 경과 (기본 4시간)
                                             # 최대 투자금 체크 및 시장 상태 확인
                                             if current_investment >= self.total_max_investment:
                                                 self.logger.info(f"Thread {self.thread_id}: {market} - 거래 제한 "
