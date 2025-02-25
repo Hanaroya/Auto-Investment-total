@@ -425,10 +425,14 @@ class TradingManager:
                     history_df = pd.DataFrame(trading_history)
                     # datetime 객체를 KST로 변환
                     history_df['거래일자'] = pd.to_datetime(history_df['sell_timestamp']).apply(
-                        lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
+                        lambda x: TimeUtils.ensure_aware(
+                            TimeUtils.from_mongo_date(x)
+                        ).strftime('%Y-%m-%d %H:%M')
                     )
                     history_df['매수일자'] = pd.to_datetime(history_df['buy_timestamp']).apply(
-                        lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
+                        lambda x: TimeUtils.ensure_aware(
+                            TimeUtils.from_mongo_date(x)
+                        ).strftime('%Y-%m-%d %H:%M')
                     )
                     history_df['거래종목'] = history_df['market']
                     history_df['매수가'] = history_df['buy_price'].map('{:,.0f}'.format)
@@ -492,14 +496,17 @@ class TradingManager:
                     
                     # 보유 시간 계산 시 timezone 고려
                     holdings_df['보유기간'] = holdings_df['timestamp'].apply(
-                        lambda x: (TimeUtils.get_current_kst() - TimeUtils.from_mongo_date(x)).total_seconds() / 3600
+                        lambda x: (TimeUtils.get_current_kst() - TimeUtils.ensure_aware(
+                            TimeUtils.from_mongo_date(x))).total_seconds() / 3600
                     )
                     
                     holdings_display = pd.DataFrame({
                         '거래종목': holdings_df['market'],
                         'RANK': holdings_df['thread_id'],
                         '매수시간': holdings_df['timestamp'].apply(
-                            lambda x: TimeUtils.from_mongo_date(x).strftime('%Y-%m-%d %H:%M')
+                            lambda x: TimeUtils.ensure_aware(
+                                TimeUtils.from_mongo_date(x)
+                            ).strftime('%Y-%m-%d %H:%M')
                         ),
                         '매수가': holdings_df['price'].map('{:,.0f}'.format),
                         '현재가': holdings_df['current_price'].map('{:,.0f}'.format),
@@ -956,7 +963,9 @@ class TradingManager:
             # 각 마켓별 상세 정보
             for trade in active_trades:
                 # timestamp를 KST로 변환하고 timezone 정보 추가
-                trade_time = TimeUtils.from_mongo_date(trade['timestamp'])
+                trade_time = TimeUtils.ensure_aware(
+                    TimeUtils.from_mongo_date(trade['timestamp'])
+                )
                 if trade_time.tzinfo is None:
                     trade_time = trade_time.replace(tzinfo=timezone(timedelta(hours=9)))  # KST
                 
