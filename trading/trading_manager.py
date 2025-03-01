@@ -54,179 +54,181 @@ class TradingManager:
                                price: float, strategy_data: Dict, buy_message: str = None):
         """매수 신호 처리"""
         try:
-            # KST 시간 가져오기
-            kst_now = TimeUtils.get_current_kst()
-            self.logger.debug(f"현재 KST 시간: {TimeUtils.format_kst(kst_now)}")
-            
-            # 투자 가능 금액 확인
-            if not self.check_investment_limit():
-                self.logger.warning(f"전체 투자 한도 초과: thread_id={thread_id}")
-                return False
-
-            # 테스트 모드 확인
-            is_test = self.test_mode
-            
-            # 수수료 계산
-            fee_rate = self.config['api_keys']['upbit'].get('fee', 0.05) / 100  # 0.05% -> 0.0005
-            investment_amount = strategy_data.get('investment_amount', 0)
-            fee_amount = investment_amount * fee_rate
-            actual_investment = investment_amount - fee_amount
-
-            # 장기 투자 여부 확인 및 기존 거래 정보 조회
-            long_term_trade = self.db.long_term_trades.find_one({
-                    'market': market,
-                    'exchange': exchange,
-                    'status': 'active'
-                })
-            existing_trade = None
-            if long_term_trade:
-                existing_trade = self.db.trades.find_one({
-                    'market': market,
-                    'exchange': exchange,
-                    'status': 'converted'
-                })
-                self.logger.info(f"물타기 신호 감지: {market} - 현재 수익률: {existing_trade.get('profit_rate', 0):.2f}%")
-
-            order_result = None
-            if not is_test:
-                # 실제 매수 주문 실행
-                order_result = self.investment_center.exchange.place_order(
-                    market=market,
-                    side='bid',
-                    price=price,
-                    volume=actual_investment / price
-                )
-
-                if not order_result:
-                    self.logger.error(f"매수 주문 실패: {market}")
+            with self.db.transaction():  # 트랜잭션 처리 추가
+                # KST 시간 가져오기
+                kst_now = TimeUtils.get_current_kst()
+                self.logger.debug(f"현재 KST 시간: {TimeUtils.format_kst(kst_now)}")
+                
+                # 투자 가능 금액 확인
+                if not self.check_investment_limit():
+                    self.logger.warning(f"전체 투자 한도 초과: thread_id={thread_id}")
                     return False
-            else:
-                # 테스트 모드 로그
-                self.logger.info(f"[TEST MODE] 가상 매수 신호 처리: {market} @ {price:,}원 (수수료: {fee_amount:,.0f}원)")
-                order_result = {
-                    'uuid': f'test_buy_{kst_now.timestamp()}',
-                    'executed_volume': actual_investment / price,  # 수수료를 제외한 수량
-                    'price': price
-                }
 
-            if existing_trade and long_term_trade:
-                # 기존 거래 정보 업데이트 (장기 투자)
-                total_investment = long_term_trade['total_investment'] + investment_amount
-                total_volume = long_term_trade['executed_volume'] + order_result['executed_volume']
-                average_price = (long_term_trade['average_price'] * long_term_trade['executed_volume'] + 
-                               price * order_result['executed_volume']) / total_volume
+                # 테스트 모드 확인
+                is_test = self.test_mode
+                
+                # 수수료 계산
+                fee_rate = self.config['api_keys']['upbit'].get('fee', 0.05) / 100  # 0.05% -> 0.0005
+                investment_amount = strategy_data.get('investment_amount', 0)
+                fee_amount = investment_amount * fee_rate
+                actual_investment = investment_amount - fee_amount
 
-                # 새로운 포지션 정보
-                new_position = {
-                    'price': price,
-                    'amount': investment_amount,
-                    'executed_volume': order_result['executed_volume'],
-                    'timestamp': kst_now
-                }
+                # 장기 투자 여부 확인 및 기존 거래 정보 조회
+                long_term_trade = self.db.long_term_trades.find_one({
+                        'market': market,
+                        'exchange': exchange,
+                        'status': 'active'
+                    })
+                existing_trade = None
+                if long_term_trade:
+                    existing_trade = self.db.trades.find_one({
+                        'market': market,
+                        'exchange': exchange,
+                        'status': 'converted'
+                    })
+                    self.logger.info(f"물타기 신호 감지: {market} - 현재 수익률: {existing_trade.get('profit_rate', 0):.2f}%")
 
-                # positions 배열에 새로운 포지션 추가
-                self.db.long_term_trades.update_one(
-                    {'_id': long_term_trade['_id']},  # long_term_trade의 _id 사용
-                    {
-                        '$set': {
-                            'total_investment': total_investment,
-                            'executed_volume': total_volume,
-                            'average_price': round(average_price, 9),
-                            'last_updated': kst_now,
-                        },
-                        '$push': {
-                            'positions': new_position  # positions 배열에 새 포지션 추가
-                        }
+                order_result = None
+                if not is_test:
+                    # 실제 매수 주문 실행
+                    order_result = self.investment_center.exchange.place_order(
+                        market=market,
+                        side='bid',
+                        price=price,
+                        volume=actual_investment / price
+                    )
+
+                    if not order_result:
+                        self.logger.error(f"매수 주문 실패: {market}")
+                        return False
+                else:
+                    # 테스트 모드 로그
+                    self.logger.info(f"[TEST MODE] 가상 매수 신호 처리: {market} @ {price:,}원 (수수료: {fee_amount:,.0f}원)")
+                    order_result = {
+                        'uuid': f'test_buy_{kst_now.timestamp()}',
+                        'executed_volume': actual_investment / price,  # 수수료를 제외한 수량
+                        'price': price
                     }
+
+                if existing_trade and long_term_trade:
+                    # 기존 거래 정보 업데이트 (장기 투자)
+                    total_investment = long_term_trade['total_investment'] + investment_amount
+                    total_volume = long_term_trade['executed_volume'] + order_result['executed_volume']
+                    average_price = (long_term_trade['average_price'] * long_term_trade['executed_volume'] + 
+                                   price * order_result['executed_volume']) / total_volume
+
+                    # 새로운 포지션 정보
+                    new_position = {
+                        'price': price,
+                        'amount': investment_amount,
+                        'executed_volume': order_result['executed_volume'],
+                        'timestamp': kst_now
+                    }
+
+                    # positions 배열에 새로운 포지션 추가
+                    self.db.long_term_trades.update_one(
+                        {'_id': long_term_trade['_id']},  # long_term_trade의 _id 사용
+                        {
+                            '$set': {
+                                'total_investment': total_investment,
+                                'executed_volume': total_volume,
+                                'average_price': round(average_price, 9),
+                                'last_updated': kst_now,
+                            },
+                            '$push': {
+                                'positions': new_position  # positions 배열에 새 포지션 추가
+                            }
+                        }
+                    )
+
+                    # trades 컬렉션 업데이트
+                    update_data2 = {
+                        'investment_amount': total_investment,
+                        'actual_investment': existing_trade['actual_investment'] + actual_investment,
+                        'executed_volume': total_volume,
+                        'price': round(average_price, 9),
+                        'is_long_term_trade': True,
+                    }
+
+                    self.db.trades.update_one(
+                        {'_id': existing_trade['_id']},
+                        {'$set': update_data2}
+                    )
+                    
+                    # 업데이트된 거래 데이터 조회
+                    trade_data = {
+                        **existing_trade,
+                        **update_data2,
+                        'positions': long_term_trade['positions'] + [new_position]
+                    }
+                else:
+                    # 새로운 거래 데이터 생성
+                    trade_data = {
+                        'market': market,
+                        'exchange': exchange,
+                        'type': 'buy',
+                        'price': price,
+                        'buy_signal': signal_strength,
+                        'sell_signal': 0,
+                        'signal_strength': signal_strength,
+                        'current_price': price,
+                        'profit_rate': 0,
+                        'buy_reason': buy_message,
+                        'thread_id': thread_id,
+                        'strategy_data': strategy_data,
+                        'status': 'active',
+                        'investment_amount': investment_amount,
+                        'fee_amount': floor(fee_amount),
+                        'actual_investment': floor(actual_investment),
+                        'fee_rate': fee_rate,
+                        'order_id': order_result.get('uuid'),
+                        'executed_volume': order_result.get('executed_volume', 0),
+                        'test_mode': is_test,
+                        'timestamp': kst_now,
+                        'averaging_down_count': 0,
+                        'user_call': False,
+                        'is_tradeable': False,
+                        'is_long_term_trade': False
+                    }
+                    
+                    # 새 거래 데이터 저장
+                    self.db.insert_trade(trade_data)
+
+                # 메신저로 매수 알림
+                message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(
+                    trade_data=trade_data,
+                    buy_message=buy_message
                 )
-
-                # trades 컬렉션 업데이트
-                update_data2 = {
-                    'investment_amount': total_investment,
-                    'actual_investment': existing_trade['actual_investment'] + actual_investment,
-                    'executed_volume': total_volume,
-                    'price': round(average_price, 9),
-                    'is_long_term_trade': True,
-                }
-
-                self.db.trades.update_one(
-                    {'_id': existing_trade['_id']},
-                    {'$set': update_data2}
-                )
+                self.messenger.send_message(message=message, messenger_type="slack")
                 
-                # 업데이트된 거래 데이터 조회
-                trade_data = {
-                    **existing_trade,
-                    **update_data2,
-                    'positions': long_term_trade['positions'] + [new_position]
-                }
-            else:
-                # 새로운 거래 데이터 생성
-                trade_data = {
-                    'market': market,
-                    'exchange': exchange,
-                    'type': 'buy',
-                    'price': price,
-                    'buy_signal': signal_strength,
-                    'sell_signal': 0,
-                    'signal_strength': signal_strength,
-                    'current_price': price,
-                    'profit_rate': 0,
-                    'buy_reason': buy_message,
-                    'thread_id': thread_id,
-                    'strategy_data': strategy_data,
-                    'status': 'active',
-                    'investment_amount': investment_amount,
-                    'fee_amount': floor(fee_amount),
-                    'actual_investment': floor(actual_investment),
-                    'fee_rate': fee_rate,
-                    'order_id': order_result.get('uuid'),
-                    'executed_volume': order_result.get('executed_volume', 0),
-                    'test_mode': is_test,
-                    'timestamp': kst_now,
-                    'averaging_down_count': 0,
-                    'user_call': False,
-                    'is_tradeable': False,
-                    'is_long_term_trade': False
-                }
+                # 포트폴리오 업데이트
+                if order_result:
+                    portfolio = self.db.get_portfolio(exchange)
+                    
+                    # market_list가 없는 경우 초기화
+                    if 'market_list' not in portfolio:
+                        portfolio['market_list'] = []
+                        portfolio['exchange'] = exchange
+                    
+                    # 해당 마켓 정보 업데이트
+                    portfolio['market_list'].append({
+                        'market': market,
+                        'amount': trade_data['executed_volume'],
+                        'price': trade_data['price'],
+                        'timestamp': kst_now
+                    })
+                    
+                    # 현재 금액 업데이트
+                    current_amount = portfolio.get('current_amount', 0)
+                    portfolio['current_amount'] = floor(current_amount - investment_amount)
+                    
+                    self.db.update_portfolio(portfolio)
                 
-                # 새 거래 데이터 저장
-                self.db.insert_trade(trade_data)
-
-            # 메신저로 매수 알림
-            message = f"{'[TEST MODE] ' if is_test else ''}" + self.create_buy_message(
-                trade_data=trade_data,
-                buy_message=buy_message
-            )
-            self.messenger.send_message(message=message, messenger_type="slack")
-            
-            # 포트폴리오 업데이트
-            if order_result:
-                portfolio = self.db.get_portfolio(exchange)
-                
-                # market_list가 없는 경우 초기화
-                if 'market_list' not in portfolio:
-                    portfolio['market_list'] = []
-                    portfolio['exchange'] = exchange
-                
-                # 해당 마켓 정보 업데이트
-                portfolio['market_list'].append({
-                    'market': market,
-                    'amount': trade_data['executed_volume'],
-                    'price': trade_data['price'],
-                    'timestamp': kst_now
-                })
-                
-                # 현재 금액 업데이트
-                current_amount = portfolio.get('current_amount', 0)
-                portfolio['current_amount'] = floor(current_amount - investment_amount)
-                
-                self.db.update_portfolio(portfolio)
-            
-            return True
+                return True
 
         except Exception as e:
-            self.logger.error(f"Error in process_buy_signal: {e}")
+            self.logger.error(f"매수 처리 중 오류: {str(e)}")
+            self.messenger.send_message(f"매수 처리 실패: {market}", "slack")
             return False
 
     
@@ -1464,3 +1466,43 @@ class TradingManager:
         except Exception as e:
             self.logger.error(f"최저가 초기화 중 오류 발생: {str(e)}")
             raise
+
+    def auto_recovery(self):
+        """자동 복구 메커니즘"""
+        try:
+            # 미완료 주문 확인 및 처리
+            pending_orders = self.db.get_pending_orders()
+            for order in pending_orders:
+                status = self.exchange.get_order_status(order['uuid'])
+                if status == 'completed':
+                    self.db.update_order_status(order['uuid'], status)
+                elif status == 'canceled':
+                    self.db.cleanup_failed_order(order['uuid'])
+                    
+            # 거래 상태 정합성 검증
+            self.validate_trade_status()
+            
+        except Exception as e:
+            self.logger.error(f"자동 복구 실패: {str(e)}")
+
+    def validate_trade_status(self):
+        """거래 상태 정합성 검증"""
+        try:
+            # 활성 거래 조회
+            active_trades = self.db.trades.find({'status': 'active'})
+            
+            for trade in active_trades:
+                # 실제 주문 상태 확인
+                order_status = self.exchange.get_order_status(trade.get('order_uuid'))
+                
+                # 주문이 이미 체결되었는데 거래 상태가 active인 경우
+                if order_status == 'completed' and trade['status'] == 'active':
+                    self.logger.warning(f"거래 상태 불일치 감지: {trade['market']}")
+                    # 거래 상태 업데이트
+                    self.db.trades.update_one(
+                        {'_id': trade['_id']},
+                        {'$set': {'status': 'completed'}}
+                    )
+                    
+        except Exception as e:
+            self.logger.error(f"거래 상태 검증 실패: {str(e)}")

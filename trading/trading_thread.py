@@ -448,7 +448,15 @@ class TradingThread(threading.Thread):
                                         self.logger.debug(f"{market} - 마지막 투자 시간: {last_time}, 현재 시간: {current_time}")
                                         self.logger.debug(f"경과 시간(초): {(current_time - last_time).total_seconds()}")
                                         
-                                        if (current_time - last_time).total_seconds() >= 3600 * self.long_term_trading_period:  
+                                        trading_period = self.long_term_trading_period # 기본 4시간 시장 상황에 맞게 조정
+                                        if market_condition.get('risk_level') > 0.7:
+                                            trading_period *= 3
+                                        elif market_condition.get('risk_level') > 0.5:
+                                            trading_period *= 2
+                                        elif market_condition.get('risk_level') > 0.3:
+                                            trading_period *= 1.5
+                                            
+                                        if (current_time - last_time).total_seconds() >= 3600 * trading_period:  
                                             # long_term_trading_period 시간 이상 경과 (기본 4시간)
                                             # 최대 투자금 체크 및 시장 상태 확인
                                             if current_investment >= self.total_max_investment:

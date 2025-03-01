@@ -317,3 +317,20 @@ class MarketAnalyzer:
                 'price': 0,
                 'strategy_data': {}
             }
+
+    def analyze_market_news(self):
+        """거래소 공지 및 뉴스 분석"""
+        try:
+            news_data = self.exchange.get_market_news()
+            for news in news_data:
+                # 키워드 기반 중요도 분석
+                importance = self._analyze_news_importance(news['content'])
+                if importance > 0.7:  # 중요 뉴스
+                    self.messenger.send_message(
+                        f"중요 공지: {news['title']}\n{news['content']}", 
+                        "slack"
+                    )
+            return True
+        except Exception as e:
+            self.logger.error(f"뉴스 분석 실패: {str(e)}")
+            return False

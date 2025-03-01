@@ -13,6 +13,7 @@ import asyncio
 import time
 import threading
 from monitoring.memory_monitor import MemoryProfiler, memory_profiler
+from datetime import datetime, timedelta
 
 class MongoDBManager:
     _instance = None
@@ -29,7 +30,8 @@ class MongoDBManager:
         'system_config': threading.Lock(),
         'market_index': threading.Lock(),
         'long_term_trades': threading.Lock(),
-        'trade_conversion': threading.Lock()
+        'trade_conversion': threading.Lock(),
+        'order_list': threading.Lock()
     }
 
     def __new__(cls, *args, **kwargs):
@@ -88,16 +90,19 @@ class MongoDBManager:
                         # 컬렉션 초기화
                         self.long_term_trades = self.db[MONGODB_CONFIG['collections']['long_term_trades']]
                         self.trade_conversion = self.db[MONGODB_CONFIG['collections']['trade_conversion']]
+                        self.order_list = self.db[MONGODB_CONFIG['collections']['order_list']]
                         
                         # 컬렉션별 락 추가
                         self._collection_locks.update({
                             'long_term_trades': threading.Lock(),
-                            'trade_conversion': threading.Lock()
+                            'trade_conversion': threading.Lock(),
+                            'order_list': threading.Lock()
                         })
                         
                         self._initialized = True
                         self.logger.debug("MongoDBManager 인스턴스 초기화 완료")
                         self.memory_profiler = MemoryProfiler()
+                        self._transaction_lock = threading.Lock()
                     except Exception as e:
                         self.logger.error(f"MongoDB 연결 실패: {str(e)}")
                         raise
@@ -1112,3 +1117,113 @@ class MongoDBManager:
                 }
             }
         )
+
+    def backup_database(self):
+        """중요 데이터 백업"""
+        try:
+            backup_time = TimeUtils.get_current_kst()
+            collections = ['trades', 'trading_history', 'portfolio', 'system_config']
+            
+            for collection in collections:
+                data = list(self.db[collection].find({}))
+                backup_data = {
+                    'collection': collection,
+                    'data': data,
+                    'backup_time': backup_time
+                }
+                self.db['backups'].insert_one(backup_data)
+                
+            # 오래된 백업 정리 (7일 이상)
+            old_date = backup_time - timedelta(days=7)
+            self.db['backups'].delete_many({'backup_time': {'$lt': old_date}})
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"데이터 백업 실패: {str(e)}")
+            return False
+
+    def transaction(self):
+        """MongoDB 트랜잭션 컨텍스트 매니저"""
+        class TransactionContext:
+            def __init__(self, db_manager):
+                self.db_manager = db_manager
+                
+            def __enter__(self):
+                self.db_manager._transaction_lock.acquire()
+                self.session = self.db_manager.client.start_session()
+                self.session.start_transaction()
+                return self.session
+                
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                try:
+                    if exc_type is None:
+                        self.session.commit_transaction()
+                    else:
+                        self.session.abort_transaction()
+                finally:
+                    self.session.end_session()
+                    self.db_manager._transaction_lock.release()
+                    
+        return TransactionContext(self)
+
+    def get_active_orders(self) -> List[Dict[str, Any]]:
+        """활성 상태인 주문 목록 조회"""
+        try:
+            with self._get_collection_lock('order_list'):
+                return list(self.order_list.find({
+                    'status': {'$in': ['pending', 'partially_filled']},
+                    'exchange': self.exchange_name
+                }))
+        except Exception as e:
+            self.logger.error(f"활성 주문 조회 실패: {str(e)}")
+            return []
+
+    def update_order_status(self, order_uuid: str, new_status: str) -> bool:
+        """주문 상태 업데이트"""
+        try:
+            with self._get_collection_lock('order_list'):
+                result = self.order_list.update_one(
+                    {'uuid': order_uuid},
+                    {
+                        '$set': {
+                            'status': new_status,
+                            'last_updated': TimeUtils.get_current_kst()
+                        }
+                    }
+                )
+                return result.modified_count > 0
+        except Exception as e:
+            self.logger.error(f"주문 상태 업데이트 실패 (UUID: {order_uuid}): {str(e)}")
+            return False
+
+    def get_pending_orders(self) -> List[Dict[str, Any]]:
+        """미체결 주문 목록 조회"""
+        try:
+            with self._get_collection_lock('order_list'):
+                return list(self.order_list.find({
+                    'status': 'pending',
+                    'exchange': self.exchange_name
+                }))
+        except Exception as e:
+            self.logger.error(f"미체결 주문 조회 실패: {str(e)}")
+            return []
+
+    def cleanup_failed_order(self, order_uuid: str) -> bool:
+        """실패한 주문 정리"""
+        try:
+            with self._get_collection_lock('order_list'):
+                result = self.order_list.update_one(
+                    {'uuid': order_uuid},
+                    {
+                        '$set': {
+                            'status': 'canceled',
+                            'last_updated': TimeUtils.get_current_kst(),
+                            'cleanup_reason': 'auto_recovery'
+                        }
+                    }
+                )
+                return result.modified_count > 0
+        except Exception as e:
+            self.logger.error(f"주문 정리 실패 (UUID: {order_uuid}): {str(e)}")
+            return False
