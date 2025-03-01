@@ -1227,3 +1227,61 @@ class MongoDBManager:
         except Exception as e:
             self.logger.error(f"주문 정리 실패 (UUID: {order_uuid}): {str(e)}")
             return False
+
+    def get_exchange_settings(self, exchange_name: str) -> Dict:
+        """거래소 설정 조회"""
+        try:
+            settings = self.db.exchange_settings.find_one({'exchange': exchange_name})
+            if not settings:
+                # 기본 설정 생성
+                settings = {
+                    'exchange': exchange_name,
+                    'api_key': '',
+                    'secret_key': '',
+                    'is_active': False,
+                    'test_mode': True,
+                    'fee_rate': 0.0005,  # 기본 수수료율 0.05%
+                    'created_at': TimeUtils.get_current_kst(),
+                    'last_updated': TimeUtils.get_current_kst()
+                }
+                self.db.exchange_settings.insert_one(settings)
+            return settings
+        except Exception as e:
+            self.logger.error(f"거래소 설정 조회 실패: {str(e)}")
+            return {}
+
+    def update_exchange_settings(self, exchange_name: str, settings: Dict) -> bool:
+        """거래소 설정 업데이트"""
+        try:
+            result = self.db.exchange_settings.update_one(
+                {'exchange': exchange_name},
+                {
+                    '$set': {
+                        **settings,
+                        'last_updated': TimeUtils.get_current_kst()
+                    }
+                },
+                upsert=True
+            )
+            return bool(result.modified_count or result.upserted_id)
+        except Exception as e:
+            self.logger.error(f"거래소 설정 업데이트 실패: {str(e)}")
+            return False
+
+    def get_exchange_balance(self, exchange_name: str) -> Dict:
+        """거래소 잔고 정보 조회"""
+        try:
+            balance = self.db.exchange_balance.find_one({'exchange': exchange_name})
+            if not balance:
+                balance = {
+                    'exchange': exchange_name,
+                    'total_balance': 0,
+                    'available_balance': 0,
+                    'in_use_balance': 0,
+                    'last_updated': TimeUtils.get_current_kst()
+                }
+                self.db.exchange_balance.insert_one(balance)
+            return balance
+        except Exception as e:
+            self.logger.error(f"거래소 잔고 조회 실패: {str(e)}")
+            return {}

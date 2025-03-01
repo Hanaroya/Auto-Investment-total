@@ -699,12 +699,71 @@ class TradingManager:
             # 일일 수익 업데이트
             daily_profit_update = {
                 'date': kst_today,
+                'exchange': exchange,
                 'profit_earned': total_profit_earned,
                 'profit_rate': total_profit_rate,
                 'total_investment': total_investment,
                 'total_current_value': total_current_value,
-                'reported': True
+                'reported': True,
+                'trading_summary': {
+                    'total_trades': total_trades,
+                    'profitable_trades': profitable_trades,
+                    'win_rate': (profitable_trades/total_trades*100) if total_trades > 0 else 0,
+                    'daily_profit_amount': total_profit_amount,
+                    'daily_profit_rate': daily_profit_rate
+                },
+                'portfolio_status': {
+                    'initial_investment': initial_investment,
+                    'current_investment': total_max_investment,
+                    'available_amount': portfolio.get('available_investment', 0),
+                    'total_holdings': len(active_trades),
+                    'market_list': [
+                        {
+                            'market': trade['market'],
+                            'amount': trade.get('executed_volume', 0),
+                            'buy_price': trade.get('price', 0),
+                            'current_price': self.exchange.get_current_price(trade['market']),
+                            'investment_amount': trade.get('investment_amount', 0),
+                            'profit_rate': trade.get('profit_rate', 0),
+                            'holding_time': (TimeUtils.get_current_kst() - TimeUtils.ensure_aware(
+                                TimeUtils.from_mongo_date(trade['timestamp'])
+                            )).total_seconds() / 3600
+                        } for trade in active_trades
+                    ]
+                },
+                'long_term_status': {
+                    'active_count': len(long_term_trades),
+                    'total_investment': long_term_summary['total_investment'],
+                    'total_current_value': long_term_summary['total_current_value'],
+                    'avg_profit_rate': long_term_summary['avg_profit_rate'],
+                    'holdings': [
+                        {
+                            'market': detail['market'],
+                            'total_investment': detail['total_investment'],
+                            'current_value': detail['current_value'],
+                            'profit_rate': detail['profit_rate'],
+                            'position_count': detail['position_count'],
+                            'days_active': detail['days_active']
+                        } for detail in sorted_details
+                    ]
+                },
+                'trading_history': [
+                    {
+                        'market': trade['market'],
+                        'buy_price': trade['buy_price'],
+                        'sell_price': trade['sell_price'],
+                        'profit_rate': trade['profit_rate'],
+                        'profit_amount': trade['profit_amount'],
+                        'investment_amount': trade['investment_amount'],
+                        'buy_timestamp': trade['buy_timestamp'],
+                        'sell_timestamp': trade['sell_timestamp'],
+                        'test_mode': trade.get('test_mode', False)
+                    } for trade in trading_history
+                ],
+                'timestamp': TimeUtils.get_current_kst()
             }
+            
+            # MongoDB에 저장
             self.db.daily_profit.insert_one(daily_profit_update)
             
             # 오후 8시 이전 거래 내역 삭제
@@ -1117,7 +1176,7 @@ class TradingManager:
             raise
 
     
-    def update_strategy_data(self, market: str, exchange: str, thread_id: int, price: float, strategy_results: Dict):
+    def update_strategy_data(self, market: str, candles: List[Dict], exchange: str, thread_id: int, price: float, strategy_results: Dict):
         """전략 분석 결과 업데이트
         
         Args:
@@ -1145,6 +1204,7 @@ class TradingManager:
                 'current_price': price, # 현재 가격
                 'timestamp': TimeUtils.get_current_kst(),  # KST 시간
                 'price':  price, # 매수 가격
+                'candles': candles, # 캔들 데이터
                 'action': strategy_results.get('action', 'hold'), # 매수/매도 여부
                 'signal_strength': strategy_results.get('overall_signal', 0), # 전략 신호
                 'market_data': strategy_results.get('market_data', {}),  # 시장 데이터
@@ -1506,3 +1566,61 @@ class TradingManager:
                     
         except Exception as e:
             self.logger.error(f"거래 상태 검증 실패: {str(e)}")
+
+    def process_exchange_order(self, exchange: str, order_type: str, market: str, volume: float, price: float) -> Dict:
+        """거래소 주문 처리"""
+        try:
+            # 거래소 설정 조회
+            exchange_settings = self.db.get_exchange_settings(exchange)
+            if not exchange_settings.get('is_active'):
+                raise Exception(f"{exchange} 거래소가 비활성화 상태입니다.")
+
+            # 주문 데이터 생성
+            order_data = {
+                'exchange': exchange,
+                'market': market,
+                'type': order_type,
+                'volume': volume,
+                'price': price,
+                'status': 'pending',
+                'created_at': TimeUtils.get_current_kst()
+            }
+
+            # 테스트 모드 확인
+            if exchange_settings.get('test_mode'):
+                order_data['test_mode'] = True
+                order_data['status'] = 'completed'
+                self.logger.info(f"[TEST MODE] 주문 처리: {order_data}")
+                return order_data
+
+            # 실제 거래소 API 호출
+            exchange_instance = self._get_exchange_instance(exchange)
+            order_result = exchange_instance.place_order(
+                market=market,
+                side=order_type,
+                volume=volume,
+                price=price
+            )
+
+            # 주문 결과 저장
+            order_data.update(order_result)
+            self.db.orders.insert_one(order_data)
+
+            return order_data
+
+        except Exception as e:
+            self.logger.error(f"주문 처리 실패: {str(e)}")
+            return {'error': str(e)}
+
+    def _get_exchange_instance(self, exchange_name: str) -> Any:
+        """거래소 인스턴스 반환"""
+        if not hasattr(self, f'_{exchange_name}_instance'):
+            settings = self.db.get_exchange_settings(exchange_name)
+            instance = ExchangeFactory.create_exchange(
+                exchange_name,
+                settings.get('api_key', ''),
+                settings.get('secret_key', ''),
+                settings.get('test_mode', True)
+            )
+            setattr(self, f'_{exchange_name}_instance', instance)
+        return getattr(self, f'_{exchange_name}_instance')

@@ -323,8 +323,13 @@ class TradingThread(threading.Thread):
             signals = self.market_analyzer.analyze_market(market, candles_1m)
             signals.update(market_condition)
             current_price = candles_1m[-1]['close'] if self.thread_id < 4 else candles_15m[-1]['close']
+            all_candles = {
+                'candles_1m': candles_1m if candles_1m else [],    
+                'candles_15m': candles_15m if candles_15m else [],
+                'candles_240m': candles_240m if candles_240m else []
+            }
             self.logger.warning(f"{market}: 현재 가격 - {current_price}")
-            self.trading_manager.update_strategy_data(market=market, exchange=self.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
+            self.trading_manager.update_strategy_data(market=market, candles=all_candles, exchange=self.exchange_name, thread_id=self.thread_id, price=current_price, strategy_results=signals)
 
             # 전역 거래 가능 여부 확인
             with self.shared_locks['portfolio']:
