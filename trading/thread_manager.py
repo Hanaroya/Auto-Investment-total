@@ -260,6 +260,21 @@ class ThreadManager:
                 thread.start()
                 self.threads.append(thread)
                 
+            # 판매 스레드 시작
+            selling_thread = TradingThread(
+                thread_id=10,
+                markets=[],
+                config=self.config,
+                exchange_name=self.investment_center.exchange_name,
+                shared_locks=self.shared_locks,
+                stop_flag=self.stop_flag,
+                db=self.db,
+                investment_center=self.investment_center
+            )
+            selling_thread.start()
+            self.threads.append(selling_thread)
+            self.logger.info("판매용 Thread 10 시작")
+                
             self.logger.info(f"{len(self.threads)}개 스레드 시작됨")
             
             # 메인 루프

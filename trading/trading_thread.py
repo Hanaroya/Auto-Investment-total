@@ -144,32 +144,34 @@ class TradingThread(threading.Thread):
             while not self.stop_flag.is_set():
                 cycle_start_time = time.time()
                 
-                # 스레드 ID에 따라 다른 대기 시간 설정
-                if self.thread_id < 4:
-                    wait_time = 6
-                    initial_delay = self.thread_id * 1
-                else:
-                    wait_time = 180
-                    initial_delay = (self.thread_id - 4) * 1
+                # thread_id가 10인 경우 active_trades를 매번 조회하여 markets 업데이트
+                if self.thread_id == 10:
+                    active_trades = self.trading_manager.get_active_trades()
+                    if active_trades:
+                        self.markets = [trade['market'] for trade in active_trades]
+                        self.logger.info(f"Thread {self.thread_id}: 활성 거래 마켓 업데이트 - {len(self.markets)} 개의 마켓")
                 
-                time.sleep(initial_delay)
-                
+                # 모든 마켓을 동시에 처리
+                tasks = []
                 for market in self.markets:
                     if self.stop_flag.is_set():
                         break
-                        
-                    try:
-                        # 비동기 함수를 동기적으로 실행
-                        self.loop.run_until_complete(self.process_single_market(market))
-                    except Exception as e:
-                        import traceback
-                        tb = traceback.extract_tb(sys.exc_info()[2])[-1]
-                        error_statement = tb.line  # 실제 에러가 발생한 코드 라인의 내용
-                        self.logger.error(f"Error processing {market}: {str(e)} in statement: '{error_statement}' at {tb.filename}:{tb.lineno}")
-                        continue
+                    tasks.append(self.process_single_market(market))
                 
+                # 모든 마켓을 동시에 처리
+                try:
+                    # 비동기 함수를 동기적으로 실행
+                    self.loop.run_until_complete(asyncio.gather(*tasks))
+                except Exception as e:
+                    import traceback
+                    tb = traceback.extract_tb(sys.exc_info()[2])[-1]
+                    error_statement = tb.line  # 실제 에러가 발생한 코드 라인의 내용
+                    self.logger.error(f"Error processing {market}: {str(e)} in statement: '{error_statement}' at {tb.filename}:{tb.lineno}")
+                    continue
+                
+                # 20초 주기로 처리
                 cycle_duration = time.time() - cycle_start_time
-                remaining_time = wait_time - cycle_duration - initial_delay
+                remaining_time = 20 - cycle_duration
                 if remaining_time > 0:
                     time.sleep(remaining_time)
                     
@@ -186,6 +188,22 @@ class TradingThread(threading.Thread):
     async def process_single_market(self, market: str):
         """단일 마켓 처리"""
         try:
+            # 현재 투자 상태 확인
+            active_trades = self.db.trades.find({
+                'thread_id': self.thread_id, 
+                'status': {'$in': ['active', 'converted']}
+            })
+            current_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
+            
+            # 현재 마켓이 활성 거래인지 확인 - 구매 중인 마켓이고 현재 스레드가 10번이 아니면 건너뜀
+            is_active = self.db.trades.find_one({
+                'market': market,
+                'status': {'$in': ['active', 'converted']}
+            })
+            
+            if self.thread_id != 10 and is_active:
+                return
+
             # 시장 상태 조회 
             market_condition = self._get_market_condition(exchange=self.investment_center.exchange_name, market=market)
             if not market_condition:
@@ -229,7 +247,7 @@ class TradingThread(threading.Thread):
                 candles_240m = None
                 
                 try:
-                    if self.thread_id < 4:  # 0~3번 스레드
+                    if self.thread_id < 4 or self.thread_id == 10:  # 0~3번 스레드
                         candles_1m = self.investment_center.exchange.get_candle(
                             market=market, interval='1', count=300)
                         if not candles_1m:
@@ -248,7 +266,7 @@ class TradingThread(threading.Thread):
                             self.logger.warning(f"{market}: 4시간봉 데이터 없음")
                             return  
                         
-                    else:  # 4~9번 스레드
+                    elif self.thread_id >= 4 and self.thread_id < 10:  # 4~9번 스레드
                         candles_15m = self.investment_center.exchange.get_candle(
                             market=market, interval='15', count=300)
                         if not candles_15m:
@@ -262,14 +280,14 @@ class TradingThread(threading.Thread):
                             return
                         
                     # 캔들 데이터 길이 검증
-                    if self.thread_id < 4:
+                    if self.thread_id < 4 or self.thread_id == 10:
                         if len(candles_1m) < 2:
                             self.logger.warning(f"{market}: 1분봉 데이터 부족 (개수: {len(candles_1m)})")
                             return
                         if len(candles_15m) < 2:
                             self.logger.warning(f"{market}: 15분봉 데이터 부족 (개수: {len(candles_15m)})")
                             return
-                    else:
+                    elif self.thread_id >= 4 and self.thread_id < 10:
                         if len(candles_15m) < 2:
                             self.logger.warning(f"{market}: 15분봉 데이터 부족 (개수: {len(candles_15m)})")
                             return
@@ -278,11 +296,11 @@ class TradingThread(threading.Thread):
                             return
                         
                     # 마지막 캔들 데이터 검증
-                    if self.thread_id < 4:
+                    if self.thread_id < 4 or self.thread_id == 10:
                         if not candles_1m[-1] or not candles_15m[-1]:
                             self.logger.warning(f"{market}: 최근 캔들 데이터 누락")
                             return
-                    else:
+                    elif self.thread_id >= 4 and self.thread_id < 10:
                         if not candles_15m[-1] or not candles_240m[-1]:
                             self.logger.warning(f"{market}: 최근 캔들 데이터 누락")
                             return
@@ -292,10 +310,10 @@ class TradingThread(threading.Thread):
                     return
 
             # 시간대별 추세 분석 전 데이터 검증
-            if self.thread_id < 4 and (not isinstance(candles_1m, list) or not isinstance(candles_15m, list)):
+            if self.thread_id < 4 or self.thread_id == 10 and (not isinstance(candles_1m, list) or not isinstance(candles_15m, list)):
                 self.logger.error(f"{market}: 잘못된 캔들 데이터 형식")
                 return
-            elif self.thread_id >= 4 and (not isinstance(candles_15m, list) or not isinstance(candles_240m, list)):
+            elif self.thread_id >= 4 and self.thread_id < 10 and (not isinstance(candles_15m, list) or not isinstance(candles_240m, list)):
                 self.logger.error(f"{market}: 잘못된 캔들 데이터 형식")
                 return
 
@@ -312,13 +330,6 @@ class TradingThread(threading.Thread):
             # 동적 임계값 조정
             thresholds = self.trading_strategy.adjust_thresholds(market_condition, trends)
             
-            # 현재 투자 상태 확인
-            active_trades = self.db.trades.find({
-                'thread_id': self.thread_id, 
-                'status': {'$in': ['active', 'converted']}
-            })
-            current_investment = sum(trade.get('investment_amount', 0) for trade in active_trades)
-
             # 마켓 분석 수행 시 시장 상태 정보 추가
             signals = self.market_analyzer.analyze_market(market, candles_1m)
             signals.update(market_condition)
@@ -661,7 +672,7 @@ class TradingThread(threading.Thread):
                         # 장기 투자 전환 조건 개선
                         should_convert_to_long_term = (
                             # 기본 손실 조건
-                            (loss_prevention_condition or stagnation_sell_condition or ma_condition) and  
+                            (loss_prevention_condition or stagnation_sell_condition or ma_condition or market_condition_sell) and  
                             active_trade.get('is_long_term', False) == False and
                             self.get_total_investment() < self.total_max_investment * 0.8 and 
                             current_profit_rate < 0.0 # 손실 발생 시 장기 투자 전환
