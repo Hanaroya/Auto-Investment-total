@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  mongodb:
+    build:
+      context: ../containers/mongodb
+      dockerfile: Dockerfile
+    container_name: trading-mongodb
+    restart: always
+    ports:
+      - "25000:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=trading_db
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/etc/mongo
+      - mongodb_log:/var/log/mongodb
+    networks:
+      - trading-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: ../docker/containers/frontend/Dockerfile
+    container_name: trading-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://api.yourdomain.com
+    networks:
+      - trading-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: ../docker/containers/backend/Dockerfile
+    container_name: trading-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DB_NAME=trading_db
+      - MONGO_ROOT_USERNAME=${MONGO_ROOT_USERNAME}
+      - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - ENVIRONMENT=production
+    depends_on:
+      - mongodb
+    networks:
+      - trading-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  trading-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+  mongodb_log: 

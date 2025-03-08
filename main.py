@@ -4,12 +4,12 @@ import yaml
 import asyncio
 import logging
 from pathlib import Path
-from control_center.InvestmentCenter import InvestmentCenter
-from database.mongodb_manager import MongoDBManager
+from trading_package.control_center.InvestmentCenter import InvestmentCenter
+from trading_package.database.mongodb_manager import MongoDBManager
 from dotenv import load_dotenv
-from utils.scheduler import SimpleScheduler
-from utils.logger_config import setup_logger
-from utils.time_utils import TimeUtils
+from trading_package.utils.scheduler import SimpleScheduler
+from trading_package.utils.logger_config import setup_logger
+from trading_package.utils.time_utils import TimeUtils
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger('investment-center')

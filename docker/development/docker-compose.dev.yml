@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  mongodb:
+    build:
+      context: ../containers/mongodb
+      dockerfile: Dockerfile
+    container_name: trading-mongodb-dev
+    restart: always
+    ports:
+      - "25000:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - MONGO_INITDB_DATABASE=trading_db
+    volumes:
+      - mongodb_data_dev:/data/db
+      - mongodb_config_dev:/etc/mongo
+      - mongodb_log_dev:/var/log/mongodb
+    networks:
+      - trading-network-dev
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: ../docker/containers/frontend/Dockerfile
+    container_name: trading-frontend-dev
+    restart: always
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      - ../../frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - trading-network-dev
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: ../docker/containers/backend/Dockerfile
+    container_name: trading-backend-dev
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_HOST=mongodb
+      - MONGO_PORT=27017
+      - MONGO_DB_NAME=trading_db
+      - MONGO_ROOT_USERNAME=${MONGO_ROOT_USERNAME}
+      - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
+      - ENVIRONMENT=development
+    volumes:
+      - ../../backend:/app
+    depends_on:
+      - mongodb
+    networks:
+      - trading-network-dev
+
+networks:
+  trading-network-dev:
+    driver: bridge
+
+volumes:
+  mongodb_data_dev:
+  mongodb_config_dev:
+  mongodb_log_dev: 
